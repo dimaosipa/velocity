@@ -66,7 +66,7 @@ final class InstallerTests: XCTestCase {
         let mockBottle = createMockBottle(for: formula)
         
         await XCTAssertThrowsErrorAsync {
-            try await installer.install(formula: formula, from: mockBottle)
+            try await self.installer.install(formula: formula, from: mockBottle)
         }
     }
     
@@ -186,7 +186,7 @@ final class InstallerTests: XCTestCase {
         let mockBottle = createMockBottle(for: formula)
         
         await measureAsync {
-            try await installer.install(formula: formula, from: mockBottle)
+            try await self.installer.install(formula: formula, from: mockBottle)
         }
         
         // Clean up for accurate measurement
@@ -260,40 +260,7 @@ private class MockInstallationProgress: InstallationProgress {
     }
 }
 
-// MARK: - Test Utilities
-
-extension XCTestCase {
-    func XCTAssertThrowsErrorAsync<T>(
-        _ expression: @autoclosure () async throws -> T,
-        _ message: @autoclosure () -> String = "",
-        file: StaticString = #filePath,
-        line: UInt = #line
-    ) async {
-        do {
-            _ = try await expression()
-            XCTFail("Expected error to be thrown - \(message())", file: file, line: line)
-        } catch {
-            // Expected
-        }
-    }
-    
-    func measureAsync(
-        _ block: @escaping () async throws -> Void,
-        file: StaticString = #filePath,
-        line: UInt = #line
-    ) async {
-        let startTime = CFAbsoluteTimeGetCurrent()
-        
-        do {
-            try await block()
-        } catch {
-            XCTFail("Async measurement block threw error: \(error)", file: file, line: line)
-        }
-        
-        let timeElapsed = CFAbsoluteTimeGetCurrent() - startTime
-        print("Time elapsed: \(timeElapsed) seconds")
-    }
-}
+// MARK: - Test Utilities in TestUtilities.swift
 
 // MARK: - Custom Assertions
 

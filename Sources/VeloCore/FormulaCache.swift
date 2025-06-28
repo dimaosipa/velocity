@@ -9,6 +9,7 @@ public protocol FormulaCacheProtocol {
     func remove(_ name: String) throws
     func clear() throws
     func preload(formulae: [Formula]) throws
+    func statistics() -> CacheStatistics
 }
 
 public final class FormulaCache: FormulaCacheProtocol {
@@ -184,7 +185,7 @@ public final class FormulaIndex {
     }
     
     public func buildIndex(from formulae: [Formula]) throws {
-        try queue.sync(flags: .barrier) {
+        queue.sync(flags: .barrier) {
             logInfo("Building formula search index...")
             
             nameIndex.removeAll()
