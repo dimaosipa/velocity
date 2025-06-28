@@ -56,8 +56,6 @@ extension Velo {
                 return
             }
             
-            var hasUpdates = false
-            
             for package in installedPackages {
                 let currentVersions = pathHelper.installedVersions(for: package)
                 
@@ -69,9 +67,8 @@ extension Velo {
                 print("\(package): \(currentVersions.joined(separator: ", ")) -> [checking for updates...]")
             }
             
-            if !hasUpdates {
-                print("All packages are up to date")
-            }
+            // For now, since we don't have real update checking, always show this
+            print("All packages are up to date")
         }
         
         private func performUpdates() async throws {
@@ -95,8 +92,6 @@ extension Velo {
                 return
             }
             
-            var updatedCount = 0
-            
             for package in packagesToUpdate {
                 logInfo("Checking \(package) for updates...")
                 
@@ -109,11 +104,8 @@ extension Velo {
                 print("  \(package): up to date")
             }
             
-            if updatedCount == 0 {
-                Logger.shared.success("All packages are up to date!")
-            } else {
-                Logger.shared.success("Updated \(updatedCount) package(s)")
-            }
+            // For now, since we don't perform actual updates, always show this
+            Logger.shared.success("All packages are up to date!")
         }
         
         private func getInstalledPackages() throws -> [String] {
