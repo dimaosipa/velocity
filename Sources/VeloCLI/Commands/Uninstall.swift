@@ -1,0 +1,62 @@
+import Foundation
+import ArgumentParser
+import VeloCore
+import VeloSystem
+
+extension Velo {
+    struct Uninstall: ParsableCommand {
+        static let configuration = CommandConfiguration(
+            abstract: "Uninstall a package"
+        )
+        
+        @Argument(help: "The package to uninstall")
+        var package: String
+        
+        @Flag(help: "Force uninstall without confirmation")
+        var force = false
+        
+        func run() throws {
+            let installer = Installer()
+            let pathHelper = PathHelper.shared
+            
+            logInfo("Uninstalling \(package)...")
+            
+            // Check if package is installed
+            guard pathHelper.isPackageInstalled(package) else {
+                logError("Package '\(package)' is not installed")
+                throw ExitCode.failure
+            }
+            
+            // Get installed versions
+            let versions = pathHelper.installedVersions(for: package)
+            
+            // Confirm uninstall unless forced
+            if !force {
+                print("The following versions will be uninstalled:")
+                for version in versions {
+                    print("  \(package) \(version)")
+                }
+                
+                print("\nAre you sure you want to uninstall \(package)? [y/N]: ", terminator: "")
+                let input = readLine()?.lowercased()
+                
+                if input != "y" && input != "yes" {
+                    logInfo("Uninstall cancelled")
+                    return
+                }
+            }
+            
+            do {
+                try installer.uninstall(package: package)
+                Logger.shared.success("\(package) uninstalled successfully!")
+                
+                // Show cleanup info
+                logInfo("Run 'velo doctor' to check for any orphaned dependencies")
+                
+            } catch {
+                logError("Uninstallation failed: \(error.localizedDescription)")
+                throw ExitCode.failure
+            }
+        }
+    }
+}
