@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find:*)",
+      "Bash(ls:*)",
+      "Bash(mkdir:*)",
+      "Bash(swift build)",
+      "Bash(mv:*)",
+      "Bash(rm:*)",
+      "Bash(/usr/bin/afplay:*)"
+    ],
+    "deny": []
+  }
+}

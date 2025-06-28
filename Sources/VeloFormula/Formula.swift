@@ -46,7 +46,7 @@ public struct Formula: Codable, Equatable {
                 }
             }
             
-            var isCompatible: Bool {
+            public var isCompatible: Bool {
                 // Check if current macOS version is compatible
                 let currentVersion = ProcessInfo.processInfo.operatingSystemVersion
                 let requiredMajor = Int(osVersion) ?? 12

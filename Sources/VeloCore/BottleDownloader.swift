@@ -250,7 +250,7 @@ public final class BottleDownloader {
             let chunkFile = directory.appendingPathComponent("chunk_\(i)")
             let chunkData = try Data(contentsOf: chunkFile)
             
-            chunkData.withUnsafeBytes { bytes in
+            _ = chunkData.withUnsafeBytes { bytes in
                 outputStream.write(bytes.bindMemory(to: UInt8.self).baseAddress!, maxLength: chunkData.count)
             }
         }
@@ -293,7 +293,7 @@ extension BottleDownloader {
             hasher.update(data: data)
         }
         
-        func finalize() -> SHA256.Digest {
+        func finalize() -> CryptoKit.SHA256.Digest {
             return hasher.finalize()
         }
     }

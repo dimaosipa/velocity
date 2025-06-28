@@ -1,5 +1,5 @@
 import Foundation
-import VeloCore
+import VeloSystem
 
 public struct FormulaParser {
     
@@ -34,29 +34,22 @@ public struct FormulaParser {
     // MARK: - Basic Field Extraction
     
     private func extractDescription(from content: String) throws -> String {
-        // Match desc "..." or desc '...'
         let pattern = #"desc\s+["']([^"']+)["']"#
-        guard let match = content.range(of: pattern, options: .regularExpression),
-              let descMatch = content[match].firstMatch(of: try Regex(pattern)),
-              descMatch.count >= 2 else {
+        guard let match = extractFirstMatch(pattern: pattern, from: content) else {
             throw VeloError.formulaParseError(formula: "unknown", details: "Could not find description")
         }
-        return String(descMatch.output[1].substring ?? "")
+        return match
     }
     
     private func extractHomepage(from content: String) throws -> String {
-        // Match homepage "..." or homepage '...'
         let pattern = #"homepage\s+["']([^"']+)["']"#
-        guard let match = content.range(of: pattern, options: .regularExpression),
-              let homepageMatch = content[match].firstMatch(of: try Regex(pattern)),
-              homepageMatch.count >= 2 else {
+        guard let match = extractFirstMatch(pattern: pattern, from: content) else {
             throw VeloError.formulaParseError(formula: "unknown", details: "Could not find homepage")
         }
-        return String(homepageMatch.output[1].substring ?? "")
+        return match
     }
     
     private func extractURL(from content: String) throws -> String {
-        // Match url "..." but not inside bottle block
         let pattern = #"^\s*url\s+["']([^"']+)["']"#
         let lines = content.components(separatedBy: .newlines)
         var inBottleBlock = false
@@ -67,9 +60,8 @@ public struct FormulaParser {
             } else if line.contains("end") && inBottleBlock {
                 inBottleBlock = false
             } else if !inBottleBlock,
-                      let match = line.firstMatch(of: try Regex(pattern)),
-                      match.count >= 2 {
-                return String(match.output[1].substring ?? "")
+                      let match = extractFirstMatch(pattern: pattern, from: line) {
+                return match
             }
         }
         
@@ -77,7 +69,6 @@ public struct FormulaParser {
     }
     
     private func extractSHA256(from content: String) throws -> String {
-        // Match sha256 "..." but not inside bottle block
         let pattern = #"^\s*sha256\s+["']([a-fA-F0-9]{64})["']"#
         let lines = content.components(separatedBy: .newlines)
         var inBottleBlock = false
@@ -88,9 +79,8 @@ public struct FormulaParser {
             } else if line.contains("end") && inBottleBlock {
                 inBottleBlock = false
             } else if !inBottleBlock,
-                      let match = line.firstMatch(of: try Regex(pattern)),
-                      match.count >= 2 {
-                return String(match.output[1].substring ?? "")
+                      let match = extractFirstMatch(pattern: pattern, from: line) {
+                return match
             }
         }
         
@@ -100,16 +90,14 @@ public struct FormulaParser {
     private func extractVersion(from content: String, url: String) throws -> String {
         // First try to find explicit version
         let versionPattern = #"version\s+["']([^"']+)["']"#
-        if let match = content.firstMatch(of: try Regex(versionPattern)),
-           match.count >= 2 {
-            return String(match.output[1].substring ?? "")
+        if let match = extractFirstMatch(pattern: versionPattern, from: content) {
+            return match
         }
         
         // Try to extract from URL
         let urlVersionPattern = #"/(\d+\.\d+(?:\.\d+)*(?:-[\w.]+)?)"#
-        if let match = url.firstMatch(of: try Regex(urlVersionPattern)),
-           match.count >= 2 {
-            return String(match.output[1].substring ?? "")
+        if let match = extractFirstMatch(pattern: urlVersionPattern, from: url) {
+            return match
         }
         
         throw VeloError.formulaParseError(formula: "unknown", details: "Could not determine version")
@@ -122,36 +110,9 @@ public struct FormulaParser {
         
         // Match depends_on "..."
         let dependsPattern = #"depends_on\s+["']([^"']+)["']"#
-        if let regex = try? Regex(dependsPattern) {
-            for match in content.matches(of: regex) {
-                if match.count >= 2,
-                   let depName = match.output[1].substring {
-                    dependencies.append(Formula.Dependency(name: String(depName)))
-                }
-            }
-        }
-        
-        // Match depends_on :... => "..."
-        let conditionalPattern = #"depends_on\s+:(\w+)\s*=>\s*["']([^"']+)["']"#
-        if let regex = try? Regex(conditionalPattern) {
-            for match in content.matches(of: regex) {
-                if match.count >= 3,
-                   let typeStr = match.output[1].substring,
-                   let depName = match.output[2].substring {
-                    let type: Formula.Dependency.DependencyType
-                    switch String(typeStr) {
-                    case "build":
-                        type = .build
-                    case "optional":
-                        type = .optional
-                    case "recommended":
-                        type = .recommended
-                    default:
-                        type = .required
-                    }
-                    dependencies.append(Formula.Dependency(name: String(depName), type: type))
-                }
-            }
+        let matches = extractAllMatches(pattern: dependsPattern, from: content)
+        for match in matches {
+            dependencies.append(Formula.Dependency(name: match))
         }
         
         return dependencies
@@ -170,31 +131,12 @@ public struct FormulaParser {
         let bottleBlock = String(content[bottleBlockRange])
         
         // Extract sha256 entries for arm64 platforms
-        let sha256Pattern = #"sha256\s+cellar:\s*:\w+,\s*(\w+):\s*["']([a-fA-F0-9]{64})["']"#
-        if let regex = try? Regex(sha256Pattern) {
-            for match in bottleBlock.matches(of: regex) {
-                if match.count >= 3,
-                   let platformStr = match.output[1].substring,
-                   let sha = match.output[2].substring {
-                    // Only process arm64 platforms
-                    if let platform = Formula.Bottle.Platform(rawValue: String(platformStr)) {
-                        bottles.append(Formula.Bottle(sha256: String(sha), platform: platform))
-                    }
-                }
-            }
-        }
+        let sha256Pattern = #"sha256\s+(\w+):\s*["']([a-fA-F0-9]{64})["']"#
+        let matches = extractAllMatchPairs(pattern: sha256Pattern, from: bottleBlock)
         
-        // Alternative format: sha256 arm64_monterey: "..."
-        let altPattern = #"sha256\s+(\w+):\s*["']([a-fA-F0-9]{64})["']"#
-        if let regex = try? Regex(altPattern) {
-            for match in bottleBlock.matches(of: regex) {
-                if match.count >= 3,
-                   let platformStr = match.output[1].substring,
-                   let sha = match.output[2].substring {
-                    if let platform = Formula.Bottle.Platform(rawValue: String(platformStr)) {
-                        bottles.append(Formula.Bottle(sha256: String(sha), platform: platform))
-                    }
-                }
+        for (platformStr, sha) in matches {
+            if let platform = Formula.Bottle.Platform(rawValue: platformStr) {
+                bottles.append(Formula.Bottle(sha256: sha, platform: platform))
             }
         }
         
@@ -227,5 +169,71 @@ public struct FormulaParser {
         }
         
         return nil
+    }
+    
+    // MARK: - Helper Methods using NSRegularExpression
+    
+    private func extractFirstMatch(pattern: String, from text: String) -> String? {
+        do {
+            let regex = try NSRegularExpression(pattern: pattern, options: [])
+            let range = NSRange(location: 0, length: text.utf16.count)
+            if let match = regex.firstMatch(in: text, options: [], range: range),
+               match.numberOfRanges > 1 {
+                let captureRange = match.range(at: 1)
+                if let swiftRange = Range(captureRange, in: text) {
+                    return String(text[swiftRange])
+                }
+            }
+        } catch {
+            return nil
+        }
+        return nil
+    }
+    
+    private func extractAllMatches(pattern: String, from text: String) -> [String] {
+        var results: [String] = []
+        do {
+            let regex = try NSRegularExpression(pattern: pattern, options: [])
+            let range = NSRange(location: 0, length: text.utf16.count)
+            let matches = regex.matches(in: text, options: [], range: range)
+            
+            for match in matches {
+                if match.numberOfRanges > 1 {
+                    let captureRange = match.range(at: 1)
+                    if let swiftRange = Range(captureRange, in: text) {
+                        results.append(String(text[swiftRange]))
+                    }
+                }
+            }
+        } catch {
+            return results
+        }
+        return results
+    }
+    
+    private func extractAllMatchPairs(pattern: String, from text: String) -> [(String, String)] {
+        var results: [(String, String)] = []
+        do {
+            let regex = try NSRegularExpression(pattern: pattern, options: [])
+            let range = NSRange(location: 0, length: text.utf16.count)
+            let matches = regex.matches(in: text, options: [], range: range)
+            
+            for match in matches {
+                if match.numberOfRanges > 2 {
+                    let firstRange = match.range(at: 1)
+                    let secondRange = match.range(at: 2)
+                    
+                    if let firstSwiftRange = Range(firstRange, in: text),
+                       let secondSwiftRange = Range(secondRange, in: text) {
+                        let first = String(text[firstSwiftRange])
+                        let second = String(text[secondSwiftRange])
+                        results.append((first, second))
+                    }
+                }
+            }
+        } catch {
+            return results
+        }
+        return results
     }
 }

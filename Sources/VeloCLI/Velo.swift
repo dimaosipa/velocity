@@ -2,7 +2,6 @@ import Foundation
 import ArgumentParser
 import VeloSystem
 
-@main
 public struct Velo: ParsableCommand {
     public static let configuration = CommandConfiguration(
         commandName: "velo",
