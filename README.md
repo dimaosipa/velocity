@@ -21,14 +21,17 @@ A lightning-fast, modern package manager for macOS - built for Apple Silicon.
 ### Installation
 
 ```bash
-# Clone and build
-git clone https://github.com/bomjkolyadun/velo.git
-cd velo
-swift build -c release
-
-# Copy to local bin (optional)
-cp .build/release/velo /usr/local/bin/
+# Clone and install
+git clone https://github.com/dimaosipa/velocity.git
+cd velocity
+./install.sh
 ```
+
+**What this does:**
+- Builds Velocity in release mode
+- Installs `velo` binary to `~/.velo/bin/`
+- Adds `~/.velo/bin` to your shell PATH
+- Cleans up build artifacts automatically
 
 ### First Steps
 
@@ -143,6 +146,37 @@ Tests/
 | `search` | Search for packages | `velo search http` |
 | `update` | Update repositories | `velo update` |
 | `doctor` | Check system health | `velo doctor` |
+| `clean` | Clean packages or cache | `velo clean --packages` |
+| `install-self` | Install velo to ~/.velo/bin | `velo install-self` |
+| `uninstall-self` | Remove velo and optionally all data | `velo uninstall-self` |
+
+### Self-Management
+
+Velo can manage its own installation and data:
+
+**Installation Management:**
+```bash
+# Install velo to ~/.velo/bin and add to PATH
+velo install-self
+
+# Uninstall velo binary only (keep packages)
+velo uninstall-self --binary-only
+
+# Uninstall everything (interactive confirmation)
+velo uninstall-self
+```
+
+**Data Management:**
+```bash
+# Clean all packages (like Homebrew reset)
+velo clean --packages
+
+# Clear download cache
+velo clean --cache
+
+# Clean everything (packages + cache)
+velo clean --all
+```
 
 ### Multi-Version Package Support
 

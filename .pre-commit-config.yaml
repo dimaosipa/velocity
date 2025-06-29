@@ -18,7 +18,8 @@ repos:
         
       - id: architecture-check
         name: Architecture Check
-        entry: bash -c 'if [[ "$(uname -m)" != "arm64" ]]; then echo "Error: This project requires Apple Silicon (arm64)"; exit 1; fi'
+        entry: |
+          bash -c 'if [[ "$(uname -m)" != "arm64" ]]; then echo "Error: This project requires Apple Silicon (arm64)"; exit 1; fi'
         language: system
         pass_filenames: false
         always_run: true
@@ -40,7 +41,8 @@ repos:
         
       - id: no-homebrew-name
         name: No Homebrew Name Check
-        entry: bash -c 'if grep -r "Homebrew" Sources/ Tests/ --include="*.swift" | grep -v "// Attribution"; then echo "Error: Found 'Homebrew' in code. Use 'Velo' instead."; exit 1; fi'
+        entry: |
+          bash -c 'if grep -r "Homebrew" Sources/ Tests/ --include="*.swift" | grep -v "// Attribution"; then echo "Error: Found Homebrew in code. Use Velo instead."; exit 1; fi'
         language: system
         pass_filenames: false
         always_run: true

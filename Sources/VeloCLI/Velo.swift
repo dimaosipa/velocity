@@ -18,7 +18,10 @@ public struct Velo: ParsableCommand {
             Velo.List.self,
             Velo.Search.self,
             Velo.Update.self,
-            Velo.Doctor.self
+            Velo.Doctor.self,
+            Velo.Clean.self,
+            Velo.InstallSelf.self,
+            Velo.UninstallSelf.self
         ],
         defaultSubcommand: Velo.Doctor.self
     )
