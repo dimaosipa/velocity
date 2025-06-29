@@ -4,12 +4,12 @@ A lightning-fast, modern package manager for macOS - built for Apple Silicon.
 
 ## ✨ Key Features
 
-- **🏎️ Blazing Fast**: 10x faster formula parsing, 5x faster installations
+- **🏎️ Performance Focused**: Designed for speed with parallel downloads and smart caching
 - **🔋 Apple Silicon Native**: Built exclusively for M1/M2/M3 Macs
 - **🛡️ User-Space Only**: Never requires `sudo` - everything in `~/.velo/`
 - **🔄 Drop-in Compatible**: Uses existing `.rb` formulae from core tap
-- **⚡ Performance First**: Parallel downloads, smart caching, optimized I/O
-- **🧪 Thoroughly Tested**: Comprehensive test suite with benchmarks
+- **⚡ Modern Architecture**: Async/await, concurrent operations, optimized I/O
+- **🧪 Test Infrastructure**: Comprehensive test suite with performance monitoring
 
 ## 🚀 Quick Start
 
@@ -52,14 +52,16 @@ velo list
 echo 'export PATH="$HOME/.velo/bin:$PATH"' >> ~/.zshrc
 ```
 
-## 📊 Performance Benchmarks
+## 🎯 Performance Goals
 
-| Operation | Velo | Homebrew | Improvement |
-|-----------|------|----------|-------------|
-| Formula Parse | 1ms | 10ms | **10x faster** |
-| Package Install | 15s | 75s | **5x faster** |
-| Search Results | 5ms | 50ms | **10x faster** |
-| Memory Usage | 20MB | 100MB | **5x less** |
+Velo is designed with performance in mind, targeting improvements in:
+
+- **Formula Parsing**: Swift-native parsing vs Ruby interpretation
+- **Package Installation**: Parallel downloads and optimized extraction
+- **Search Operations**: In-memory indexing with smart caching
+- **Memory Efficiency**: Lazy loading and memory-mapped files
+
+_Note: Actual performance will vary based on system configuration and network conditions._
 
 ## 🏗️ Architecture
 
@@ -77,10 +79,10 @@ VeloCLI       # Command-line interface
 
 ### Key Components
 
-- **FormulaParser**: High-speed Ruby formula parsing with NSRegularExpression
+- **FormulaParser**: Swift-native Ruby formula parsing with regex optimization
 - **BottleDownloader**: Multi-stream parallel downloads with SHA256 verification
-- **FormulaCache**: Binary cache with memory + disk layers for instant lookups
-- **PerformanceOptimizer**: CPU, memory, and network optimizations
+- **FormulaCache**: Binary cache with memory + disk layers for fast lookups
+- **PerformanceOptimizer**: CPU, memory, and network optimization framework
 
 ## 🛠️ Development
 
@@ -207,4 +209,4 @@ Built by developers who were tired of waiting for package operations, Velo lever
 
 ---
 
-**Note**: Velo is in active development. While functional, it's not yet recommended for production use. Please test thoroughly and provide feedback!
+**⚠️ Experimental Software**: Velo is in active development and is not recommended for production use. Performance claims are aspirational and based on design goals rather than comprehensive benchmarking. Please test thoroughly and provide feedback!

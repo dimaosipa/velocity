@@ -9,25 +9,25 @@ final class ArgumentParserTests: XCTestCase {
     // MARK: - Error Cases for Command Parsing
     
     func testInstallCommandMissingArgument() throws {
-        XCTAssertThrowsError(try Install.parseAsRoot([])) { error in
+        XCTAssertThrowsError(try Velo.Install.parseAsRoot([])) { error in
             XCTAssertTrue(error is ArgumentParser.ValidationError || error is CleanExit)
         }
     }
     
     func testSearchCommandMissingArgument() throws {
-        XCTAssertThrowsError(try Search.parseAsRoot([])) { error in
+        XCTAssertThrowsError(try Velo.Search.parseAsRoot([])) { error in
             XCTAssertTrue(error is ArgumentParser.ValidationError || error is CleanExit)
         }
     }
     
     func testInfoCommandMissingArgument() throws {
-        XCTAssertThrowsError(try Info.parseAsRoot([])) { error in
+        XCTAssertThrowsError(try Velo.Info.parseAsRoot([])) { error in
             XCTAssertTrue(error is ArgumentParser.ValidationError || error is CleanExit)
         }
     }
     
     func testInvalidFlag() throws {
-        XCTAssertThrowsError(try Install.parseAsRoot(["wget", "--invalid-flag"])) { error in
+        XCTAssertThrowsError(try Velo.Install.parseAsRoot(["wget", "--invalid-flag"])) { error in
             XCTAssertTrue(error is ArgumentParser.ValidationError || error is CleanExit)
         }
     }
