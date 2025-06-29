@@ -10,6 +10,7 @@ public enum VeloError: LocalizedError {
     case downloadFailed(url: String, error: Error)
     case checksumMismatch(expected: String, actual: String)
     case networkError(Error)
+    case bottleNotAccessible(url: String, reason: String)
     
     // Installation errors
     case installationFailed(package: String, reason: String)
@@ -49,6 +50,8 @@ public enum VeloError: LocalizedError {
             return "Checksum mismatch. Expected: \(expected), got: \(actual)"
         case .networkError(let error):
             return "Network error: \(error.localizedDescription)"
+        case .bottleNotAccessible(let url, let reason):
+            return "Bottle not accessible at \(url): \(reason)"
         case .installationFailed(let package, let reason):
             return "Installation failed for '\(package)': \(reason)"
         case .alreadyInstalled(let package):

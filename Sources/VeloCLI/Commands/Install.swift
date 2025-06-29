@@ -102,12 +102,44 @@ extension Velo {
             // Download bottle
             let tempFile = PathHelper.shared.temporaryFile(prefix: "bottle-\(name)", extension: "tar.gz")
             
-            try await downloader.download(
-                from: bottleURL,
-                to: tempFile,
-                expectedSHA256: bottle.sha256,
-                progress: progressHandler
-            )
+            // Retry download with exponential backoff for transient issues
+            let maxRetries = 2
+            
+            for attempt in 0..<maxRetries {
+                do {
+                    if attempt > 0 {
+                        logInfo("Retrying download (attempt \(attempt + 1)/\(maxRetries))...")
+                        // Exponential backoff: 1s, 2s
+                        try await Task.sleep(nanoseconds: UInt64(pow(2.0, Double(attempt))) * 1_000_000_000)
+                    }
+                    
+                    try await downloader.download(
+                        from: bottleURL,
+                        to: tempFile,
+                        expectedSHA256: bottle.sha256,
+                        progress: progressHandler
+                    )
+                    
+                    break // Success, exit retry loop
+                    
+                } catch VeloError.bottleNotAccessible(let url, let reason) {
+                    // Don't retry for access denied errors
+                    logWarning("Bottle not accessible for \(name): \(reason)")
+                    logWarning("Skipping \(name) installation due to bottle access restrictions.")
+                    logInfo("This may be due to GHCR access limitations or rate limiting.")
+                    logInfo("You can try installing \(name) again later or use an alternative installation method.")
+                    
+                    throw VeloError.bottleNotAccessible(url: url, reason: reason)
+                    
+                } catch {
+                    logWarning("Download failed (attempt \(attempt + 1)/\(maxRetries)): \(error.localizedDescription)")
+                    
+                    if attempt == maxRetries - 1 {
+                        // Last attempt failed, throw the error
+                        throw error
+                    }
+                }
+            }
             
             // Install
             try await installer.install(
@@ -139,6 +171,8 @@ extension Velo {
             
             logInfo("Checking \(runtimeDependencies.count) runtime dependencies...")
             
+            var failedDependencies: [String] = []
+            
             for dependency in runtimeDependencies {
                 let pathHelper = PathHelper.shared
                 
@@ -151,10 +185,35 @@ extension Velo {
                 logInfo("Installing dependency: \(dependency.name)...")
                 
                 // Create a new install instance for the dependency
-                try await installPackage(
-                    name: dependency.name,
-                    skipDeps: true,
-                    verbose: false
+                do {
+                    try await installPackage(
+                        name: dependency.name,
+                        skipDeps: true,
+                        verbose: false
+                    )
+                    logInfo("✓ \(dependency.name) installed successfully")
+                } catch VeloError.bottleNotAccessible(_, let reason) {
+                    logError("Critical dependency \(dependency.name) failed to install: \(reason)")
+                    failedDependencies.append(dependency.name)
+                } catch {
+                    logError("Critical dependency \(dependency.name) failed to install: \(error.localizedDescription)")
+                    failedDependencies.append(dependency.name)
+                }
+            }
+            
+            // If any required dependencies failed, abort the installation
+            if !failedDependencies.isEmpty {
+                logError("Installation aborted due to missing critical dependencies:")
+                for dep in failedDependencies {
+                    logError("  • \(dep)")
+                }
+                logError("")
+                logError("\(formula.name) requires these dependencies to function properly.")
+                logError("Installation aborted to prevent installing a broken package.")
+                
+                throw VeloError.installationFailed(
+                    package: formula.name,
+                    reason: "Missing critical dependencies: \(failedDependencies.joined(separator: ", "))"
                 )
             }
         }

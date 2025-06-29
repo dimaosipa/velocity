@@ -290,13 +290,15 @@ public final class BottleDownloader {
         
         // Check for authentication errors
         if let errors = tokenResponse.errors, !errors.isEmpty {
-            // If access is denied, bottle is likely not accessible
+            // Log the GHCR access issue but don't fail hard - some bottles may not be accessible
             let errorMessages = errors.map { "\($0.code): \($0.message)" }.joined(separator: ", ")
-            throw VeloError.downloadFailed(
+            logWarning("GHCR access denied for \(url.absoluteString): \(errorMessages)")
+            logWarning("Some bottles may not be publicly accessible via GHCR. This is a known limitation.")
+            
+            // Throw a more informative error that can be handled gracefully by the caller
+            throw VeloError.bottleNotAccessible(
                 url: url.absoluteString,
-                error: NSError(domain: "GHCR", code: 403, userInfo: [
-                    NSLocalizedDescriptionKey: "GHCR access denied: \(errorMessages)"
-                ])
+                reason: "GHCR access denied: \(errorMessages)"
             )
         }
         
