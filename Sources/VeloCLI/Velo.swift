@@ -10,6 +10,7 @@ public struct Velo: ParsableCommand {
         subcommands: [
             Velo.Install.self,
             Velo.Uninstall.self,
+            Velo.Switch.self,
             Velo.Info.self,
             Velo.List.self,
             Velo.Search.self,

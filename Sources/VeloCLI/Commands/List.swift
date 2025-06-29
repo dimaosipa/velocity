@@ -64,8 +64,14 @@ extension Velo {
                     let packageVersions = pathHelper.installedVersions(for: package)
                     
                     if versions {
+                        let defaultVersion = pathHelper.getDefaultVersion(for: package)
                         for version in packageVersions {
                             var line = "\(package) \(version)"
+                            
+                            // Mark default version
+                            if version == defaultVersion {
+                                line += " (default)"
+                            }
                             
                             if sizes {
                                 let packageDir = pathHelper.packagePath(for: package, version: version)

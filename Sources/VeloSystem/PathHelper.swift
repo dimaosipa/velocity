@@ -82,10 +82,19 @@ public struct PathHelper {
         return fileManager.fileExists(atPath: packageDir.path)
     }
     
+    public func isSpecificVersionInstalled(_ package: String, version: String) -> Bool {
+        let packageDir = packagePath(for: package, version: version)
+        return fileManager.fileExists(atPath: packageDir.path)
+    }
+    
     // MARK: - Symlink Management
     
     public func symlinkPath(for binary: String) -> URL {
         binPath.appendingPathComponent(binary)
+    }
+    
+    public func versionedSymlinkPath(for binary: String, package: String, version: String) -> URL {
+        binPath.appendingPathComponent("\(binary)@\(version)")
     }
     
     public func createSymlink(from source: URL, to destination: URL) throws {
@@ -141,6 +150,47 @@ public struct PathHelper {
             
             // Create opt symlink for this package
             try createOptSymlink(for: package, version: latestVersion)
+        }
+    }
+    
+    // MARK: - Version Management
+    
+    public func getDefaultVersion(for package: String) -> String? {
+        // Check if there's a stored preference, otherwise use latest
+        let packageVersions = installedVersions(for: package)
+        return packageVersions.last // Return latest as default for now
+    }
+    
+    public func setDefaultVersion(for package: String, version: String) throws {
+        // Verify the version is actually installed
+        guard isSpecificVersionInstalled(package, version: version) else {
+            throw VeloError.formulaNotFound(name: "\(package) v\(version)")
+        }
+        
+        // Update opt symlink to point to the specified version
+        try createOptSymlink(for: package, version: version)
+        
+        // Update default binary symlinks
+        try updateDefaultBinarySymlinks(for: package, version: version)
+    }
+    
+    private func updateDefaultBinarySymlinks(for package: String, version: String) throws {
+        let packageDir = packagePath(for: package, version: version)
+        let binDir = packageDir.appendingPathComponent("bin")
+        
+        guard fileManager.fileExists(atPath: binDir.path) else {
+            return // No binaries to link
+        }
+        
+        let binaries = try fileManager.contentsOfDirectory(atPath: binDir.path)
+            .filter { !$0.hasPrefix(".") }
+        
+        for binary in binaries {
+            let sourcePath = binDir.appendingPathComponent(binary)
+            let defaultSymlinkPath = symlinkPath(for: binary)
+            
+            // Update the default symlink to point to this version
+            try createSymlink(from: sourcePath, to: defaultSymlinkPath)
         }
     }
     

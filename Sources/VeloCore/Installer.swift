@@ -30,9 +30,9 @@ public final class Installer {
         // Ensure Velo directories exist
         try pathHelper.ensureVeloDirectories()
         
-        // Check if already installed
-        if pathHelper.isPackageInstalled(formula.name) {
-            throw VeloError.alreadyInstalled(package: formula.name)
+        // Check if this specific version is already installed
+        if pathHelper.isSpecificVersionInstalled(formula.name, version: formula.version) {
+            throw VeloError.alreadyInstalled(package: "\(formula.name) v\(formula.version)")
         }
         
         // Create package directory
@@ -76,7 +76,7 @@ public final class Installer {
         // Remove all symlinks for this package
         for version in versions {
             let packageDir = pathHelper.packagePath(for: package, version: version)
-            try removeSymlinks(for: package, packageDir: packageDir)
+            try removeSymlinks(for: package, version: version, packageDir: packageDir)
         }
         
         // Remove opt symlink
@@ -84,6 +84,33 @@ public final class Installer {
         
         // Remove package directory
         try fileManager.removeItem(at: packageBaseDir)
+    }
+    
+    public func uninstallVersion(package: String, version: String) throws {
+        guard pathHelper.isSpecificVersionInstalled(package, version: version) else {
+            throw VeloError.formulaNotFound(name: "\(package) v\(version)")
+        }
+        
+        let packageDir = pathHelper.packagePath(for: package, version: version)
+        
+        // Remove symlinks for this specific version
+        try removeSymlinks(for: package, version: version, packageDir: packageDir)
+        
+        // Remove this version's directory
+        try fileManager.removeItem(at: packageDir)
+        
+        // Check remaining versions after removal
+        let remainingVersions = pathHelper.installedVersions(for: package)
+        if remainingVersions.isEmpty {
+            // This was the last version, remove opt symlink
+            try pathHelper.removeOptSymlink(for: package)
+        } else if let latestVersion = remainingVersions.last {
+            // Update opt symlink to point to latest remaining version
+            try pathHelper.createOptSymlink(for: package, version: latestVersion)
+            
+            // Also update default binary symlinks to point to latest version
+            try pathHelper.setDefaultVersion(for: package, version: latestVersion)
+        }
     }
     
     // MARK: - Extraction
@@ -142,15 +169,20 @@ public final class Installer {
         
         for (index, binary) in binaries.enumerated() {
             let sourcePath = binDir.appendingPathComponent(binary)
-            let destinationPath = pathHelper.symlinkPath(for: binary)
             
-            try pathHelper.createSymlink(from: sourcePath, to: destinationPath)
+            // Create versioned symlink (e.g., wget@1.25.0)
+            let versionedPath = pathHelper.versionedSymlinkPath(for: binary, package: formula.name, version: formula.version)
+            try pathHelper.createSymlink(from: sourcePath, to: versionedPath)
+            
+            // Create or update default symlink (e.g., wget)
+            let defaultPath = pathHelper.symlinkPath(for: binary)
+            try pathHelper.createSymlink(from: sourcePath, to: defaultPath)
             
             progress?.linkingDidUpdate(binariesLinked: index + 1, totalBinaries: binaries.count)
         }
     }
     
-    private func removeSymlinks(for package: String, packageDir: URL) throws {
+    private func removeSymlinks(for package: String, version: String, packageDir: URL) throws {
         let binDir = packageDir.appendingPathComponent("bin")
         guard fileManager.fileExists(atPath: binDir.path) else {
             return
@@ -160,10 +192,41 @@ public final class Installer {
             .filter { !$0.hasPrefix(".") }
         
         for binary in binaries {
-            let symlinkPath = pathHelper.symlinkPath(for: binary)
-            if fileManager.fileExists(atPath: symlinkPath.path) {
-                try fileManager.removeItem(at: symlinkPath)
+            // Remove versioned symlink (e.g., wget@1.25.0)
+            let versionedSymlinkPath = pathHelper.versionedSymlinkPath(for: binary, package: package, version: version)
+            if fileManager.fileExists(atPath: versionedSymlinkPath.path) {
+                try fileManager.removeItem(at: versionedSymlinkPath)
             }
+            
+            // Only remove default symlink if it points to this version
+            let defaultSymlinkPath = pathHelper.symlinkPath(for: binary)
+            if fileManager.fileExists(atPath: defaultSymlinkPath.path) {
+                let targetBinary = binDir.appendingPathComponent(binary)
+                if let resolvedPath = try? fileManager.destinationOfSymbolicLink(atPath: defaultSymlinkPath.path),
+                   resolvedPath == targetBinary.path {
+                    try fileManager.removeItem(at: defaultSymlinkPath)
+                    
+                    // Try to find another version to link as default
+                    try updateDefaultSymlinkAfterRemoval(for: package, binary: binary)
+                }
+            }
+        }
+    }
+    
+    private func updateDefaultSymlinkAfterRemoval(for package: String, binary: String) throws {
+        let remainingVersions = pathHelper.installedVersions(for: package)
+        guard let latestVersion = remainingVersions.last else {
+            return // No versions left
+        }
+        
+        let latestPackageDir = pathHelper.packagePath(for: package, version: latestVersion)
+        let latestBinDir = latestPackageDir.appendingPathComponent("bin")
+        let latestBinaryPath = latestBinDir.appendingPathComponent(binary)
+        
+        // Only create default symlink if this binary exists in the latest version
+        if fileManager.fileExists(atPath: latestBinaryPath.path) {
+            let defaultSymlinkPath = pathHelper.symlinkPath(for: binary)
+            try pathHelper.createSymlink(from: latestBinaryPath, to: defaultSymlinkPath)
         }
     }
     
