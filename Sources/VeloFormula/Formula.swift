@@ -99,6 +99,8 @@ public struct Formula: Codable, Equatable {
     /// Get bottle download URL for GHCR
     public func bottleURL(for bottle: Bottle) -> String? {
         // Format: ghcr.io/v2/homebrew/core/FORMULA/blobs/sha256:HASH
-        return "https://ghcr.io/v2/homebrew/core/\(name.lowercased())/blobs/sha256:\(bottle.sha256)"
+        // Convert @ symbols to -at- for GHCR package naming (e.g., openssl@3 -> openssl-at-3)
+        let ghcrName = name.lowercased().replacingOccurrences(of: "@", with: "-at-")
+        return "https://ghcr.io/v2/homebrew/core/\(ghcrName)/blobs/sha256:\(bottle.sha256)"
     }
 }
