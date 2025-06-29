@@ -64,9 +64,18 @@ extension Velo {
                 return
             }
 
-            guard let packageName = package else {
+            guard let packageInput = package else {
                 throw VeloError.formulaNotFound(name: "No package specified")
             }
+
+            // Parse package specification (supports package@version syntax)
+            let packageSpec = PackageSpecification.parse(packageInput)
+            guard packageSpec.isValid else {
+                throw VeloError.formulaNotFound(name: "Invalid package specification: \(packageInput)")
+            }
+
+            // Determine version: inline @version takes precedence over --version flag
+            let finalVersion = packageSpec.version ?? version
 
             // Determine if we should install locally or globally
             let useLocal = !global && context.isProjectContext
@@ -75,8 +84,8 @@ extension Velo {
             let pathHelper = context.getPathHelper(preferLocal: useLocal)
 
             try await installPackage(
-                name: packageName,
-                version: version,
+                name: packageSpec.name,
+                version: finalVersion,
                 context: context,
                 pathHelper: pathHelper,
                 skipDeps: skipDependencies,
@@ -87,8 +96,8 @@ extension Velo {
             // Automatically add to velo.json if in project context and installing locally
             if useLocal && context.isProjectContext {
                 try await addToManifest(
-                    package: packageName,
-                    version: version,
+                    package: packageSpec.name,
+                    version: finalVersion,
                     context: context
                 )
             }

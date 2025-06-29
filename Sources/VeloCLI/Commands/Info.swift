@@ -45,16 +45,23 @@ extension Velo {
             let pathHelper = PathHelper.shared
 
             do {
-                // Find formula
-                guard let formula = try await findFormula(package) else {
-                    logError("Formula not found: \(package)")
+                // Parse package specification (supports package@version syntax)
+                let packageSpec = PackageSpecification.parse(package)
+                guard packageSpec.isValid else {
+                    logError("Invalid package specification: \(package)")
+                    throw ExitCode.failure
+                }
+
+                // Find formula (note: version is ignored for info, we show available version)
+                guard let formula = try await findFormula(packageSpec.name) else {
+                    logError("Formula not found: \(packageSpec.name)")
                     throw ExitCode.failure
                 }
 
                 if installed {
                     // Just show installation status
-                    if pathHelper.isPackageInstalled(package) {
-                        let versions = pathHelper.installedVersions(for: package)
+                    if pathHelper.isPackageInstalled(packageSpec.name) {
+                        let versions = pathHelper.installedVersions(for: packageSpec.name)
                         print("Installed versions: \(versions.joined(separator: ", "))")
                     } else {
                         print("Not installed")
@@ -67,9 +74,9 @@ extension Velo {
                 print("\(formula.homepage)")
 
                 // Installation status
-                let isInstalled = pathHelper.isPackageInstalled(package)
+                let isInstalled = pathHelper.isPackageInstalled(packageSpec.name)
                 if isInstalled {
-                    let versions = pathHelper.installedVersions(for: package)
+                    let versions = pathHelper.installedVersions(for: packageSpec.name)
                     print("\nInstalled: \(versions.joined(separator: ", "))")
 
                     // Verify installation
@@ -142,26 +149,11 @@ extension Velo {
         }
 
         private func findFormula(_ name: String) async throws -> Formula? {
-            // Simulate finding a formula (same as Install command)
-            let parser = FormulaParser()
+            // Use TapManager to find formula (same as Install command)
+            let pathHelper = PathHelper.shared
+            let tapManager = TapManager(pathHelper: pathHelper)
 
-            let testFormulaPath = URL(fileURLWithPath: #file)
-                .deletingLastPathComponent()
-                .deletingLastPathComponent()
-                .deletingLastPathComponent()
-                .deletingLastPathComponent()
-                .deletingLastPathComponent()
-                .appendingPathComponent("Tests")
-                .appendingPathComponent("Fixtures")
-                .appendingPathComponent("Formulae")
-                .appendingPathComponent("\(name).rb")
-
-            if FileManager.default.fileExists(atPath: testFormulaPath.path) {
-                let content = try String(contentsOf: testFormulaPath)
-                return try parser.parse(rubyContent: content, formulaName: name)
-            }
-
-            return nil
+            return try tapManager.findFormula(name)
         }
     }
 }

@@ -121,9 +121,10 @@ public struct FormulaParser {
 
         // Try to extract from URL - match version numbers after dash, slash, or 'v'
         let urlVersionPatterns = [
-            #"[-/]v?(\d+\.\d+(?:\.\d+)*(?:-[\w.]+)?)"#,  // v2.2.26 or 2.2.26
-            #"/(\d+\.\d+(?:\.\d+)*(?:-[\w.]+)?)"#,       // fallback without v
-            #"(\d+\.\d+\.\d+)"#                           // simple three-part version
+            #"[-/]v?(\d+\.\d+(?:\.\d+)*(?:-[\w]+)*)"#,   // v2.2.26 or 2.2.26-beta1 (excluding dots after dashes)
+            #"/(\d+\.\d+(?:\.\d+)*(?:-[\w]+)*)"#,        // fallback without v
+            #"(\d+\.\d+\.\d+)"#,                          // simple three-part version
+            #"/archive/refs/tags/([^/]+)\.tar"#           // GitHub archive URLs (for argon2-style date versions)
         ]
 
         for pattern in urlVersionPatterns {

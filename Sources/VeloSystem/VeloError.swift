@@ -43,6 +43,9 @@ public enum VeloError: LocalizedError {
     // Project context errors
     case notInProjectContext
 
+    // Update errors
+    case updateCheckFailed(reason: String)
+
     public var errorDescription: String? {
         switch self {
         case .formulaNotFound(let name):
@@ -93,6 +96,8 @@ public enum VeloError: LocalizedError {
             return "Failed to rewrite library paths for '\(binary)': \(reason)"
         case .notInProjectContext:
             return "Not in a project context. Run 'velo init' to create a velo.json file."
+        case .updateCheckFailed(let reason):
+            return "Update check failed: \(reason)"
         }
     }
 }

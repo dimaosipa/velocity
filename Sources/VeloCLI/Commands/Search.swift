@@ -83,53 +83,26 @@ extension Velo {
         }
 
         private func searchPackages(term: String, includeDescriptions: Bool) async throws -> [Formula] {
-            // For now, search through our test fixtures
-            let fixturesPath = URL(fileURLWithPath: #file)
-                .deletingLastPathComponent()
-                .deletingLastPathComponent()
-                .deletingLastPathComponent()
-                .deletingLastPathComponent()
-                .deletingLastPathComponent()
-                .appendingPathComponent("Tests")
-                .appendingPathComponent("Fixtures")
-                .appendingPathComponent("Formulae")
+            // Use TapManager to search through actual taps
+            let pathHelper = PathHelper.shared
+            let tapManager = TapManager(pathHelper: pathHelper)
 
+            // Build the formula index for fast searching
+            try await tapManager.buildFullIndex()
+
+            // Search for formula names matching the term
+            let matchingNames = tapManager.searchFormulae(term, includeDescriptions: includeDescriptions)
+
+            // Resolve names to actual Formula objects
             var results: [Formula] = []
-            let parser = FormulaParser()
 
-            if FileManager.default.fileExists(atPath: fixturesPath.path) {
-                let formulaFiles = try FileManager.default.contentsOfDirectory(atPath: fixturesPath.path)
-                    .filter { $0.hasSuffix(".rb") }
-
-                for file in formulaFiles {
-                    let formulaPath = fixturesPath.appendingPathComponent(file)
-                    let formulaName = String(file.dropLast(3)) // Remove .rb
-
-                    // Check if name matches
-                    if formulaName.localizedCaseInsensitiveContains(term) {
-                        do {
-                            let content = try String(contentsOf: formulaPath)
-                            let formula = try parser.parse(rubyContent: content, formulaName: formulaName)
-                            results.append(formula)
-                        } catch {
-                            logVerbose("Failed to parse \(formulaName): \(error)")
-                        }
-                        continue
+            for name in matchingNames {
+                do {
+                    if let formula = try tapManager.findFormula(name) {
+                        results.append(formula)
                     }
-
-                    // Check description if requested
-                    if includeDescriptions {
-                        do {
-                            let content = try String(contentsOf: formulaPath)
-                            let formula = try parser.parse(rubyContent: content, formulaName: formulaName)
-
-                            if formula.description.localizedCaseInsensitiveContains(term) {
-                                results.append(formula)
-                            }
-                        } catch {
-                            logVerbose("Failed to parse \(formulaName): \(error)")
-                        }
-                    }
+                } catch {
+                    logVerbose("Failed to load formula \(name): \(error)")
                 }
             }
 

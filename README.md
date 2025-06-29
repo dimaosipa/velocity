@@ -145,6 +145,7 @@ Tests/
 | `list` | List installed packages | `velo list --versions` |
 | `search` | Search for packages | `velo search http` |
 | `update` | Update repositories | `velo update` |
+| `update-self` | Update velo to latest version | `velo update-self` |
 | `verify` | Check if installed packages match velo.lock | `velo verify` |
 | `doctor` | Check system health | `velo doctor` |
 | `clean` | Clean packages or cache | `velo clean --packages` |
@@ -169,6 +170,24 @@ velo uninstall-self --binary-only
 
 # Uninstall everything (interactive confirmation)
 velo uninstall-self
+```
+
+**Auto-Updates:**
+```bash
+# Check for updates without installing
+velo update-self --check
+
+# Update to latest stable release
+velo update-self
+
+# Update to latest pre-release (beta versions)
+velo update-self --pre-release
+
+# Force update even if on latest version
+velo update-self --force
+
+# Update without creating backup (faster but less safe)
+velo update-self --skip-backup
 ```
 
 **Data Management:**
@@ -473,6 +492,7 @@ BSD-2-Clause License - see [LICENSE](LICENSE) for details.
 - [x] **Multi-version support** - Install and manage multiple versions of packages simultaneously
 - [x] **Local package management** - Project-local .velo directories with velo.json manifests
 - [x] **Enhanced tap management** - Context-aware tap operations with automatic velo.json integration for CI/CD reliability
+- [x] **Auto-updates for Velo itself** - Self-updating mechanism with GitHub releases integration
 
 ### 🚧 In Progress
 
@@ -483,7 +503,6 @@ BSD-2-Clause License - see [LICENSE](LICENSE) for details.
 
 - [ ] **Source builds fallback** - Compile from source when bottles unavailable
 - [ ] **Enhanced bottle sources** - Alternative download mirrors and CDN support
-- [ ] **Auto-updates for Velo itself** - Self-updating mechanism
 - [ ] **Shell completion scripts** - bash/zsh/fish completions
 - [ ] **GUI application** - Native macOS app interface
 

@@ -45,6 +45,9 @@ extension Velo {
             // Check disk space
             warningCount += checkDiskSpace()
 
+            // Check context information (local vs global)
+            checkContextInformation()
+
             // Summary
             print()
             print("Summary:")
@@ -283,6 +286,175 @@ extension Velo {
 
             // TODO: Add more automatic fixes
             print("  ℹ️  Some issues may require manual intervention")
+        }
+
+        private func checkContextInformation() {
+            print("Checking context information...")
+
+            let context = ProjectContext()
+
+            // Current directory
+            let currentDir = FileManager.default.currentDirectoryPath
+            print("  Current directory: \(currentDir)")
+
+            // Project context detection
+            if context.isProjectContext {
+                print("  ✅ In project context (velo.json found)")
+
+                if let projectRoot = context.projectRoot {
+                    print("  📁 Project root: \(projectRoot.path)")
+                }
+
+                // Check velo.json and velo.lock
+                if let manifestPath = context.manifestPath {
+                    let manifestExists = FileManager.default.fileExists(atPath: manifestPath.path)
+                    print("  📄 velo.json: \(manifestPath.path) \(manifestExists ? "✅" : "❌")")
+                }
+
+                if let lockPath = context.lockFilePath {
+                    let lockExists = FileManager.default.fileExists(atPath: lockPath.path)
+                    print("  🔒 velo.lock: \(lockPath.path) \(lockExists ? "✅" : "❌")")
+                }
+
+                // Local .velo directory
+                let localVeloDir = URL(fileURLWithPath: currentDir).appendingPathComponent(".velo")
+                let localVeloDirExists = FileManager.default.fileExists(atPath: localVeloDir.path)
+                print("  📂 Local .velo: \(localVeloDir.path) \(localVeloDirExists ? "✅" : "❌")")
+
+                // Local packages
+                checkLocalPackages()
+
+            } else {
+                print("  ℹ️  In global context (no velo.json found)")
+                print("     Run 'velo init' to create a new project")
+            }
+
+            // Global packages
+            checkGlobalPackages()
+
+            // Path resolution information
+            checkPathResolution()
+        }
+
+        private func checkLocalPackages() {
+            print("  📦 Local packages:")
+
+            let localVeloDir = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+                .appendingPathComponent(".velo")
+            let localCellarDir = localVeloDir.appendingPathComponent("Cellar")
+
+            guard FileManager.default.fileExists(atPath: localCellarDir.path) else {
+                print("     No local packages installed")
+                return
+            }
+
+            do {
+                let packages = try FileManager.default.contentsOfDirectory(atPath: localCellarDir.path)
+                    .filter { !$0.hasPrefix(".") }
+
+                if packages.isEmpty {
+                    print("     No local packages installed")
+                } else {
+                    for package in packages.prefix(5) { // Show first 5
+                        let packageDir = localCellarDir.appendingPathComponent(package)
+                        let versions = (try? FileManager.default.contentsOfDirectory(atPath: packageDir.path)
+                            .filter { !$0.hasPrefix(".") }) ?? []
+                        print("     \(package): \(versions.joined(separator: ", "))")
+                    }
+                    if packages.count > 5 {
+                        print("     ... and \(packages.count - 5) more")
+                    }
+                }
+            } catch {
+                print("     ❌ Failed to read local packages: \(error.localizedDescription)")
+            }
+        }
+
+        private func checkGlobalPackages() {
+            print("  🌍 Global packages:")
+
+            let pathHelper = PathHelper.shared
+            let globalCellarDir = pathHelper.cellarPath
+
+            guard FileManager.default.fileExists(atPath: globalCellarDir.path) else {
+                print("     No global packages installed")
+                return
+            }
+
+            do {
+                let packages = try FileManager.default.contentsOfDirectory(atPath: globalCellarDir.path)
+                    .filter { !$0.hasPrefix(".") }
+
+                if packages.isEmpty {
+                    print("     No global packages installed")
+                } else {
+                    for package in packages.prefix(5) { // Show first 5
+                        let versions = pathHelper.installedVersions(for: package)
+                        print("     \(package): \(versions.joined(separator: ", "))")
+                    }
+                    if packages.count > 5 {
+                        print("     ... and \(packages.count - 5) more")
+                    }
+                }
+            } catch {
+                print("     ❌ Failed to read global packages: \(error.localizedDescription)")
+            }
+        }
+
+        private func checkPathResolution() {
+            print("  🛤️  Path resolution:")
+
+            let pathHelper = PathHelper.shared
+            let context = ProjectContext()
+
+            // Show PATH order
+            if context.isProjectContext {
+                let localBinDir = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+                    .appendingPathComponent(".velo")
+                    .appendingPathComponent("bin")
+
+                if FileManager.default.fileExists(atPath: localBinDir.path) {
+                    print("     1. Local (.velo/bin): \(localBinDir.path)")
+                } else {
+                    print("     1. Local (.velo/bin): Not configured")
+                }
+            }
+
+            print("     \(context.isProjectContext ? "2" : "1"). Global (~/.velo/bin): \(pathHelper.binPath.path)")
+            print("     \(context.isProjectContext ? "3" : "2"). System PATH: /usr/local/bin, /usr/bin, etc.")
+
+            // Example resolution for common tools
+            let commonTools = ["wget", "node", "python"]
+            for tool in commonTools {
+                if let resolvedPath = resolveCommand(tool) {
+                    let isLocal = resolvedPath.contains("/.velo/")
+                    let scope = isLocal ? (resolvedPath.contains("/.velo/bin/") ? "global" : "local") : "system"
+                    print("     \(tool) → \(scope): \(resolvedPath)")
+                } else {
+                    print("     \(tool) → not found")
+                }
+            }
+        }
+
+        private func resolveCommand(_ command: String) -> String? {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/which")
+            process.arguments = [command]
+
+            let pipe = Pipe()
+            process.standardOutput = pipe
+
+            do {
+                try process.run()
+                process.waitUntilExit()
+
+                guard process.terminationStatus == 0 else { return nil }
+
+                let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                return String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            } catch {
+                return nil
+            }
         }
     }
 }

@@ -42,9 +42,9 @@ final class FormulaParserTests: XCTestCase {
         XCTAssertEqual(formula.name, "wget")
         XCTAssertEqual(formula.description, "Internet file retriever")
         XCTAssertEqual(formula.homepage, "https://www.gnu.org/software/wget/")
-        XCTAssertEqual(formula.url, "https://ftp.gnu.org/gnu/wget/wget-1.21.3.tar.gz")
-        XCTAssertEqual(formula.sha256, "5726bb8bc5ca0f6dc7110f6416c4bb7019e2d2ff5bf93d1ca2ffcc6656f220e5")
-        XCTAssertEqual(formula.version, "1.21.3")
+        XCTAssertEqual(formula.url, "https://ftp.gnu.org/gnu/wget/wget-1.25.0.tar.gz")
+        XCTAssertEqual(formula.sha256, "766e48423e79359ea31e41db9e5c289675947a7fcf2efdcedb726ac9d0da3784")
+        XCTAssertEqual(formula.version, "1.25.0")
 
         // Check dependencies
         XCTAssertTrue(formula.dependencies.contains { $0.name == "pkg-config" && $0.type == .build })
@@ -129,7 +129,7 @@ final class FormulaParserTests: XCTestCase {
             ("https://example.com/package-1.2.3.tar.gz", "1.2.3"),
             ("https://github.com/org/repo/archive/v4.5.6.tar.gz", "4.5.6"),
             ("https://example.com/downloads/tool-2.0.0-beta1.tar.gz", "2.0.0-beta1"),
-            ("https://ftp.gnu.org/gnu/wget/wget-1.21.3.tar.gz", "1.21.3")
+            ("https://ftp.gnu.org/gnu/wget/wget-1.25.0.tar.gz", "1.25.0")
         ]
 
         for (url, expectedVersion) in testCases {
@@ -145,6 +145,66 @@ final class FormulaParserTests: XCTestCase {
             let formula = try parser.parse(rubyContent: content, formulaName: "test")
             XCTAssertEqual(formula.version, expectedVersion, "Failed to extract version from URL: \(url)")
         }
+    }
+
+    func testVersionExtractionComprehensive() throws {
+        let testCases = [
+            // Standard semantic versions
+            ("https://ftp.gnu.org/gnu/wget/wget-1.25.0.tar.gz", "1.25.0"),
+            ("https://example.com/package-2.1.3.tar.gz", "2.1.3"),
+            ("https://github.com/user/repo/archive/v4.5.6.tar.gz", "4.5.6"),
+
+            // Pre-release versions
+            ("https://example.com/tool-1.0.0-alpha1.tar.gz", "1.0.0-alpha1"),
+            ("https://example.com/tool-2.0.0-beta1.tar.gz", "2.0.0-beta1"),
+            ("https://example.com/tool-1.5.0-rc2.tar.gz", "1.5.0-rc2"),
+
+            // Four-part versions
+            ("https://example.com/app-1.2.3.4.tar.gz", "1.2.3.4"),
+
+            // GitHub patterns
+            ("https://github.com/user/repo/archive/refs/tags/1.2.3.tar.gz", "1.2.3"),
+            ("https://github.com/user/repo/archive/refs/tags/v2.0.0.tar.gz", "2.0.0"),
+
+            // Different separators
+            ("https://example.com/tool_1.5.2.tar.gz", "1.5.2"),
+            ("https://example.com/downloads/app/1.0.0/source.tar.gz", "1.0.0"),
+
+            // Date-based versions (argon2 style)
+            ("https://github.com/P-H-C/phc-winner-argon2/archive/refs/tags/20190702.tar.gz", "20190702"),
+            ("https://github.com/user/repo/archive/refs/tags/20241225.tar.gz", "20241225")
+        ]
+
+        for (url, expectedVersion) in testCases {
+            let content = """
+            class Test < Formula
+              desc "Test formula"
+              homepage "https://example.com"
+              url "\(url)"
+              sha256 "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            end
+            """
+
+            let formula = try parser.parse(rubyContent: content, formulaName: "test")
+            XCTAssertEqual(formula.version, expectedVersion, "Failed to extract version from URL: \(url)")
+        }
+    }
+
+    func testArgon2VersionExtraction() throws {
+        // Test date-based version extraction for argon2-style formulae
+        let content = """
+        class Argon2 < Formula
+          desc "Password hashing library and CLI utility"
+          homepage "https://github.com/P-H-C/phc-winner-argon2"
+          url "https://github.com/P-H-C/phc-winner-argon2/archive/refs/tags/20190702.tar.gz"
+          sha256 "daf972a89577f8772602bf2eb38b6a3dd3d922bf5724d45e7f9589b5e830442c"
+        end
+        """
+
+        let formula = try parser.parse(rubyContent: content, formulaName: "argon2")
+        XCTAssertEqual(formula.version, "20190702")
+        XCTAssertEqual(formula.name, "argon2")
+        XCTAssertEqual(formula.description, "Password hashing library and CLI utility")
     }
 
     // MARK: - Helper Methods
