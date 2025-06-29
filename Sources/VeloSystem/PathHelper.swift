@@ -116,6 +116,34 @@ public struct PathHelper {
         }
     }
     
+    public func ensureAllOptSymlinks() throws {
+        // Create opt symlinks for all installed packages that don't have them
+        guard fileManager.fileExists(atPath: cellarPath.path) else {
+            return // No packages installed
+        }
+        
+        let installedPackages = try fileManager.contentsOfDirectory(atPath: cellarPath.path)
+            .filter { !$0.hasPrefix(".") }
+        
+        for package in installedPackages {
+            let optSymlinkPath = optPath.appendingPathComponent(package)
+            
+            // Skip if opt symlink already exists
+            if fileManager.fileExists(atPath: optSymlinkPath.path) {
+                continue
+            }
+            
+            // Find the version for this package
+            let packageVersions = installedVersions(for: package)
+            guard let latestVersion = packageVersions.last else { // Use latest version
+                continue
+            }
+            
+            // Create opt symlink for this package
+            try createOptSymlink(for: package, version: latestVersion)
+        }
+    }
+    
     // MARK: - Cache Management
     
     public func cacheFile(for key: String) -> URL {

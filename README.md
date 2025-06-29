@@ -156,18 +156,24 @@ Velo includes comprehensive testing:
 - **User-Space Only**: Never writes to system directories
 - **No Sudo Required**: All operations in `~/.velo/`
 - **SHA256 Verification**: All downloads cryptographically verified
-- **Code Signatures**: Preserves Apple code signatures during installation
+- **Advanced Code Signing**: Handles complex pre-signed binaries with automatic re-signing using ad-hoc signatures
+- **Extended Attribute Handling**: Proper clearance of resource forks and macOS metadata
+- **Graceful Fallbacks**: Installation continues even when some binaries can't be signed
 
 ## 📁 File Layout
 
 ```
 ~/.velo/
 ├── bin/          # Symlinks to binaries (add to PATH)
+├── opt/          # Homebrew-compatible package symlinks
+│   ├── wget -> Cellar/wget/1.25.0
+│   └── openssl@3 -> Cellar/openssl@3/3.5.0
 ├── Cellar/       # Installed packages
-│   └── wget/
-│       └── 1.21.3/
+│   ├── wget/1.25.0/
+│   └── openssl@3/3.5.0/
 ├── cache/        # Formula and download cache
-├── taps/         # Formula repositories
+├── taps/         # Formula repositories (git-based)
+│   └── homebrew/core/
 ├── logs/         # Operation logs
 └── tmp/          # Temporary files
 ```
@@ -189,17 +195,31 @@ Velo includes comprehensive testing:
 
 ## 📄 License
 
-MIT License - see [LICENSE](LICENSE) for details.
+BSD-2-Clause License - see [LICENSE](LICENSE) for details.
 
 ## 🎯 Roadmap
 
-- [ ] Real tap integration (git-based)
-- [ ] Dependency resolution engine
-- [ ] Source builds (bottles unavailable)
-- [ ] Package signing and verification
-- [ ] Auto-updates for Velo itself
-- [ ] Shell completion scripts
-- [ ] GUI application
+### ✅ Completed Features
+
+- [x] **Real tap integration** - Full git-based Homebrew core tap support
+- [x] **Dependency resolution engine** - Complete dependency management with critical dependency tracking
+- [x] **GHCR bottle downloads** - Hierarchical URL support for all package types including @-versioned packages
+- [x] **Library path rewriting** - Automatic @@HOMEBREW_PREFIX@@ and @@HOMEBREW_CELLAR@@ placeholder resolution
+- [x] **Code signing compatibility** - Enhanced signing for complex pre-signed binaries with graceful fallbacks
+- [x] **Homebrew-compatible structure** - /opt symlinks and complete library resolution
+
+### 🚧 In Progress
+
+- [x] **Performance optimizations** - Eliminated redundant operations, smart caching
+- [x] **Complex package support** - Successfully handles packages like gcc, libtiff, imagemagick
+
+### 📅 Planned Features
+
+- [ ] **Source builds fallback** - Compile from source when bottles unavailable
+- [ ] **Enhanced bottle sources** - Alternative download mirrors and CDN support
+- [ ] **Auto-updates for Velo itself** - Self-updating mechanism
+- [ ] **Shell completion scripts** - bash/zsh/fish completions
+- [ ] **GUI application** - Native macOS app interface
 
 ## ⚡ Why Velo?
 

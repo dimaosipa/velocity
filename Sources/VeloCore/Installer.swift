@@ -52,6 +52,9 @@ public final class Installer {
             // Create opt symlink for Homebrew compatibility
             try pathHelper.createOptSymlink(for: formula.name, version: formula.version)
             
+            // Ensure all existing packages have opt symlinks (retroactive fix)
+            try pathHelper.ensureAllOptSymlinks()
+            
             progress?.installationDidComplete(package: formula.name)
             
         } catch {
@@ -311,20 +314,24 @@ public final class Installer {
     }
     
     private func prepareForModification(binaryPath: URL) throws {
-        // Clear extended attributes that might interfere with signing
-        try clearExtendedAttributes(binaryPath: binaryPath)
+        // Make file writable first
+        try makeFileWritable(at: binaryPath)
         
         // Remove existing signature if present
         try removeExistingSignature(binaryPath: binaryPath)
         
-        // Make file writable
-        try makeFileWritable(at: binaryPath)
+        // Clear extended attributes that might interfere with signing
+        try clearExtendedAttributes(binaryPath: binaryPath)
     }
     
     private func clearExtendedAttributes(binaryPath: URL) throws {
         let xattrProcess = Process()
         xattrProcess.executableURL = URL(fileURLWithPath: "/usr/bin/xattr")
         xattrProcess.arguments = ["-c", binaryPath.path]
+        
+        // Suppress all output to avoid noise
+        xattrProcess.standardOutput = Pipe()
+        xattrProcess.standardError = Pipe()
         
         // Ignore errors - some files may not have extended attributes
         try? xattrProcess.run()
