@@ -291,71 +291,34 @@ public final class TapManager {
         
         let parser = FormulaParser()
         var formulae: [Formula] = []
+        let tapsPath = pathHelper.tapsPath
         
-        let coreTapPath = pathHelper.tapsPath.appendingPathComponent("homebrew/core/Formula")
-        
-        if FileManager.default.fileExists(atPath: coreTapPath.path) {
-            logInfo("Parsing formulae from homebrew/core tap...")
+        if FileManager.default.fileExists(atPath: tapsPath.path) {
+            // Process all taps
+            let organizations = try FileManager.default.contentsOfDirectory(atPath: tapsPath.path)
+                .filter { !$0.hasPrefix(".") }
             
-            // Homebrew organizes formulae in subdirectories (a/, b/, c/, etc.)
-            let subdirectories = try FileManager.default.contentsOfDirectory(atPath: coreTapPath.path)
-                .filter { !$0.hasPrefix(".") } // Exclude hidden files
-                .filter { 
-                    var isDirectory: ObjCBool = false
-                    FileManager.default.fileExists(atPath: coreTapPath.appendingPathComponent($0).path, isDirectory: &isDirectory)
-                    return isDirectory.boolValue
-                }
-            
-            var allFormulaFiles: [(path: URL, name: String)] = []
-            
-            // Collect all .rb files from subdirectories
-            for subdir in subdirectories {
-                let subdirPath = coreTapPath.appendingPathComponent(subdir)
-                let files = try FileManager.default.contentsOfDirectory(atPath: subdirPath.path)
-                    .filter { $0.hasSuffix(".rb") }
+            for org in organizations {
+                let orgPath = tapsPath.appendingPathComponent(org)
+                let repos = try FileManager.default.contentsOfDirectory(atPath: orgPath.path)
+                    .filter { !$0.hasPrefix(".") }
                 
-                for file in files {
-                    let formulaPath = subdirPath.appendingPathComponent(file)
-                    let formulaName = String(file.dropLast(3)) // Remove .rb
-                    allFormulaFiles.append((path: formulaPath, name: formulaName))
-                }
-            }
-            
-            let totalFormulae = allFormulaFiles.count
-            var processed = 0
-            logInfo("Found \(totalFormulae) formulae across \(subdirectories.count) directories")
-            
-            // Process formulae in batches to avoid memory issues
-            let batchSize = 100
-            for batch in allFormulaFiles.chunked(into: batchSize) {
-                await withTaskGroup(of: Formula?.self) { group in
-                    for formulaInfo in batch {
-                        group.addTask {
-                            do {
-                                let content = try String(contentsOf: formulaInfo.path)
-                                return try parser.parse(rubyContent: content, formulaName: formulaInfo.name)
-                            } catch {
-                                logWarning("Failed to parse \(formulaInfo.name): \(error)")
-                                return nil
-                            }
-                        }
+                for repo in repos {
+                    let tapName = "\(org)/\(repo)"
+                    let tapPath = orgPath.appendingPathComponent(repo)
+                    let formulaPath = tapPath.appendingPathComponent("Formula")
+                    
+                    guard FileManager.default.fileExists(atPath: formulaPath.path) else {
+                        continue
                     }
                     
-                    for await result in group {
-                        if let formula = result {
-                            formulae.append(formula)
-                        }
-                        processed += 1
-                        
-                        if processed % 100 == 0 {
-                            logInfo("Processed \(processed)/\(totalFormulae) formulae...")
-                        }
-                    }
+                    logInfo("Parsing formulae from \(tapName) tap...")
+                    try await processFormulaeFromTap(tapPath: formulaPath, tapName: tapName, parser: parser, formulae: &formulae)
                 }
             }
         } else {
-            // Fallback to test fixtures if tap not available
-            logWarning("Homebrew core tap not found, using test fixtures...")
+            // Fallback to test fixtures if no taps available
+            logWarning("No taps found, using test fixtures...")
             try await loadTestFixtures(parser: parser, formulae: &formulae)
         }
         
@@ -363,7 +326,97 @@ public final class TapManager {
         try cache.preload(formulae: formulae)
         try index.buildIndex(from: formulae)
         
-        logInfo("Full index built with \(formulae.count) formulae")
+        logInfo("Full index built with \(formulae.count) formulae from all taps")
+    }
+    
+    /// Process formulae from a specific tap
+    private func processFormulaeFromTap(tapPath: URL, tapName: String, parser: FormulaParser, formulae: inout [Formula]) async throws {
+        var allFormulaFiles: [(path: URL, name: String)] = []
+        
+        // Check if tap organizes formulae in subdirectories (like homebrew/core)
+        let items = try FileManager.default.contentsOfDirectory(atPath: tapPath.path)
+            .filter { !$0.hasPrefix(".") }
+        
+        var hasSubdirectories = false
+        for item in items {
+            let itemPath = tapPath.appendingPathComponent(item)
+            var isDirectory: ObjCBool = false
+            if FileManager.default.fileExists(atPath: itemPath.path, isDirectory: &isDirectory) && isDirectory.boolValue {
+                hasSubdirectories = true
+                break
+            }
+        }
+        
+        if hasSubdirectories {
+            // Process subdirectories (like homebrew/core structure)
+            for item in items {
+                let itemPath = tapPath.appendingPathComponent(item)
+                var isDirectory: ObjCBool = false
+                
+                if FileManager.default.fileExists(atPath: itemPath.path, isDirectory: &isDirectory) && isDirectory.boolValue {
+                    let files = try FileManager.default.contentsOfDirectory(atPath: itemPath.path)
+                        .filter { $0.hasSuffix(".rb") }
+                    
+                    for file in files {
+                        let formulaPath = itemPath.appendingPathComponent(file)
+                        let formulaName = String(file.dropLast(3)) // Remove .rb
+                        allFormulaFiles.append((path: formulaPath, name: formulaName))
+                    }
+                } else if item.hasSuffix(".rb") {
+                    // Also check for .rb files in the main Formula directory
+                    let formulaName = String(item.dropLast(3))
+                    allFormulaFiles.append((path: itemPath, name: formulaName))
+                }
+            }
+        } else {
+            // Process .rb files directly in Formula directory
+            let files = items.filter { $0.hasSuffix(".rb") }
+            for file in files {
+                let formulaPath = tapPath.appendingPathComponent(file)
+                let formulaName = String(file.dropLast(3))
+                allFormulaFiles.append((path: formulaPath, name: formulaName))
+            }
+        }
+        
+        let totalFormulae = allFormulaFiles.count
+        if totalFormulae == 0 {
+            logInfo("No formulae found in \(tapName)")
+            return
+        }
+        
+        var processed = 0
+        logInfo("Found \(totalFormulae) formulae in \(tapName)")
+        
+        // Process formulae in batches to avoid memory issues
+        let batchSize = 100
+        for batch in allFormulaFiles.chunked(into: batchSize) {
+            await withTaskGroup(of: Formula?.self) { group in
+                for formulaInfo in batch {
+                    group.addTask {
+                        do {
+                            let content = try String(contentsOf: formulaInfo.path)
+                            return try parser.parse(rubyContent: content, formulaName: formulaInfo.name)
+                        } catch {
+                            logWarning("Failed to parse \(formulaInfo.name) from \(tapName): \(error)")
+                            return nil
+                        }
+                    }
+                }
+                
+                for await result in group {
+                    if let formula = result {
+                        formulae.append(formula)
+                    }
+                    processed += 1
+                    
+                    if processed % 100 == 0 {
+                        logInfo("Processed \(processed)/\(totalFormulae) formulae from \(tapName)...")
+                    }
+                }
+            }
+        }
+        
+        logInfo("Completed processing \(processed) formulae from \(tapName)")
     }
     
     /// Ensure the homebrew/core tap is cloned and up to date
@@ -559,39 +612,60 @@ public final class TapManager {
         return try parseFormulaDirectly(name)
     }
     
-    /// Parse a specific formula directly from the tap without full index
+    /// Parse a specific formula directly from all available taps without full index
     private func parseFormulaDirectly(_ name: String) throws -> Formula? {
-        let coreTapPath = pathHelper.tapsPath.appendingPathComponent("homebrew/core/Formula")
-        
-        // Check if tap exists
-        guard FileManager.default.fileExists(atPath: coreTapPath.path) else {
-            return nil
-        }
-        
         // Ensure cache directory exists
         try pathHelper.ensureDirectoryExists(at: pathHelper.cachePath)
         
-        // Find the formula file by searching through subdirectories
+        let tapsPath = pathHelper.tapsPath
+        guard FileManager.default.fileExists(atPath: tapsPath.path) else {
+            return nil
+        }
+        
+        let parser = FormulaParser()
         let formulaFile = "\(name).rb"
+        
+        // Get all available taps and prioritize them
+        let availableTaps = try getAvailableTaps(from: tapsPath)
+        let prioritizedTaps = prioritizeTaps(availableTaps)
+        
+        // Search taps in priority order
+        for tapInfo in prioritizedTaps {
+            let formulaPath = tapInfo.path.appendingPathComponent("Formula")
+            
+            guard FileManager.default.fileExists(atPath: formulaPath.path) else {
+                continue
+            }
+            
+            // Try to find the formula in this tap
+            if let formula = try findFormulaInTap(name: name, formulaFile: formulaFile, tapPath: formulaPath, parser: parser) {
+                logInfo("Successfully parsed \(name) from \(tapInfo.name) tap")
+                return formula
+            }
+        }
+        
+        return nil
+    }
+    
+    /// Find a formula in a specific tap
+    private func findFormulaInTap(name: String, formulaFile: String, tapPath: URL, parser: FormulaParser) throws -> Formula? {
         var possiblePaths: [URL] = []
         
         // First try common locations
         let firstLetter = String(name.prefix(1)).lowercased()
-        possiblePaths.append(coreTapPath.appendingPathComponent(firstLetter).appendingPathComponent(formulaFile))
-        possiblePaths.append(coreTapPath.appendingPathComponent(formulaFile))
+        possiblePaths.append(tapPath.appendingPathComponent(firstLetter).appendingPathComponent(formulaFile))
+        possiblePaths.append(tapPath.appendingPathComponent(formulaFile))
         
         // If not found, search all subdirectories
-        if let subdirs = try? FileManager.default.contentsOfDirectory(atPath: coreTapPath.path) {
-            for subdir in subdirs {
-                let subdirPath = coreTapPath.appendingPathComponent(subdir)
+        if let subdirs = try? FileManager.default.contentsOfDirectory(atPath: tapPath.path) {
+            for subdir in subdirs.filter({ !$0.hasPrefix(".") }) {
+                let subdirPath = tapPath.appendingPathComponent(subdir)
                 var isDirectory: ObjCBool = false
                 if FileManager.default.fileExists(atPath: subdirPath.path, isDirectory: &isDirectory) && isDirectory.boolValue {
                     possiblePaths.append(subdirPath.appendingPathComponent(formulaFile))
                 }
             }
         }
-        
-        let parser = FormulaParser()
         
         for formulaPath in possiblePaths {
             if FileManager.default.fileExists(atPath: formulaPath.path) {
@@ -602,15 +676,62 @@ public final class TapManager {
                     // Cache the parsed formula for future use
                     try cache.set(formula)
                     
-                    logInfo("Successfully parsed \(name) on demand")
                     return formula
                 } catch {
-                    logWarning("Failed to parse \(name): \(error)")
+                    logWarning("Failed to parse \(name) from \(formulaPath.path): \(error)")
                 }
             }
         }
         
         return nil
+    }
+    
+    /// Get all available taps
+    private func getAvailableTaps(from tapsPath: URL) throws -> [TapReference] {
+        var taps: [TapReference] = []
+        
+        let organizations = try FileManager.default.contentsOfDirectory(atPath: tapsPath.path)
+            .filter { !$0.hasPrefix(".") }
+        
+        for org in organizations {
+            let orgPath = tapsPath.appendingPathComponent(org)
+            let repos = (try? FileManager.default.contentsOfDirectory(atPath: orgPath.path)) ?? []
+            
+            for repo in repos.filter({ !$0.hasPrefix(".") }) {
+                let tapPath = orgPath.appendingPathComponent(repo)
+                let tapName = "\(org)/\(repo)"
+                
+                var isDirectory: ObjCBool = false
+                guard FileManager.default.fileExists(atPath: tapPath.path, isDirectory: &isDirectory),
+                      isDirectory.boolValue else {
+                    continue
+                }
+                
+                taps.append(TapReference(name: tapName, path: tapPath))
+            }
+        }
+        
+        return taps
+    }
+    
+    /// Prioritize taps for formula resolution
+    /// homebrew/core has highest priority, then other homebrew taps, then third-party taps
+    private func prioritizeTaps(_ taps: [TapReference]) -> [TapReference] {
+        return taps.sorted { tap1, tap2 in
+            // homebrew/core always comes first
+            if tap1.name == "homebrew/core" { return true }
+            if tap2.name == "homebrew/core" { return false }
+            
+            // Other homebrew taps come next
+            let tap1IsHomebrew = tap1.name.hasPrefix("homebrew/")
+            let tap2IsHomebrew = tap2.name.hasPrefix("homebrew/")
+            
+            if tap1IsHomebrew && !tap2IsHomebrew { return true }
+            if !tap1IsHomebrew && tap2IsHomebrew { return false }
+            
+            // Within the same category, sort alphabetically
+            return tap1.name.localizedCompare(tap2.name) == .orderedAscending
+        }
     }
     
     public func searchFormulae(_ term: String, includeDescriptions: Bool = false) -> [String] {
@@ -620,4 +741,11 @@ public final class TapManager {
     public func cacheStatistics() -> CacheStatistics {
         return cache.statistics()
     }
+}
+
+// MARK: - Supporting Types
+
+private struct TapReference {
+    let name: String
+    let path: URL
 }

@@ -147,6 +147,7 @@ Tests/
 | `update` | Update repositories | `velo update` |
 | `doctor` | Check system health | `velo doctor` |
 | `clean` | Clean packages or cache | `velo clean --packages` |
+| `tap` | Manage package repositories | `velo tap list` |
 | `install-self` | Install velo to ~/.velo/bin | `velo install-self` |
 | `uninstall-self` | Remove velo and optionally all data | `velo uninstall-self` |
 
@@ -177,6 +178,38 @@ velo clean --cache
 # Clean everything (packages + cache)
 velo clean --all
 ```
+
+### Tap Management
+
+Velo supports multiple package repositories (taps) for accessing different software collections:
+
+**Managing Taps:**
+```bash
+# List all installed taps
+velo tap list
+
+# Add a custom tap
+velo tap add user/homebrew-tools
+
+# Add tap with full URL
+velo tap add https://github.com/user/homebrew-tools.git
+
+# Remove a tap
+velo tap remove user/homebrew-tools
+
+# Update all taps
+velo tap update
+
+# Update specific tap
+velo tap update homebrew/core
+```
+
+**Tap Priority:**
+- `homebrew/core` - Highest priority (default packages)
+- Other homebrew taps - Medium priority
+- Third-party taps - Lower priority
+
+When multiple taps contain the same package, Velo uses the highest priority version.
 
 ### Multi-Version Package Support
 

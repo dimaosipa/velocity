@@ -32,6 +32,7 @@ public enum VeloError: LocalizedError {
     case tapCloneFailed(url: String, error: Error)
     case tapUpdateFailed(tap: String, error: Error)
     case tapNotFound(name: String)
+    case invalidTapName(String)
     
     // Process errors
     case processError(command: String, exitCode: Int, description: String)
@@ -84,6 +85,8 @@ public enum VeloError: LocalizedError {
             return "Failed to update tap '\(tap)': \(error.localizedDescription)"
         case .tapNotFound(let name):
             return "Tap not found: \(name)"
+        case .invalidTapName(let name):
+            return "Invalid tap name: '\(name)'. Use format 'user/repo' or full GitHub URL."
         case .processError(let command, let exitCode, let description):
             return "Process '\(command)' failed with exit code \(exitCode): \(description)"
         case .libraryPathRewriteFailed(let binary, let reason):
