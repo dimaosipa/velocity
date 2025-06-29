@@ -400,19 +400,88 @@ public final class TapManager {
     
     /// Update an existing tap
     private func updateCoreTap(at path: URL) async throws {
-        // Skip update for now to avoid hanging
-        logInfo("Skipping tap update - using existing clone")
-        return
+        logInfo("Updating homebrew/core tap...")
         
-        // TODO: Re-enable when we figure out why git pull hangs
-        /*
+        // Check if we can update (not in detached HEAD state)
+        let statusProcess = Process()
+        statusProcess.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        statusProcess.arguments = ["status", "--porcelain=v2", "--branch"]
+        statusProcess.currentDirectoryURL = path
+        
+        let statusPipe = Pipe()
+        statusProcess.standardOutput = statusPipe
+        statusProcess.standardError = statusPipe
+        
+        do {
+            try statusProcess.run()
+            statusProcess.waitUntilExit()
+            
+            let output = String(data: statusPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+            
+            // Check if we're in detached HEAD state
+            if output.contains("(no branch)") || output.contains("HEAD detached") {
+                logInfo("Tap is in detached HEAD state - skipping update")
+                return
+            }
+            
+            // Perform git pull with timeout
+            try await gitPullWithTimeout(at: path, timeoutSeconds: 30)
+            
+        } catch {
+            logWarning("Failed to update tap: \(error.localizedDescription)")
+            logInfo("Continuing with existing tap content")
+        }
+    }
+    
+    private func gitPullWithTimeout(at path: URL, timeoutSeconds: Int) async throws {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
         process.arguments = ["pull", "--ff-only"]
         process.currentDirectoryURL = path
         
-        try await runProcess(process, description: "Updating homebrew/core tap")
-        */
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = pipe
+        
+        try process.run()
+        
+        // Wait for process with timeout
+        let start = Date()
+        while process.isRunning {
+            if Date().timeIntervalSince(start) > TimeInterval(timeoutSeconds) {
+                process.terminate()
+                // Give it a moment to terminate gracefully
+                try await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
+                
+                // If still running, send SIGKILL via kill command
+                if process.isRunning {
+                    let killProcess = Process()
+                    killProcess.executableURL = URL(fileURLWithPath: "/bin/kill")
+                    killProcess.arguments = ["-9", "\(process.processIdentifier)"]
+                    try? killProcess.run()
+                    killProcess.waitUntilExit()
+                }
+                
+                throw VeloError.processError(
+                    command: "git pull",
+                    exitCode: -1,
+                    description: "Timeout after \(timeoutSeconds) seconds"
+                )
+            }
+            try await Task.sleep(nanoseconds: 100_000_000) // 0.1 seconds
+        }
+        
+        if process.terminationStatus != 0 {
+            let errorData = pipe.fileHandleForReading.readDataToEndOfFile()
+            let errorOutput = String(data: errorData, encoding: .utf8) ?? "Unknown error"
+            throw VeloError.processError(
+                command: "git pull",
+                exitCode: Int(process.terminationStatus),
+                description: errorOutput
+            )
+        }
+        
+        logInfo("Tap updated successfully")
     }
     
     /// Load test fixtures as fallback
@@ -502,12 +571,25 @@ public final class TapManager {
         // Ensure cache directory exists
         try pathHelper.ensureDirectoryExists(at: pathHelper.cachePath)
         
-        // Formula could be in a subdirectory based on first letter
+        // Find the formula file by searching through subdirectories
+        let formulaFile = "\(name).rb"
+        var possiblePaths: [URL] = []
+        
+        // First try common locations
         let firstLetter = String(name.prefix(1)).lowercased()
-        let possiblePaths = [
-            coreTapPath.appendingPathComponent(firstLetter).appendingPathComponent("\(name).rb"),
-            coreTapPath.appendingPathComponent("\(name).rb") // fallback to root
-        ]
+        possiblePaths.append(coreTapPath.appendingPathComponent(firstLetter).appendingPathComponent(formulaFile))
+        possiblePaths.append(coreTapPath.appendingPathComponent(formulaFile))
+        
+        // If not found, search all subdirectories
+        if let subdirs = try? FileManager.default.contentsOfDirectory(atPath: coreTapPath.path) {
+            for subdir in subdirs {
+                let subdirPath = coreTapPath.appendingPathComponent(subdir)
+                var isDirectory: ObjCBool = false
+                if FileManager.default.fileExists(atPath: subdirPath.path, isDirectory: &isDirectory) && isDirectory.boolValue {
+                    possiblePaths.append(subdirPath.appendingPathComponent(formulaFile))
+                }
+            }
+        }
         
         let parser = FormulaParser()
         

@@ -87,7 +87,7 @@ public final class Installer {
         process.executableURL = URL(fileURLWithPath: "/usr/bin/tar")
         process.arguments = [
             "-xf", bottleFile.path,
-            "-C", destination.path,
+            "-C", destination.path,  // Extract to destination directory
             "--strip-components=2"  // Strip 2 levels: package/version/...
         ]
         

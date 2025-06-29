@@ -22,6 +22,9 @@ extension Velo {
         @Option(help: "Install specific version")
         var version: String?
         
+        @Flag(help: "Skip dependency installation (internal use)")
+        var skipDependencies = false
+        
         func run() throws {
             // Use a simple blocking approach for async operations
             let semaphore = DispatchSemaphore(value: 0)
@@ -44,47 +47,60 @@ extension Velo {
         }
         
         private func runAsync() async throws {
+            try await installPackage(name: package, skipDeps: skipDependencies, verbose: true)
+        }
+        
+        private func installPackage(name: String, skipDeps: Bool, verbose: Bool) async throws {
             let downloader = BottleDownloader()
             let installer = Installer()
             let tapManager = TapManager()
             let progressHandler = CLIProgress()
             
-            logInfo("Installing \(package)...")
+            if verbose {
+                logInfo("Installing \(name)...")
+            }
             
             // Ensure we have the homebrew/core tap
             try await tapManager.updateTaps()
             
             // Parse formula
-            guard let formula = try tapManager.findFormula(package) else {
-                throw VeloError.formulaNotFound(name: package)
+            guard let formula = try tapManager.findFormula(name) else {
+                throw VeloError.formulaNotFound(name: name)
             }
             
             // Check if already installed
             if !force {
                 let status = try installer.verifyInstallation(formula: formula)
                 if status.isInstalled {
-                    logInfo("\(formula.name) \(formula.version) is already installed")
+                    if verbose {
+                        logInfo("\(formula.name) \(formula.version) is already installed")
+                    }
                     return
                 }
+            }
+            
+            // Install dependencies first (runtime dependencies only)
+            if !skipDeps {
+                try await installDependencies(for: formula)
             }
             
             // Check for compatible bottle
             guard let bottle = formula.preferredBottle else {
                 throw VeloError.installationFailed(
-                    package: package,
+                    package: name,
                     reason: "No compatible bottle found for Apple Silicon"
                 )
             }
             
             guard let bottleURL = formula.bottleURL(for: bottle) else {
                 throw VeloError.installationFailed(
-                    package: package,
+                    package: name,
                     reason: "Could not generate bottle URL"
                 )
             }
             
             // Download bottle
-            let tempFile = PathHelper.shared.temporaryFile(prefix: "bottle-\(package)", extension: "tar.gz")
+            let tempFile = PathHelper.shared.temporaryFile(prefix: "bottle-\(name)", extension: "tar.gz")
             
             try await downloader.download(
                 from: bottleURL,
@@ -106,9 +122,40 @@ extension Velo {
             Logger.shared.success("\(formula.name) \(formula.version) installed successfully!")
             
             // Show next steps
-            if !PathHelper.shared.isInPath() {
+            if verbose && !PathHelper.shared.isInPath() {
                 logWarning("Add ~/.velo/bin to your PATH to use installed packages:")
                 print("  echo 'export PATH=\"$HOME/.velo/bin:$PATH\"' >> ~/.zshrc")
+            }
+        }
+        
+        // MARK: - Dependency Resolution
+        
+        private func installDependencies(for formula: Formula) async throws {
+            let runtimeDependencies = formula.dependencies.filter { $0.type == .required }
+            
+            if runtimeDependencies.isEmpty {
+                return
+            }
+            
+            logInfo("Checking \(runtimeDependencies.count) runtime dependencies...")
+            
+            for dependency in runtimeDependencies {
+                let pathHelper = PathHelper.shared
+                
+                // Skip if already installed
+                if pathHelper.isPackageInstalled(dependency.name) {
+                    logInfo("✓ \(dependency.name) (already installed)")
+                    continue
+                }
+                
+                logInfo("Installing dependency: \(dependency.name)...")
+                
+                // Create a new install instance for the dependency
+                try await installPackage(
+                    name: dependency.name,
+                    skipDeps: true,
+                    verbose: false
+                )
             }
         }
         

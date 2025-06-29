@@ -140,11 +140,27 @@ public struct FormulaParser {
     private func extractDependencies(from content: String) -> [Formula.Dependency] {
         var dependencies: [Formula.Dependency] = []
         
-        // Match depends_on "..."
-        let dependsPattern = #"depends_on\s+["']([^"']+)["']"#
-        let matches = extractAllMatches(pattern: dependsPattern, from: content)
-        for match in matches {
-            dependencies.append(Formula.Dependency(name: match))
+        // Split content into lines for better parsing
+        let lines = content.components(separatedBy: .newlines)
+        
+        for line in lines {
+            // Skip comment lines
+            if line.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("#") {
+                continue
+            }
+            
+            // Match depends_on with build flag: depends_on "name" => :build
+            let buildDependsPattern = #"depends_on\s+["']([^"']+)["']\s*=>\s*:build"#
+            if let match = extractFirstMatch(pattern: buildDependsPattern, from: line) {
+                dependencies.append(Formula.Dependency(name: match, type: .build))
+                continue
+            }
+            
+            // Match regular depends_on: depends_on "name"
+            let dependsPattern = #"depends_on\s+["']([^"']+)["']"#
+            if let match = extractFirstMatch(pattern: dependsPattern, from: line) {
+                dependencies.append(Formula.Dependency(name: match, type: .required))
+            }
         }
         
         return dependencies
@@ -163,8 +179,14 @@ public struct FormulaParser {
         let bottleBlock = String(content[bottleBlockRange])
         
         // Extract sha256 entries for arm64 platforms
-        let sha256Pattern = #"sha256\s+(\w+):\s*["']([a-fA-F0-9]{64})["']"#
-        let matches = extractAllMatchPairs(pattern: sha256Pattern, from: bottleBlock)
+        // Handle both formats:
+        // - sha256 cellar: :any, arm64_sonoma: "hash"
+        // - sha256 arm64_sonoma: "hash"
+        let simplePattern = #"sha256\s+(arm64_\w+):\s*["']([a-fA-F0-9]{64})["']"#
+        let complexPattern = #"sha256\s+[^,]*,\s*(arm64_\w+):\s*["']([a-fA-F0-9]{64})["']"#
+        
+        var matches = extractAllMatchPairs(pattern: simplePattern, from: bottleBlock)
+        matches.append(contentsOf: extractAllMatchPairs(pattern: complexPattern, from: bottleBlock))
         
         for (platformStr, sha) in matches {
             if let platform = Formula.Bottle.Platform(rawValue: platformStr) {
