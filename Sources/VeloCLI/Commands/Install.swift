@@ -47,10 +47,10 @@ extension Velo {
         }
         
         private func runAsync() async throws {
-            try await installPackage(name: package, skipDeps: skipDependencies, verbose: true)
+            try await installPackage(name: package, skipDeps: skipDependencies, verbose: true, skipTapUpdate: false)
         }
         
-        private func installPackage(name: String, skipDeps: Bool, verbose: Bool) async throws {
+        private func installPackage(name: String, skipDeps: Bool, verbose: Bool, skipTapUpdate: Bool = false) async throws {
             let downloader = BottleDownloader()
             let installer = Installer()
             let tapManager = TapManager()
@@ -60,8 +60,10 @@ extension Velo {
                 logInfo("Installing \(name)...")
             }
             
-            // Ensure we have the homebrew/core tap
-            try await tapManager.updateTaps()
+            // Ensure we have the homebrew/core tap (skip for dependencies)
+            if !skipTapUpdate {
+                try await tapManager.updateTaps()
+            }
             
             // Parse formula
             guard let formula = try tapManager.findFormula(name) else {
@@ -189,7 +191,8 @@ extension Velo {
                     try await installPackage(
                         name: dependency.name,
                         skipDeps: true,
-                        verbose: false
+                        verbose: false,
+                        skipTapUpdate: true
                     )
                     logInfo("✓ \(dependency.name) installed successfully")
                 } catch VeloError.bottleNotAccessible(_, let reason) {

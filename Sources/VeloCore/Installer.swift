@@ -190,8 +190,13 @@ public final class Installer {
     }
     
     private func rewriteBinaryLibraryPaths(binaryPath: URL) async throws {
-        // Make the binary writable before modifying it
-        try makeFileWritable(at: binaryPath)
+        // Check if binary needs library path rewriting
+        guard try await binaryNeedsPathRewriting(binaryPath: binaryPath) else {
+            return // Skip if no placeholders found
+        }
+        
+        // Prepare binary for modification
+        try prepareForModification(binaryPath: binaryPath)
         
         // Use install_name_tool to rewrite library paths
         // Replace @@HOMEBREW_PREFIX@@ with our Velo prefix
@@ -257,7 +262,7 @@ public final class Installer {
         }
         
         // Re-sign the binary after modifying library paths
-        try await resignBinary(binaryPath: binaryPath)
+        try await resignBinaryWithFallback(binaryPath: binaryPath)
     }
     
     private func resignBinary(binaryPath: URL) async throws {
@@ -279,6 +284,72 @@ public final class Installer {
                 binary: binaryPath.lastPathComponent,
                 reason: "Code signing failed: \(errorString)"
             )
+        }
+    }
+    
+    private func binaryNeedsPathRewriting(binaryPath: URL) async throws -> Bool {
+        // Check if binary contains Homebrew placeholders
+        let otoolProcess = Process()
+        otoolProcess.executableURL = URL(fileURLWithPath: "/usr/bin/otool")
+        otoolProcess.arguments = ["-L", binaryPath.path]
+        
+        let otoolPipe = Pipe()
+        otoolProcess.standardOutput = otoolPipe
+        otoolProcess.standardError = otoolPipe
+        
+        try otoolProcess.run()
+        otoolProcess.waitUntilExit()
+        
+        guard otoolProcess.terminationStatus == 0 else {
+            return false // Can't read dependencies, skip
+        }
+        
+        let otoolOutput = otoolPipe.fileHandleForReading.readDataToEndOfFile()
+        let dependencies = String(data: otoolOutput, encoding: .utf8) ?? ""
+        
+        return dependencies.contains("@@HOMEBREW_PREFIX@@") || dependencies.contains("@@HOMEBREW_CELLAR@@")
+    }
+    
+    private func prepareForModification(binaryPath: URL) throws {
+        // Clear extended attributes that might interfere with signing
+        try clearExtendedAttributes(binaryPath: binaryPath)
+        
+        // Remove existing signature if present
+        try removeExistingSignature(binaryPath: binaryPath)
+        
+        // Make file writable
+        try makeFileWritable(at: binaryPath)
+    }
+    
+    private func clearExtendedAttributes(binaryPath: URL) throws {
+        let xattrProcess = Process()
+        xattrProcess.executableURL = URL(fileURLWithPath: "/usr/bin/xattr")
+        xattrProcess.arguments = ["-c", binaryPath.path]
+        
+        // Ignore errors - some files may not have extended attributes
+        try? xattrProcess.run()
+        xattrProcess.waitUntilExit()
+    }
+    
+    private func removeExistingSignature(binaryPath: URL) throws {
+        let codesignProcess = Process()
+        codesignProcess.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
+        codesignProcess.arguments = ["--remove-signature", binaryPath.path]
+        
+        // Ignore errors - some files may not be signed
+        try? codesignProcess.run()
+        codesignProcess.waitUntilExit()
+    }
+    
+    private func resignBinaryWithFallback(binaryPath: URL) async throws {
+        do {
+            try await resignBinary(binaryPath: binaryPath)
+        } catch {
+            // If signing fails, check if binary works without signing
+            let binaryName = binaryPath.lastPathComponent
+            print("⚠️  Warning: Could not sign \(binaryName), but installation will continue")
+            print("   Reason: \(error.localizedDescription)")
+            // Don't throw - allow installation to continue
         }
     }
     
