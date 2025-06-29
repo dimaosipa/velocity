@@ -32,24 +32,32 @@ cp .build/release/velo /usr/local/bin/
 
 ### First Steps
 
+**Global Package Management:**
 ```bash
 # Check system compatibility
 velo doctor
 
-# Search for packages
-velo search wget
-
-# Get package information
-velo info wget
-
-# Install a package
-velo install wget
-
-# List installed packages
-velo list
+# Install packages globally
+velo install wget --global
 
 # Add to PATH (if needed)
 echo 'export PATH="$HOME/.velo/bin:$PATH"' >> ~/.zshrc
+```
+
+**Local Package Management:**
+```bash
+# Initialize a project
+velo init
+
+# Install packages locally for this project
+velo install imagemagick --save
+velo install shellcheck --save-dev
+
+# Install all dependencies from velo.json
+velo install
+
+# Run commands using local packages
+velo exec convert image.jpg output.png
 ```
 
 ## 🎯 Performance Goals
@@ -125,9 +133,12 @@ Tests/
 
 | Command | Description | Example |
 |---------|-------------|---------|
+| `init` | Initialize project with velo.json | `velo init` |
 | `install` | Install a package | `velo install wget` |
 | `uninstall` | Remove a package | `velo uninstall wget` |
 | `switch` | Change default version | `velo switch wget 1.21.3` |
+| `exec` | Execute command with local packages | `velo exec convert image.jpg` |
+| `which` | Show which binary will be used | `velo which convert` |
 | `info` | Show package details | `velo info wget` |
 | `list` | List installed packages | `velo list --versions` |
 | `search` | Search for packages | `velo search http` |
@@ -163,9 +174,107 @@ velo uninstall wget
 ```
 
 **Binary Access:**
+
 - **Default symlinks**: `~/.velo/bin/wget` (points to default version)
 - **Versioned symlinks**: `~/.velo/bin/wget@1.21.3` (specific version access)
 - **Library compatibility**: Each version maintains independent library paths
+
+## 📦 Local Package Management
+
+Velo supports project-local package management similar to npm's node_modules, enabling reproducible builds and CI caching.
+
+### Project Structure
+
+```text
+~/my-project/
+├── .velo/                    # Local package directory (like node_modules)
+│   ├── Cellar/              # Locally installed packages
+│   │   ├── imagemagick/7.1.1-40/
+│   │   └── ffmpeg/7.1.0/
+│   ├── bin/                 # Local binary symlinks
+│   ├── opt/                 # Local opt symlinks
+│   └── cache/               # Local download cache
+├── velo.json                # Package manifest (like package.json)
+├── velo.lock                # Lock file with exact versions
+└── your-project-files/
+```
+
+### Package Manifest (velo.json)
+
+```json
+{
+  "name": "my-project",
+  "version": "1.0.0",
+  "dependencies": {
+    "imagemagick": "^7.1.0",
+    "ffmpeg": "^7.0.0"
+  },
+  "devDependencies": {
+    "shellcheck": "^0.10.0"
+  },
+  "scripts": {
+    "convert": "convert input.jpg output.png",
+    "test": "shellcheck *.sh"
+  }
+}
+```
+
+### Local Package Commands
+
+```bash
+# Initialize a new project
+velo init
+
+# Install packages locally
+velo install imagemagick --save          # Add to dependencies
+velo install shellcheck --save-dev       # Add to devDependencies
+
+# Install all dependencies from velo.json
+velo install
+
+# Execute commands using local packages
+velo exec convert image.jpg output.png   # Uses local imagemagick
+velo exec shellcheck script.sh           # Uses local shellcheck
+
+# Show which version will be used
+velo which convert                        # Shows resolution order
+
+# Install globally (traditional mode)
+velo install wget --global
+```
+
+### Version Resolution Priority
+
+When running commands, Velo resolves binaries in this order:
+
+1. **Local packages**: `./.velo/bin/` (project-specific)
+2. **Parent directories**: `../.velo/bin/` (if enabled)
+3. **Global packages**: `~/.velo/bin/` (user-wide)
+4. **System commands**: `/usr/local/bin`, `/usr/bin` (fallback)
+
+### CI/CD Integration
+
+Perfect for continuous integration with caching:
+
+```yaml
+# GitHub Actions example
+- name: Cache Velo packages
+  uses: actions/cache@v3
+  with:
+    path: .velo
+    key: ${{ runner.os }}-velo-${{ hashFiles('velo.lock') }}
+
+- name: Install dependencies
+  run: velo install
+```
+
+### Benefits
+
+- **Reproducible Builds**: `velo.lock` ensures exact versions
+- **CI Caching**: Cache `.velo` directory based on lock file hash
+- **Project Isolation**: No global pollution between projects
+- **Familiar Workflow**: Similar to npm/yarn ecosystem
+- **Version Conflicts**: Different projects can use different tool versions
 
 ### Performance Features
 
@@ -242,6 +351,7 @@ BSD-2-Clause License - see [LICENSE](LICENSE) for details.
 - [x] **Code signing compatibility** - Enhanced signing for complex pre-signed binaries with graceful fallbacks
 - [x] **Homebrew-compatible structure** - /opt symlinks and complete library resolution
 - [x] **Multi-version support** - Install and manage multiple versions of packages simultaneously
+- [x] **Local package management** - Project-local .velo directories with velo.json manifests
 
 ### 🚧 In Progress
 

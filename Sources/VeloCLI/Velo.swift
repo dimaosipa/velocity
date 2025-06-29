@@ -8,9 +8,12 @@ public struct Velo: ParsableCommand {
         abstract: "A fast, modern package manager for macOS",
         version: "0.1.0",
         subcommands: [
+            Velo.Init.self,
             Velo.Install.self,
             Velo.Uninstall.self,
             Velo.Switch.self,
+            Velo.Exec.self,
+            Velo.Which.self,
             Velo.Info.self,
             Velo.List.self,
             Velo.Search.self,

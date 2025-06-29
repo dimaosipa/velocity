@@ -4,10 +4,14 @@ public struct PathHelper {
     public static let shared = PathHelper()
     
     private let fileManager = FileManager.default
+    private let customHome: URL?
     
     // Base directories
     public var veloHome: URL {
-        fileManager.homeDirectoryForCurrentUser.appendingPathComponent(".velo")
+        if let custom = customHome {
+            return custom
+        }
+        return fileManager.homeDirectoryForCurrentUser.appendingPathComponent(".velo")
     }
     
     public var veloPrefix: URL {
@@ -42,7 +46,13 @@ public struct PathHelper {
         veloHome.appendingPathComponent("opt")
     }
     
-    private init() {}
+    private init(customHome: URL? = nil) {
+        self.customHome = customHome
+    }
+    
+    public init(customHome: URL) {
+        self.customHome = customHome
+    }
     
     // MARK: - Directory Management
     

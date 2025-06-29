@@ -10,8 +10,8 @@ extension Velo {
             abstract: "Install a package"
         )
         
-        @Argument(help: "The package to install")
-        var package: String
+        @Argument(help: "The package to install (optional if velo.json exists)")
+        var package: String?
         
         @Flag(help: "Force reinstall even if already installed")
         var force = false
@@ -24,6 +24,15 @@ extension Velo {
         
         @Flag(help: "Skip dependency installation (internal use)")
         var skipDependencies = false
+        
+        @Flag(help: "Install globally instead of locally")
+        var global = false
+        
+        @Flag(help: "Add to dependencies in velo.json")
+        var save = false
+        
+        @Flag(help: "Add to devDependencies in velo.json")
+        var saveDev = false
         
         func run() throws {
             // Use a simple blocking approach for async operations
@@ -47,12 +56,123 @@ extension Velo {
         }
         
         private func runAsync() async throws {
-            try await installPackage(name: package, skipDeps: skipDependencies, verbose: true, skipTapUpdate: false)
+            let context = ProjectContext()
+            
+            // If no package specified, try to install from velo.json
+            if package == nil {
+                try await installFromManifest(context: context)
+                return
+            }
+            
+            guard let packageName = package else {
+                throw VeloError.formulaNotFound(name: "No package specified")
+            }
+            
+            // Determine if we should install locally or globally
+            let useLocal = !global && context.isProjectContext
+            
+            // Get appropriate PathHelper
+            let pathHelper = context.getPathHelper(preferLocal: useLocal)
+            
+            try await installPackage(
+                name: packageName,
+                version: version,
+                context: context,
+                pathHelper: pathHelper,
+                skipDeps: skipDependencies,
+                verbose: true,
+                skipTapUpdate: false
+            )
+            
+            // Add to velo.json if requested
+            if (save || saveDev) && context.isProjectContext {
+                try await addToManifest(
+                    package: packageName,
+                    version: version,
+                    isDev: saveDev,
+                    context: context
+                )
+            }
         }
         
-        private func installPackage(name: String, skipDeps: Bool, verbose: Bool, skipTapUpdate: Bool = false) async throws {
+        private func installFromManifest(context: ProjectContext) async throws {
+            guard context.isProjectContext else {
+                logError("No velo.json found. Run 'velo init' to create one or specify a package name.")
+                throw ExitCode.failure
+            }
+            
+            guard let manifestPath = context.manifestPath else {
+                throw VeloError.notInProjectContext
+            }
+            
+            logInfo("Installing packages from velo.json...")
+            
+            let manifestManager = VeloManifestManager()
+            let manifest = try manifestManager.read(from: manifestPath)
+            
+            let allDeps = manifestManager.getAllDependencies(from: manifest, includeDev: !global)
+            
+            if allDeps.isEmpty {
+                print("No dependencies found in velo.json")
+                return
+            }
+            
+            let pathHelper = context.getPathHelper(preferLocal: !global)
+            
+            logInfo("Installing \(allDeps.count) packages...")
+            
+            for (packageName, versionSpec) in allDeps {
+                try await installPackage(
+                    name: packageName,
+                    version: versionSpec == "*" ? nil : versionSpec,
+                    context: context,
+                    pathHelper: pathHelper,
+                    skipDeps: false,
+                    verbose: false,
+                    skipTapUpdate: true // Skip after first update
+                )
+            }
+            
+            Logger.shared.success("All packages installed successfully!")
+        }
+        
+        private func addToManifest(
+            package: String,
+            version: String?,
+            isDev: Bool,
+            context: ProjectContext
+        ) async throws {
+            guard let manifestPath = context.manifestPath else {
+                return // Not in project context, skip
+            }
+            
+            let manifestManager = VeloManifestManager()
+            
+            // Use the version we installed, or "*" if no specific version
+            let versionToSave = version ?? "*"
+            
+            try manifestManager.addDependency(
+                package,
+                version: versionToSave,
+                isDev: isDev,
+                to: manifestPath
+            )
+            
+            let depType = isDev ? "devDependencies" : "dependencies"
+            logInfo("Added \(package)@\(versionToSave) to \(depType)")
+        }
+        
+        private func installPackage(
+            name: String,
+            version: String? = nil,
+            context: ProjectContext,
+            pathHelper: PathHelper,
+            skipDeps: Bool,
+            verbose: Bool,
+            skipTapUpdate: Bool = false
+        ) async throws {
             let downloader = BottleDownloader()
-            let installer = Installer()
+            let installer = Installer(pathHelper: pathHelper)
             let tapManager = TapManager()
             let progressHandler = CLIProgress()
             
@@ -83,7 +203,7 @@ extension Velo {
             
             // Install dependencies first (runtime dependencies only)
             if !skipDeps {
-                try await installDependencies(for: formula)
+                try await installDependencies(for: formula, context: context, pathHelper: pathHelper)
             }
             
             // Check for compatible bottle
@@ -164,7 +284,11 @@ extension Velo {
         
         // MARK: - Dependency Resolution
         
-        private func installDependencies(for formula: Formula) async throws {
+        private func installDependencies(
+            for formula: Formula,
+            context: ProjectContext,
+            pathHelper: PathHelper
+        ) async throws {
             let runtimeDependencies = formula.dependencies.filter { $0.type == .required }
             
             if runtimeDependencies.isEmpty {
@@ -176,8 +300,6 @@ extension Velo {
             var failedDependencies: [String] = []
             
             for dependency in runtimeDependencies {
-                let pathHelper = PathHelper.shared
-                
                 // Skip if already installed
                 if pathHelper.isPackageInstalled(dependency.name) {
                     logInfo("✓ \(dependency.name) (already installed)")
@@ -190,6 +312,9 @@ extension Velo {
                 do {
                     try await installPackage(
                         name: dependency.name,
+                        version: nil,
+                        context: context,
+                        pathHelper: pathHelper,
                         skipDeps: true,
                         verbose: false,
                         skipTapUpdate: true
