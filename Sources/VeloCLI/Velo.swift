@@ -8,15 +8,15 @@ public struct Velo: ParsableCommand {
         abstract: "A fast, modern package manager for macOS",
         version: "0.1.0",
         subcommands: [
-            Install.self,
-            Uninstall.self,
-            Info.self,
-            List.self,
-            Search.self,
-            Update.self,
-            Doctor.self
+            Velo.Install.self,
+            Velo.Uninstall.self,
+            Velo.Info.self,
+            Velo.List.self,
+            Velo.Search.self,
+            Velo.Update.self,
+            Velo.Doctor.self
         ],
-        defaultSubcommand: Install.self
+        defaultSubcommand: Velo.Doctor.self
     )
     
     @Flag(name: .shortAndLong, help: "Enable verbose output")
@@ -29,10 +29,6 @@ public struct Velo: ParsableCommand {
     var quiet = false
     
     public init() {}
-    
-    public mutating func run() throws {
-        setupLogging()
-    }
     
     private func setupLogging() {
         let logger = Logger.shared

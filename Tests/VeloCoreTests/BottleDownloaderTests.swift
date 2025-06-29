@@ -2,6 +2,7 @@ import XCTest
 import Foundation
 @testable import VeloCore
 @testable import VeloSystem
+@testable import VeloIntegrationTests // For TestUtilities
 
 final class BottleDownloaderTests: XCTestCase {
     var downloader: BottleDownloader!

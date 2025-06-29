@@ -30,6 +30,10 @@ public enum VeloError: LocalizedError {
     // Tap errors
     case tapCloneFailed(url: String, error: Error)
     case tapUpdateFailed(tap: String, error: Error)
+    case tapNotFound(name: String)
+    
+    // Process errors
+    case processError(command: String, exitCode: Int, description: String)
     
     public var errorDescription: String? {
         switch self {
@@ -69,6 +73,10 @@ public enum VeloError: LocalizedError {
             return "Failed to clone tap from \(url): \(error.localizedDescription)"
         case .tapUpdateFailed(let tap, let error):
             return "Failed to update tap '\(tap)': \(error.localizedDescription)"
+        case .tapNotFound(let name):
+            return "Tap not found: \(name)"
+        case .processError(let command, let exitCode, let description):
+            return "Process '\(command)' failed with exit code \(exitCode): \(description)"
         }
     }
 }

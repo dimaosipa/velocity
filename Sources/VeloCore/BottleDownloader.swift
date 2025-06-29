@@ -36,23 +36,33 @@ public final class BottleDownloader {
             throw VeloError.downloadFailed(url: url, error: URLError(.badURL))
         }
         
-        // Check if we can do range requests
-        let supportsRanges = try await checkRangeSupport(url: downloadURL)
-        
-        if supportsRanges {
-            try await parallelDownload(
+        // For GHCR, we need special handling due to authentication
+        if url.contains("ghcr.io") {
+            try await downloadFromGHCR(
                 url: downloadURL,
-                destination: destination,
+                to: destination,
                 expectedSHA256: expectedSHA256,
                 progress: progress
             )
         } else {
-            try await simpleDownload(
-                url: downloadURL,
-                destination: destination,
-                expectedSHA256: expectedSHA256,
-                progress: progress
-            )
+            // Check if we can do range requests
+            let supportsRanges = try await checkRangeSupport(url: downloadURL)
+            
+            if supportsRanges {
+                try await parallelDownload(
+                    url: downloadURL,
+                    destination: destination,
+                    expectedSHA256: expectedSHA256,
+                    progress: progress
+                )
+            } else {
+                try await simpleDownload(
+                    url: downloadURL,
+                    destination: destination,
+                    expectedSHA256: expectedSHA256,
+                    progress: progress
+                )
+            }
         }
     }
     
@@ -64,6 +74,10 @@ public final class BottleDownloader {
         expectedSHA256: String?,
         progress: DownloadProgress?
     ) async throws {
+        // Create parent directory if needed
+        let parentDir = destination.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: parentDir, withIntermediateDirectories: true, attributes: nil)
+        
         let (tempURL, response) = try await session.download(from: url)
         
         let totalSize = response.expectedContentLength
@@ -190,6 +204,92 @@ public final class BottleDownloader {
         }
         
         try data.write(to: destination)
+    }
+    
+    // MARK: - GHCR Download
+    
+    private func downloadFromGHCR(
+        url: URL,
+        to destination: URL,
+        expectedSHA256: String?,
+        progress: DownloadProgress?
+    ) async throws {
+        // First, get the authentication token
+        var initialRequest = URLRequest(url: url)
+        initialRequest.httpMethod = "HEAD"
+        
+        let (_, initialResponse) = try await session.data(for: initialRequest)
+        
+        guard let httpResponse = initialResponse as? HTTPURLResponse,
+              httpResponse.statusCode == 401,
+              let authHeader = httpResponse.allHeaderFields["Www-Authenticate"] as? String else {
+            // If no auth required, just download normally
+            try await simpleDownload(url: url, destination: destination, expectedSHA256: expectedSHA256, progress: progress)
+            return
+        }
+        
+        // Extract token endpoint details
+        let components = authHeader.components(separatedBy: ",")
+        var realm = ""
+        var scope = ""
+        var service = ""
+        
+        for component in components {
+            if component.contains("realm=") {
+                realm = component.replacingOccurrences(of: "Bearer realm=", with: "")
+                    .replacingOccurrences(of: "\"", with: "")
+                    .trimmingCharacters(in: .whitespaces)
+            } else if component.contains("scope=") {
+                scope = component.replacingOccurrences(of: "scope=", with: "")
+                    .replacingOccurrences(of: "\"", with: "")
+                    .trimmingCharacters(in: .whitespaces)
+            } else if component.contains("service=") {
+                service = component.replacingOccurrences(of: "service=", with: "")
+                    .replacingOccurrences(of: "\"", with: "")
+                    .trimmingCharacters(in: .whitespaces)
+            }
+        }
+        
+        // Get anonymous token
+        let tokenURL = "\(realm)?scope=\(scope)&service=\(service)"
+        guard let tokenEndpoint = URL(string: tokenURL) else {
+            throw VeloError.downloadFailed(url: url.absoluteString, error: URLError(.badURL))
+        }
+        
+        let (tokenData, _) = try await session.data(from: tokenEndpoint)
+        
+        struct TokenResponse: Codable {
+            let token: String
+        }
+        
+        let tokenResponse = try JSONDecoder().decode(TokenResponse.self, from: tokenData)
+        
+        // Now download with authentication
+        var authenticatedRequest = URLRequest(url: url)
+        authenticatedRequest.setValue("Bearer \(tokenResponse.token)", forHTTPHeaderField: "Authorization")
+        
+        // Create parent directory if needed
+        let parentDir = destination.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: parentDir, withIntermediateDirectories: true, attributes: nil)
+        
+        let (tempURL, response) = try await session.download(for: authenticatedRequest)
+        
+        let totalSize = response.expectedContentLength
+        progress?.downloadDidStart(url: url.absoluteString, totalSize: totalSize > 0 ? totalSize : nil)
+        
+        // Move to destination
+        try FileManager.default.moveItem(at: tempURL, to: destination)
+        
+        // Verify checksum if provided
+        if let expectedSHA256 = expectedSHA256 {
+            let actualSHA256 = try computeSHA256(of: destination)
+            if actualSHA256 != expectedSHA256 {
+                try? FileManager.default.removeItem(at: destination)
+                throw VeloError.checksumMismatch(expected: expectedSHA256, actual: actualSHA256)
+            }
+        }
+        
+        progress?.downloadDidComplete(url: url.absoluteString)
     }
     
     // MARK: - Helper Methods

@@ -16,6 +16,27 @@ extension Velo {
         var force = false
         
         func run() throws {
+            // Use a simple blocking approach for async operations
+            let semaphore = DispatchSemaphore(value: 0)
+            var thrownError: Error?
+            
+            Task {
+                do {
+                    try await self.runAsync()
+                } catch {
+                    thrownError = error
+                }
+                semaphore.signal()
+            }
+            
+            semaphore.wait()
+            
+            if let error = thrownError {
+                throw error
+            }
+        }
+        
+        private func runAsync() async throws {
             let installer = Installer()
             let pathHelper = PathHelper.shared
             

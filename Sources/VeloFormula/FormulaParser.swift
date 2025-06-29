@@ -53,15 +53,28 @@ public struct FormulaParser {
         let pattern = #"^\s*url\s+["']([^"']+)["']"#
         let lines = content.components(separatedBy: .newlines)
         var inBottleBlock = false
+        var inHeadBlock = false
         
+        // First pass: look for main URL (not in bottle or head blocks)
         for line in lines {
             if line.contains("bottle do") {
                 inBottleBlock = true
-            } else if line.contains("end") && inBottleBlock {
+            } else if line.contains("head do") {
+                inHeadBlock = true
+            } else if line.contains("end") && (inBottleBlock || inHeadBlock) {
                 inBottleBlock = false
-            } else if !inBottleBlock,
+                inHeadBlock = false
+            } else if !inBottleBlock && !inHeadBlock,
                       let match = extractFirstMatch(pattern: pattern, from: line) {
                 return match
+            }
+        }
+        
+        // For Git-based formulae without main URL, construct from tag/revision info
+        if content.contains("tag:") {
+            let gitUrlPattern = #"url\s+["']([^"']+\.git)["']"#
+            if let gitUrl = extractFirstMatch(pattern: gitUrlPattern, from: content) {
+                return gitUrl
             }
         }
         
@@ -84,6 +97,12 @@ public struct FormulaParser {
             }
         }
         
+        // For Git-based formulae, return a placeholder SHA256
+        // The actual source will be cloned, not downloaded as a tarball
+        if content.contains("git") && (content.contains("tag:") || content.contains("revision:")) {
+            return "0000000000000000000000000000000000000000000000000000000000000000"
+        }
+        
         throw VeloError.formulaParseError(formula: "unknown", details: "Could not find SHA256")
     }
     
@@ -94,10 +113,23 @@ public struct FormulaParser {
             return match
         }
         
-        // Try to extract from URL
-        let urlVersionPattern = #"/(\d+\.\d+(?:\.\d+)*(?:-[\w.]+)?)"#
-        if let match = extractFirstMatch(pattern: urlVersionPattern, from: url) {
+        // Try to extract from tag field (for Git-based formulae)
+        let tagPattern = #"tag:\s*["']v?([^"']+)["']"#
+        if let match = extractFirstMatch(pattern: tagPattern, from: content) {
             return match
+        }
+        
+        // Try to extract from URL - match version numbers after dash, slash, or 'v'
+        let urlVersionPatterns = [
+            #"[-/]v?(\d+\.\d+(?:\.\d+)*(?:-[\w.]+)?)"#,  // v2.2.26 or 2.2.26
+            #"/(\d+\.\d+(?:\.\d+)*(?:-[\w.]+)?)"#,       // fallback without v
+            #"(\d+\.\d+\.\d+)"#                           // simple three-part version
+        ]
+        
+        for pattern in urlVersionPatterns {
+            if let match = extractFirstMatch(pattern: pattern, from: url) {
+                return match
+            }
         }
         
         throw VeloError.formulaParseError(formula: "unknown", details: "Could not determine version")

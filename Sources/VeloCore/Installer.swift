@@ -88,7 +88,7 @@ public final class Installer {
         process.arguments = [
             "-xf", bottleFile.path,
             "-C", destination.path,
-            "--strip-components=1"
+            "--strip-components=2"  // Strip 2 levels: package/version/...
         ]
         
         let pipe = Pipe()

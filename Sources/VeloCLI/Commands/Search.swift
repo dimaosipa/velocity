@@ -5,7 +5,7 @@ import VeloFormula
 import VeloSystem
 
 extension Velo {
-    struct Search: AsyncParsableCommand {
+    struct Search: ParsableCommand {
         static let configuration = CommandConfiguration(
             abstract: "Search for packages"
         )
@@ -19,7 +19,28 @@ extension Velo {
         @Flag(help: "Search descriptions as well as names")
         var descriptions = false
         
-        func run() async throws {
+        func run() throws {
+            // Use a simple blocking approach for async operations
+            let semaphore = DispatchSemaphore(value: 0)
+            var thrownError: Error?
+            
+            Task {
+                do {
+                    try await self.runAsync()
+                } catch {
+                    thrownError = error
+                }
+                semaphore.signal()
+            }
+            
+            semaphore.wait()
+            
+            if let error = thrownError {
+                throw error
+            }
+        }
+        
+        private func runAsync() async throws {
             logInfo("Searching for '\(term)'...")
             
             do {

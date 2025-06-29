@@ -1,6 +1,7 @@
 import XCTest
 @testable import VeloFormula
 @testable import VeloCore
+@testable import VeloSystem
 
 final class FormulaParserTests: XCTestCase {
     var parser: FormulaParser!

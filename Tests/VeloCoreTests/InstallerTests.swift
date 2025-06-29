@@ -3,6 +3,7 @@ import Foundation
 @testable import VeloCore
 @testable import VeloFormula
 @testable import VeloSystem
+@testable import VeloIntegrationTests // For TestUtilities
 
 final class InstallerTests: XCTestCase {
     var installer: Installer!

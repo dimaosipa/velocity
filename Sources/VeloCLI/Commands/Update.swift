@@ -4,7 +4,7 @@ import VeloCore
 import VeloSystem
 
 extension Velo {
-    struct Update: AsyncParsableCommand {
+    struct Update: ParsableCommand {
         static let configuration = CommandConfiguration(
             abstract: "Update formula repositories and upgrade packages"
         )
@@ -18,7 +18,28 @@ extension Velo {
         @Argument(help: "Specific packages to update (leave empty for all)")
         var packages: [String] = []
         
-        func run() async throws {
+        func run() throws {
+            // Use a simple blocking approach for async operations
+            let semaphore = DispatchSemaphore(value: 0)
+            var thrownError: Error?
+            
+            Task {
+                do {
+                    try await self.runAsync()
+                } catch {
+                    thrownError = error
+                }
+                semaphore.signal()
+            }
+            
+            semaphore.wait()
+            
+            if let error = thrownError {
+                throw error
+            }
+        }
+        
+        private func runAsync() async throws {
             logInfo("Updating Velo...")
             
             if !repositoryOnly {

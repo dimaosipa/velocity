@@ -5,7 +5,7 @@ import VeloFormula
 import VeloSystem
 
 extension Velo {
-    struct Install: AsyncParsableCommand {
+    struct Install: ParsableCommand {
         static let configuration = CommandConfiguration(
             abstract: "Install a package"
         )
@@ -22,102 +22,97 @@ extension Velo {
         @Option(help: "Install specific version")
         var version: String?
         
-        func run() async throws {
+        func run() throws {
+            // Use a simple blocking approach for async operations
+            let semaphore = DispatchSemaphore(value: 0)
+            var thrownError: Error?
+            
+            Task {
+                do {
+                    try await self.runAsync()
+                } catch {
+                    thrownError = error
+                }
+                semaphore.signal()
+            }
+            
+            semaphore.wait()
+            
+            if let error = thrownError {
+                throw error
+            }
+        }
+        
+        private func runAsync() async throws {
             let downloader = BottleDownloader()
             let installer = Installer()
+            let tapManager = TapManager()
             let progressHandler = CLIProgress()
             
             logInfo("Installing \(package)...")
             
-            do {
-                // Parse formula
-                guard let formula = try await findFormula(package) else {
-                    throw VeloError.formulaNotFound(name: package)
+            // Ensure we have the homebrew/core tap
+            try await tapManager.updateTaps()
+            
+            // Parse formula
+            guard let formula = try tapManager.findFormula(package) else {
+                throw VeloError.formulaNotFound(name: package)
+            }
+            
+            // Check if already installed
+            if !force {
+                let status = try installer.verifyInstallation(formula: formula)
+                if status.isInstalled {
+                    logInfo("\(formula.name) \(formula.version) is already installed")
+                    return
                 }
-                
-                // Check if already installed
-                if !force {
-                    let status = try installer.verifyInstallation(formula: formula)
-                    if status.isInstalled {
-                        logInfo("\(formula.name) \(formula.version) is already installed")
-                        return
-                    }
-                }
-                
-                // Check for compatible bottle
-                guard let bottle = formula.preferredBottle else {
-                    throw VeloError.installationFailed(
-                        package: package,
-                        reason: "No compatible bottle found for Apple Silicon"
-                    )
-                }
-                
-                guard let bottleURL = formula.bottleURL(for: bottle) else {
-                    throw VeloError.installationFailed(
-                        package: package,
-                        reason: "Could not generate bottle URL"
-                    )
-                }
-                
-                // Download bottle
-                let tempFile = PathHelper.shared.temporaryFile(prefix: "bottle-\(package)", extension: "tar.gz")
-                
-                try await downloader.download(
-                    from: bottleURL,
-                    to: tempFile,
-                    expectedSHA256: bottle.sha256,
-                    progress: progressHandler
+            }
+            
+            // Check for compatible bottle
+            guard let bottle = formula.preferredBottle else {
+                throw VeloError.installationFailed(
+                    package: package,
+                    reason: "No compatible bottle found for Apple Silicon"
                 )
-                
-                // Install
-                try await installer.install(
-                    formula: formula,
-                    from: tempFile,
-                    progress: progressHandler
+            }
+            
+            guard let bottleURL = formula.bottleURL(for: bottle) else {
+                throw VeloError.installationFailed(
+                    package: package,
+                    reason: "Could not generate bottle URL"
                 )
-                
-                // Clean up
-                try? FileManager.default.removeItem(at: tempFile)
-                
-                Logger.shared.success("\(formula.name) \(formula.version) installed successfully!")
-                
-                // Show next steps
-                if !PathHelper.shared.isInPath() {
-                    logWarning("Add ~/.velo/bin to your PATH to use installed packages:")
-                    print("  echo 'export PATH=\"$HOME/.velo/bin:$PATH\"' >> ~/.zshrc")
-                }
-                
-            } catch {
-                logError("Installation failed: \(error.localizedDescription)")
-                throw ExitCode.failure
+            }
+            
+            // Download bottle
+            let tempFile = PathHelper.shared.temporaryFile(prefix: "bottle-\(package)", extension: "tar.gz")
+            
+            try await downloader.download(
+                from: bottleURL,
+                to: tempFile,
+                expectedSHA256: bottle.sha256,
+                progress: progressHandler
+            )
+            
+            // Install
+            try await installer.install(
+                formula: formula,
+                from: tempFile,
+                progress: progressHandler
+            )
+            
+            // Clean up
+            try? FileManager.default.removeItem(at: tempFile)
+            
+            Logger.shared.success("\(formula.name) \(formula.version) installed successfully!")
+            
+            // Show next steps
+            if !PathHelper.shared.isInPath() {
+                logWarning("Add ~/.velo/bin to your PATH to use installed packages:")
+                print("  echo 'export PATH=\"$HOME/.velo/bin:$PATH\"' >> ~/.zshrc")
             }
         }
         
-        private func findFormula(_ name: String) async throws -> Formula? {
-            // For now, simulate finding a formula
-            // In a real implementation, this would search the tap
-            let parser = FormulaParser()
-            
-            // Try to load from fixtures for testing
-            let testFormulaPath = URL(fileURLWithPath: #file)
-                .deletingLastPathComponent()
-                .deletingLastPathComponent()
-                .deletingLastPathComponent()
-                .deletingLastPathComponent()
-                .appendingPathComponent("Tests")
-                .appendingPathComponent("Fixtures")
-                .appendingPathComponent("Formulae")
-                .appendingPathComponent("\(name).rb")
-            
-            if FileManager.default.fileExists(atPath: testFormulaPath.path) {
-                let content = try String(contentsOf: testFormulaPath)
-                return try parser.parse(rubyContent: content, formulaName: name)
-            }
-            
-            return nil
-        }
     }
-}
 
 // MARK: - Progress Handler
 
@@ -197,4 +192,5 @@ private class CLIProgress: DownloadProgress, InstallationProgress {
         formatter.countStyle = .binary
         return formatter.string(fromByteCount: bytes)
     }
+}
 }
