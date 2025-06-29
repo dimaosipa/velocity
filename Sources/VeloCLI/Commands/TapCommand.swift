@@ -31,6 +31,9 @@ extension Velo.Tap {
         @Flag(help: "Show detailed information including URLs")
         var verbose = false
 
+        @Flag(help: "List global taps instead of local")
+        var global = false
+
         func run() throws {
             let semaphore = DispatchSemaphore(value: 0)
             var thrownError: Error?
@@ -52,7 +55,13 @@ extension Velo.Tap {
         }
 
         private func runAsync() async throws {
-            let pathHelper = PathHelper.shared
+            let context = ProjectContext()
+
+            // Determine if we should use local or global taps
+            let useLocal = !global && context.isProjectContext
+
+            // Get appropriate PathHelper
+            let pathHelper = context.getPathHelper(preferLocal: useLocal)
             let tapsPath = pathHelper.tapsPath
 
             guard FileManager.default.fileExists(atPath: tapsPath.path) else {
@@ -67,7 +76,8 @@ extension Velo.Tap {
                 return
             }
 
-            print("Installed taps (\(taps.count)):")
+            let scopeInfo = useLocal ? " (local)" : " (global)"
+            print("Installed taps (\(taps.count))\(scopeInfo):")
             print("")
 
             for tap in taps.sorted(by: { $0.name.localizedCompare($1.name) == .orderedAscending }) {
@@ -199,6 +209,9 @@ extension Velo.Tap {
         @Flag(help: "Force add even if tap already exists")
         var force = false
 
+        @Flag(help: "Add tap globally instead of locally")
+        var global = false
+
         func run() throws {
             let semaphore = DispatchSemaphore(value: 0)
             var thrownError: Error?
@@ -220,7 +233,14 @@ extension Velo.Tap {
         }
 
         private func runAsync() async throws {
-            let pathHelper = PathHelper.shared
+            let context = ProjectContext()
+
+            // Determine if we should use local or global taps
+            let useLocal = !global && context.isProjectContext
+
+            // Get appropriate PathHelper
+            let pathHelper = context.getPathHelper(preferLocal: useLocal)
+
             let (tapName, url) = try parseTapInput(tap)
             let tapPath = pathHelper.tapsPath.appendingPathComponent(tapName)
 
@@ -230,7 +250,8 @@ extension Velo.Tap {
                 throw ExitCode.failure
             }
 
-            logInfo("Adding tap \(tapName)...")
+            let scopeInfo = useLocal ? "locally to .velo/taps/" : "globally to ~/.velo/taps/"
+            logInfo("Adding tap \(tapName) \(scopeInfo)")
             logInfo("Repository: \(url)")
 
             // Remove existing if force flag is used
@@ -392,6 +413,9 @@ extension Velo.Tap {
         @Flag(help: "Skip confirmation prompt")
         var yes = false
 
+        @Flag(help: "Remove tap globally instead of locally")
+        var global = false
+
         func run() throws {
             let semaphore = DispatchSemaphore(value: 0)
             var thrownError: Error?
@@ -413,7 +437,13 @@ extension Velo.Tap {
         }
 
         private func runAsync() async throws {
-            let pathHelper = PathHelper.shared
+            let context = ProjectContext()
+
+            // Determine if we should use local or global taps
+            let useLocal = !global && context.isProjectContext
+
+            // Get appropriate PathHelper
+            let pathHelper = context.getPathHelper(preferLocal: useLocal)
 
             // Normalize tap name to match how taps are stored
             let normalizedTapName = normalizeTapName(tapName)
@@ -492,6 +522,9 @@ extension Velo.Tap {
         @Argument(help: "Tap name to update (omit to update all taps)")
         var tapName: String?
 
+        @Flag(help: "Update taps globally instead of locally")
+        var global = false
+
         func run() throws {
             let semaphore = DispatchSemaphore(value: 0)
             var thrownError: Error?
@@ -513,7 +546,13 @@ extension Velo.Tap {
         }
 
         private func runAsync() async throws {
-            let pathHelper = PathHelper.shared
+            let context = ProjectContext()
+
+            // Determine if we should use local or global taps
+            let useLocal = !global && context.isProjectContext
+
+            // Get appropriate PathHelper
+            let pathHelper = context.getPathHelper(preferLocal: useLocal)
             let tapsPath = pathHelper.tapsPath
 
             if let specificTap = tapName {
