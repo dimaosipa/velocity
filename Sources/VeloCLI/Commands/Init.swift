@@ -55,13 +55,7 @@ extension Velo {
             
             if yes {
                 // Use defaults
-                let manifest = VeloManifest(
-                    name: currentDir.lastPathComponent,
-                    version: "1.0.0",
-                    dependencies: [:],
-                    devDependencies: [:],
-                    scripts: [:]
-                )
+                let manifest = VeloManifest(dependencies: [:])
                 
                 try manifestManager.write(manifest, to: manifestPath)
                 Logger.shared.success("Created velo.json with default values")

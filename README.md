@@ -51,7 +51,6 @@ velo init
 
 # Install packages locally for this project
 velo install imagemagick --save
-velo install shellcheck --save-dev
 
 # Install all dependencies from velo.json
 velo install
@@ -203,18 +202,10 @@ Velo supports project-local package management similar to npm's node_modules, en
 
 ```json
 {
-  "name": "my-project",
-  "version": "1.0.0",
   "dependencies": {
     "imagemagick": "^7.1.0",
-    "ffmpeg": "^7.0.0"
-  },
-  "devDependencies": {
+    "ffmpeg": "^7.0.0",
     "shellcheck": "^0.10.0"
-  },
-  "scripts": {
-    "convert": "convert input.jpg output.png",
-    "test": "shellcheck *.sh"
   }
 }
 ```
@@ -227,7 +218,6 @@ velo init
 
 # Install packages locally
 velo install imagemagick --save          # Add to dependencies
-velo install shellcheck --save-dev       # Add to devDependencies
 
 # Install all dependencies from velo.json
 velo install

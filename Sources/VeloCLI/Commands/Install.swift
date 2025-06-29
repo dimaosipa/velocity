@@ -31,9 +31,6 @@ extension Velo {
         @Flag(help: "Add to dependencies in velo.json")
         var save = false
         
-        @Flag(help: "Add to devDependencies in velo.json")
-        var saveDev = false
-        
         func run() throws {
             // Use a simple blocking approach for async operations
             let semaphore = DispatchSemaphore(value: 0)
@@ -85,11 +82,10 @@ extension Velo {
             )
             
             // Add to velo.json if requested
-            if (save || saveDev) && context.isProjectContext {
+            if save && context.isProjectContext {
                 try await addToManifest(
                     package: packageName,
                     version: version,
-                    isDev: saveDev,
                     context: context
                 )
             }
@@ -110,7 +106,7 @@ extension Velo {
             let manifestManager = VeloManifestManager()
             let manifest = try manifestManager.read(from: manifestPath)
             
-            let allDeps = manifestManager.getAllDependencies(from: manifest, includeDev: !global)
+            let allDeps = manifestManager.getAllDependencies(from: manifest)
             
             if allDeps.isEmpty {
                 print("No dependencies found in velo.json")
@@ -139,7 +135,6 @@ extension Velo {
         private func addToManifest(
             package: String,
             version: String?,
-            isDev: Bool,
             context: ProjectContext
         ) async throws {
             guard let manifestPath = context.manifestPath else {
@@ -154,12 +149,10 @@ extension Velo {
             try manifestManager.addDependency(
                 package,
                 version: versionToSave,
-                isDev: isDev,
                 to: manifestPath
             )
             
-            let depType = isDev ? "devDependencies" : "dependencies"
-            logInfo("Added \(package)@\(versionToSave) to \(depType)")
+            logInfo("Added \(package)@\(versionToSave) to dependencies")
         }
         
         private func installPackage(
