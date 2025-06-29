@@ -86,3 +86,4 @@ temp/
 .pre-commit-config.yaml.backup
 /CLAUDE.md
 /DECISIONS.md
+.claude/*.local.json
