@@ -43,8 +43,14 @@ public final class Installer {
             // Extract bottle
             try await extractBottle(from: bottleFile, to: packageDir, progress: progress)
             
+            // Rewrite library paths for Homebrew bottle compatibility
+            try await rewriteLibraryPaths(for: formula, packageDir: packageDir)
+            
             // Create symlinks
             try await createSymlinks(for: formula, packageDir: packageDir, progress: progress)
+            
+            // Create opt symlink for Homebrew compatibility
+            try pathHelper.createOptSymlink(for: formula.name, version: formula.version)
             
             progress?.installationDidComplete(package: formula.name)
             
@@ -69,6 +75,9 @@ public final class Installer {
             let packageDir = pathHelper.packagePath(for: package, version: version)
             try removeSymlinks(for: package, packageDir: packageDir)
         }
+        
+        // Remove opt symlink
+        try pathHelper.removeOptSymlink(for: package)
         
         // Remove package directory
         try fileManager.removeItem(at: packageBaseDir)
@@ -152,6 +161,144 @@ public final class Installer {
             if fileManager.fileExists(atPath: symlinkPath.path) {
                 try fileManager.removeItem(at: symlinkPath)
             }
+        }
+    }
+    
+    // MARK: - Library Path Rewriting
+    
+    private func rewriteLibraryPaths(for formula: Formula, packageDir: URL) async throws {
+        // Find all binaries in the package
+        let binDir = packageDir.appendingPathComponent("bin")
+        
+        guard fileManager.fileExists(atPath: binDir.path) else {
+            return // No binaries to rewrite
+        }
+        
+        let binaries = try fileManager.contentsOfDirectory(atPath: binDir.path)
+            .filter { !$0.hasPrefix(".") }
+        
+        for binary in binaries {
+            let binaryPath = binDir.appendingPathComponent(binary)
+            try await rewriteBinaryLibraryPaths(binaryPath: binaryPath)
+        }
+        
+        // Also rewrite any dynamic libraries in the package
+        let libDir = packageDir.appendingPathComponent("lib")
+        if fileManager.fileExists(atPath: libDir.path) {
+            try await rewriteLibraryDirectory(libDir)
+        }
+    }
+    
+    private func rewriteBinaryLibraryPaths(binaryPath: URL) async throws {
+        // Make the binary writable before modifying it
+        try makeFileWritable(at: binaryPath)
+        
+        // Use install_name_tool to rewrite library paths
+        // Replace @@HOMEBREW_PREFIX@@ with our Velo prefix
+        let veloPrefix = pathHelper.veloPrefix
+        
+        // First, get the current library dependencies
+        let otoolProcess = Process()
+        otoolProcess.executableURL = URL(fileURLWithPath: "/usr/bin/otool")
+        otoolProcess.arguments = ["-L", binaryPath.path]
+        
+        let otoolPipe = Pipe()
+        otoolProcess.standardOutput = otoolPipe
+        otoolProcess.standardError = otoolPipe
+        
+        try otoolProcess.run()
+        otoolProcess.waitUntilExit()
+        
+        guard otoolProcess.terminationStatus == 0 else {
+            throw VeloError.libraryPathRewriteFailed(
+                binary: binaryPath.lastPathComponent,
+                reason: "Failed to read library dependencies"
+            )
+        }
+        
+        let otoolOutput = otoolPipe.fileHandleForReading.readDataToEndOfFile()
+        let dependencies = String(data: otoolOutput, encoding: .utf8) ?? ""
+        
+        // Find lines containing @@HOMEBREW_PREFIX@@ or @@HOMEBREW_CELLAR@@ and rewrite them
+        let lines = dependencies.components(separatedBy: .newlines)
+        
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.contains("@@HOMEBREW_PREFIX@@") || trimmed.contains("@@HOMEBREW_CELLAR@@") {
+                // Extract the old path (everything before the first space)
+                let components = trimmed.components(separatedBy: " ")
+                guard let oldPath = components.first else { continue }
+                
+                // Replace both Homebrew placeholders with our Velo prefix
+                var newPath = oldPath.replacingOccurrences(of: "@@HOMEBREW_PREFIX@@", with: veloPrefix.path)
+                newPath = newPath.replacingOccurrences(of: "@@HOMEBREW_CELLAR@@", with: veloPrefix.path + "/Cellar")
+                
+                // Use install_name_tool to change the path
+                let installNameProcess = Process()
+                installNameProcess.executableURL = URL(fileURLWithPath: "/usr/bin/install_name_tool")
+                installNameProcess.arguments = ["-change", oldPath, newPath, binaryPath.path]
+                
+                let installNamePipe = Pipe()
+                installNameProcess.standardOutput = installNamePipe
+                installNameProcess.standardError = installNamePipe
+                
+                try installNameProcess.run()
+                installNameProcess.waitUntilExit()
+                
+                if installNameProcess.terminationStatus != 0 {
+                    let errorOutput = installNamePipe.fileHandleForReading.readDataToEndOfFile()
+                    let errorString = String(data: errorOutput, encoding: .utf8) ?? "Unknown error"
+                    throw VeloError.libraryPathRewriteFailed(
+                        binary: binaryPath.lastPathComponent,
+                        reason: "install_name_tool failed: \(errorString)"
+                    )
+                }
+            }
+        }
+        
+        // Re-sign the binary after modifying library paths
+        try await resignBinary(binaryPath: binaryPath)
+    }
+    
+    private func resignBinary(binaryPath: URL) async throws {
+        let codesignProcess = Process()
+        codesignProcess.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
+        codesignProcess.arguments = ["-s", "-", binaryPath.path, "--force"]
+        
+        let codesignPipe = Pipe()
+        codesignProcess.standardOutput = codesignPipe
+        codesignProcess.standardError = codesignPipe
+        
+        try codesignProcess.run()
+        codesignProcess.waitUntilExit()
+        
+        if codesignProcess.terminationStatus != 0 {
+            let errorOutput = codesignPipe.fileHandleForReading.readDataToEndOfFile()
+            let errorString = String(data: errorOutput, encoding: .utf8) ?? "Unknown error"
+            throw VeloError.libraryPathRewriteFailed(
+                binary: binaryPath.lastPathComponent,
+                reason: "Code signing failed: \(errorString)"
+            )
+        }
+    }
+    
+    private func makeFileWritable(at url: URL) throws {
+        var attributes = try fileManager.attributesOfItem(atPath: url.path)
+        if let permissions = attributes[.posixPermissions] as? NSNumber {
+            let newPermissions = permissions.uint16Value | 0o200 // Add write permission for owner
+            attributes[.posixPermissions] = NSNumber(value: newPermissions)
+            try fileManager.setAttributes(attributes, ofItemAtPath: url.path)
+        }
+    }
+    
+    private func rewriteLibraryDirectory(_ libDir: URL) async throws {
+        // Rewrite library paths in .dylib files too
+        let libraryFiles = try fileManager.contentsOfDirectory(atPath: libDir.path)
+            .filter { $0.hasSuffix(".dylib") }
+        
+        for libraryFile in libraryFiles {
+            let libraryPath = libDir.appendingPathComponent(libraryFile)
+            try await rewriteBinaryLibraryPaths(binaryPath: libraryPath)
         }
     }
     

@@ -98,9 +98,31 @@ public struct Formula: Codable, Equatable {
     
     /// Get bottle download URL for GHCR
     public func bottleURL(for bottle: Bottle) -> String? {
-        // Format: ghcr.io/v2/homebrew/core/FORMULA/blobs/sha256:HASH
-        // Convert @ symbols to -at- for GHCR package naming (e.g., openssl@3 -> openssl-at-3)
-        let ghcrName = name.lowercased().replacingOccurrences(of: "@", with: "-at-")
-        return "https://ghcr.io/v2/homebrew/core/\(ghcrName)/blobs/sha256:\(bottle.sha256)"
+        // GHCR uses hierarchical paths for @-versioned packages
+        // Format: ghcr.io/v2/homebrew/core/PACKAGE/VERSION_SLOT/blobs/sha256:HASH
+        // Examples:
+        //   openssl@3 -> openssl/3
+        //   node@18 -> node/18  
+        //   python@3.11 -> python/3.11
+        //   tree (no @) -> tree
+        
+        let ghcrPath: String
+        if name.contains("@") {
+            // Split package@version into hierarchical path
+            let parts = name.split(separator: "@", maxSplits: 1)
+            if parts.count == 2 {
+                let packageName = String(parts[0]).lowercased()
+                let versionSlot = String(parts[1])
+                ghcrPath = "\(packageName)/\(versionSlot)"
+            } else {
+                // Fallback if split fails
+                ghcrPath = name.lowercased()
+            }
+        } else {
+            // Non-versioned packages use simple name
+            ghcrPath = name.lowercased()
+        }
+        
+        return "https://ghcr.io/v2/homebrew/core/\(ghcrPath)/blobs/sha256:\(bottle.sha256)"
     }
 }

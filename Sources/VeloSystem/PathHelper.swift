@@ -10,6 +10,10 @@ public struct PathHelper {
         fileManager.homeDirectoryForCurrentUser.appendingPathComponent(".velo")
     }
     
+    public var veloPrefix: URL {
+        veloHome
+    }
+    
     public var cellarPath: URL {
         veloHome.appendingPathComponent("Cellar")
     }
@@ -34,6 +38,10 @@ public struct PathHelper {
         veloHome.appendingPathComponent("tmp")
     }
     
+    public var optPath: URL {
+        veloHome.appendingPathComponent("opt")
+    }
+    
     private init() {}
     
     // MARK: - Directory Management
@@ -52,6 +60,7 @@ public struct PathHelper {
         try ensureDirectoryExists(at: tapsPath)
         try ensureDirectoryExists(at: logsPath)
         try ensureDirectoryExists(at: tmpPath)
+        try ensureDirectoryExists(at: optPath)
     }
     
     // MARK: - Package Paths
@@ -86,6 +95,25 @@ public struct PathHelper {
         }
         
         try fileManager.createSymbolicLink(at: destination, withDestinationURL: source)
+    }
+    
+    public func createOptSymlink(for package: String, version: String) throws {
+        let packageDir = packagePath(for: package, version: version)
+        let optSymlinkPath = optPath.appendingPathComponent(package)
+        
+        // Remove existing opt symlink if it exists
+        if fileManager.fileExists(atPath: optSymlinkPath.path) {
+            try fileManager.removeItem(at: optSymlinkPath)
+        }
+        
+        try fileManager.createSymbolicLink(at: optSymlinkPath, withDestinationURL: packageDir)
+    }
+    
+    public func removeOptSymlink(for package: String) throws {
+        let optSymlinkPath = optPath.appendingPathComponent(package)
+        if fileManager.fileExists(atPath: optSymlinkPath.path) {
+            try fileManager.removeItem(at: optSymlinkPath)
+        }
     }
     
     // MARK: - Cache Management

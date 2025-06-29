@@ -36,6 +36,9 @@ public enum VeloError: LocalizedError {
     // Process errors
     case processError(command: String, exitCode: Int, description: String)
     
+    // Library path errors
+    case libraryPathRewriteFailed(binary: String, reason: String)
+    
     public var errorDescription: String? {
         switch self {
         case .formulaNotFound(let name):
@@ -80,6 +83,8 @@ public enum VeloError: LocalizedError {
             return "Tap not found: \(name)"
         case .processError(let command, let exitCode, let description):
             return "Process '\(command)' failed with exit code \(exitCode): \(description)"
+        case .libraryPathRewriteFailed(let binary, let reason):
+            return "Failed to rewrite library paths for '\(binary)': \(reason)"
         }
     }
 }
