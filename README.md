@@ -50,7 +50,7 @@ echo 'export PATH="$HOME/.velo/bin:$PATH"' >> ~/.zshrc
 velo init
 
 # Install packages locally for this project
-velo install imagemagick --save
+velo install imagemagick
 
 # Install all dependencies from velo.json
 velo install
@@ -217,7 +217,7 @@ Velo supports project-local package management similar to npm's node_modules, en
 velo init
 
 # Install packages locally
-velo install imagemagick --save          # Add to dependencies
+velo install imagemagick                 # Automatically adds to dependencies
 
 # Install all dependencies from velo.json
 velo install

@@ -28,9 +28,6 @@ extension Velo {
         @Flag(help: "Install globally instead of locally")
         var global = false
         
-        @Flag(help: "Add to dependencies in velo.json")
-        var save = false
-        
         func run() throws {
             // Use a simple blocking approach for async operations
             let semaphore = DispatchSemaphore(value: 0)
@@ -81,8 +78,8 @@ extension Velo {
                 skipTapUpdate: false
             )
             
-            // Add to velo.json if requested
-            if save && context.isProjectContext {
+            // Automatically add to velo.json if in project context and installing locally
+            if useLocal && context.isProjectContext {
                 try await addToManifest(
                     package: packageName,
                     version: version,

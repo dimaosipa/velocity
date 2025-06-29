@@ -91,7 +91,7 @@ extension Velo {
             
             print("\n✅ Project initialized successfully!")
             print("\nNext steps:")
-            print("  1. Add dependencies: velo install <package> --save")
+            print("  1. Add dependencies: velo install <package>")
             print("  2. Install from velo.json: velo install")
             print("  3. Run local binaries: velo exec <command>")
         }

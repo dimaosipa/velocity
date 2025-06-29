@@ -56,7 +56,7 @@ public final class VeloManifestManager {
         
         print("✅ Created velo.json successfully!")
         print("\nNext steps:")
-        print("  - Add dependencies: velo install <package> --save")
+        print("  - Add dependencies: velo install <package>")
         print("  - Install all dependencies: velo install")
     }
     
