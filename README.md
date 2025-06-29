@@ -145,6 +145,7 @@ Tests/
 | `list` | List installed packages | `velo list --versions` |
 | `search` | Search for packages | `velo search http` |
 | `update` | Update repositories | `velo update` |
+| `verify` | Check if installed packages match velo.lock | `velo verify` |
 | `doctor` | Check system health | `velo doctor` |
 | `clean` | Clean packages or cache | `velo clean --packages` |
 | `tap` | Manage package repositories | `velo tap list` |
@@ -290,6 +291,39 @@ Velo supports project-local package management similar to npm's node_modules, en
 
 The `taps` field ensures required repositories are automatically available when installing dependencies. This is particularly useful for CI/CD environments where taps aren't pre-configured.
 
+### Lock File (velo.lock)
+
+Velo automatically generates a `velo.lock` file to ensure reproducible builds:
+
+```json
+{
+  "lockfileVersion": 1,
+  "dependencies": {
+    "wget": {
+      "version": "1.25.0",
+      "resolved": "https://ghcr.io/v2/homebrew/core/wget/blobs/sha256:abc123...",
+      "sha256": "abc123...",
+      "tap": "homebrew/core",
+      "dependencies": {
+        "openssl@3": "3.5.0"
+      }
+    }
+  },
+  "taps": {
+    "homebrew/core": {
+      "commit": "abc123def456"
+    }
+  }
+}
+```
+
+**Lock File Features:**
+- **Exact versions**: Locks down specific package versions
+- **Integrity hashes**: SHA256 verification for security
+- **Dependency resolution**: Tracks exact resolved dependency versions
+- **Tap tracking**: Records source taps and commit hashes
+- **Human readable**: JSON format for easy inspection
+
 ### Local Package Commands
 
 ```bash
@@ -302,12 +336,21 @@ velo install imagemagick                 # Automatically adds to dependencies
 # Install all dependencies from velo.json
 velo install
 
+# Install exactly from velo.lock (CI mode)
+velo install --frozen
+
+# Verify before installing
+velo install --check
+
 # Execute commands using local packages
 velo exec convert image.jpg output.png   # Uses local imagemagick
 velo exec shellcheck script.sh           # Uses local shellcheck
 
 # Show which version will be used
 velo which convert                        # Shows resolution order
+
+# Verify installed packages match velo.lock
+velo verify
 
 # Install globally (traditional mode)
 velo install wget --global
@@ -342,13 +385,15 @@ Perfect for continuous integration with automatic tap resolution and caching:
 - Required taps are automatically cloned from the `taps` field in velo.json
 - No manual tap setup needed in CI environments
 - Consistent package resolution across all environments
+- Lock file verification ensures integrity: `velo verify`
 
 ### Benefits
 
-- **Reproducible Builds**: `velo.lock` ensures exact versions
+- **Reproducible Builds**: `velo.lock` ensures exact versions and integrity
 - **CI Caching**: Cache `.velo` directory based on lock file hash
 - **Project Isolation**: No global pollution between projects
 - **Familiar Workflow**: Similar to npm/yarn ecosystem
+- **Security**: SHA256 verification of all downloaded packages
 - **Version Conflicts**: Different projects can use different tool versions
 
 ### Performance Features

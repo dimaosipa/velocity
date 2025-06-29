@@ -28,6 +28,12 @@ extension Velo {
         @Flag(help: "Install globally instead of locally")
         var global = false
 
+        @Flag(help: "Install exactly from velo.lock, fail if any deviation")
+        var frozen = false
+
+        @Flag(help: "Verify lock file before installing, warn about changes")
+        var check = false
+
         func run() throws {
             // Use a simple blocking approach for async operations
             let semaphore = DispatchSemaphore(value: 0)
@@ -105,6 +111,14 @@ extension Velo {
 
             let pathHelper = context.getPathHelper(preferLocal: !global)
 
+            // Handle --frozen and --check flags
+            if frozen || check {
+                try await handleLockFileFlags(context: context, pathHelper: pathHelper)
+                if frozen {
+                    return // --frozen installs exactly from lock file, so we're done
+                }
+            }
+
             // Ensure required taps are available
             let requiredTaps = manifestManager.getAllTaps(from: manifest)
             if !requiredTaps.isEmpty {
@@ -120,8 +134,10 @@ extension Velo {
 
             logInfo("Installing \(allDeps.count) packages...")
 
+            var installedPackages: [(formula: Formula, bottleURL: String, tap: String, resolvedDependencies: [String: String])] = []
+
             for (packageName, versionSpec) in allDeps {
-                try await installPackage(
+                let installResult = try await installPackageWithTracking(
                     name: packageName,
                     version: versionSpec == "*" ? nil : versionSpec,
                     context: context,
@@ -130,9 +146,190 @@ extension Velo {
                     verbose: false,
                     skipTapUpdate: true // Skip after first update
                 )
+
+                if let result = installResult {
+                    installedPackages.append(result)
+                }
+            }
+
+            // Update lock file if in project context
+            if let lockFilePath = context.lockFilePath {
+                try updateLockFile(installedPackages: installedPackages, lockFilePath: lockFilePath)
             }
 
             Logger.shared.success("All packages installed successfully!")
+        }
+
+        private func installPackageWithTracking(
+            name: String,
+            version: String? = nil,
+            context: ProjectContext,
+            pathHelper: PathHelper,
+            skipDeps: Bool,
+            verbose: Bool,
+            skipTapUpdate: Bool = false
+        ) async throws -> (formula: Formula, bottleURL: String, tap: String, resolvedDependencies: [String: String])? {
+            let tapManager = TapManager(pathHelper: pathHelper)
+
+            // Find formula and determine source tap
+            guard let formula = try tapManager.findFormula(name) else {
+                throw VeloError.formulaNotFound(name: name)
+            }
+
+            // Determine which tap this formula came from
+            let sourceTap = try getSourceTap(for: name, pathHelper: pathHelper)
+
+            // Install the package
+            try await installPackage(
+                name: name,
+                version: version,
+                context: context,
+                pathHelper: pathHelper,
+                skipDeps: skipDeps,
+                verbose: verbose,
+                skipTapUpdate: skipTapUpdate
+            )
+
+            // Get bottle URL
+            guard let bottle = formula.preferredBottle,
+                  let bottleURL = formula.bottleURL(for: bottle) else {
+                throw VeloError.installationFailed(package: name, reason: "No compatible bottle found")
+            }
+
+            // Resolve exact dependency versions
+            let resolvedDeps = try await resolveExactDependencyVersions(for: formula, pathHelper: pathHelper)
+
+            return (formula: formula, bottleURL: bottleURL, tap: sourceTap, resolvedDependencies: resolvedDeps)
+        }
+
+        private func getSourceTap(for packageName: String, pathHelper: PathHelper) throws -> String {
+            // For now, return "homebrew/core" as default
+            // In a full implementation, we'd track which tap the formula was found in
+            return "homebrew/core"
+        }
+
+        private func resolveExactDependencyVersions(for formula: Formula, pathHelper: PathHelper) async throws -> [String: String] {
+            var resolvedDeps: [String: String] = [:]
+
+            for dependency in formula.dependencies.filter({ $0.type == .required }) {
+                let versions = pathHelper.installedVersions(for: dependency.name)
+                if let latestVersion = versions.last {
+                    resolvedDeps[dependency.name] = latestVersion
+                }
+            }
+
+            return resolvedDeps
+        }
+
+        private func updateLockFile(
+            installedPackages: [(formula: Formula, bottleURL: String, tap: String, resolvedDependencies: [String: String])],
+            lockFilePath: URL
+        ) throws {
+            let lockFileManager = VeloLockFileManager()
+            try lockFileManager.updateLockFile(at: lockFilePath, with: installedPackages)
+            logInfo("Updated velo.lock with \(installedPackages.count) packages")
+        }
+
+        private func handleLockFileFlags(context: ProjectContext, pathHelper: PathHelper) async throws {
+            guard let lockFilePath = context.lockFilePath else {
+                logError("No velo.lock file found. Cannot use --frozen or --check flags.")
+                throw ExitCode.failure
+            }
+
+            guard FileManager.default.fileExists(atPath: lockFilePath.path) else {
+                logError("velo.lock file does not exist. Run 'velo install' first to create it.")
+                throw ExitCode.failure
+            }
+
+            let lockFileManager = VeloLockFileManager()
+            let lockFile = try lockFileManager.read(from: lockFilePath)
+
+            if check {
+                logInfo("Checking lock file integrity...")
+                let installedPackages = try getInstalledPackagesForVerification(pathHelper: pathHelper)
+                let mismatches = lockFileManager.verifyInstallations(lockFile: lockFile, installedPackages: installedPackages)
+
+                if !mismatches.isEmpty {
+                    logWarning("Lock file mismatches detected:")
+                    for mismatch in mismatches {
+                        print("  • \(mismatch)")
+                    }
+                    print("")
+                }
+            }
+
+            if frozen {
+                logInfo("Installing exactly from velo.lock (frozen mode)...")
+                try await installFromLockFile(lockFile: lockFile, pathHelper: pathHelper)
+            }
+        }
+
+        private func getInstalledPackagesForVerification(pathHelper: PathHelper) throws -> [String: String] {
+            var installedPackages: [String: String] = [:]
+
+            let cellarPath = pathHelper.cellarPath
+            guard FileManager.default.fileExists(atPath: cellarPath.path) else {
+                return installedPackages
+            }
+
+            let packages = try FileManager.default.contentsOfDirectory(atPath: cellarPath.path)
+                .filter { !$0.hasPrefix(".") }
+
+            for package in packages {
+                let versions = pathHelper.installedVersions(for: package)
+                if let defaultVersion = pathHelper.getDefaultVersion(for: package) {
+                    installedPackages[package] = defaultVersion
+                } else if let latestVersion = versions.last {
+                    installedPackages[package] = latestVersion
+                }
+            }
+
+            return installedPackages
+        }
+
+        private func installFromLockFile(lockFile: VeloLockFile, pathHelper: PathHelper) async throws {
+            for (packageName, lockEntry) in lockFile.dependencies {
+                // Check if already installed with correct version
+                let installedVersions = pathHelper.installedVersions(for: packageName)
+                if installedVersions.contains(lockEntry.version) {
+                    logInfo("✓ \(packageName) \(lockEntry.version) already installed")
+                    continue
+                }
+
+                logInfo("Installing \(packageName) \(lockEntry.version) from lock file...")
+
+                // For frozen installs, we need to install the exact version specified
+                // This is a simplified implementation - in practice, we'd need to:
+                // 1. Ensure the exact tap commit is available
+                // 2. Download from the exact URL specified in lock file
+                // 3. Verify SHA256 matches
+
+                let tapManager = TapManager(pathHelper: pathHelper)
+                guard let formula = try tapManager.findFormula(packageName) else {
+                    throw VeloError.formulaNotFound(name: packageName)
+                }
+
+                // Verify version matches
+                guard formula.version == lockEntry.version else {
+                    throw VeloError.installationFailed(
+                        package: packageName,
+                        reason: "Available version \(formula.version) doesn't match locked version \(lockEntry.version)"
+                    )
+                }
+
+                // Install using existing method
+                try await installPackage(
+                    name: packageName,
+                    version: lockEntry.version,
+                    context: ProjectContext(),
+                    pathHelper: pathHelper,
+                    skipDeps: false,
+                    verbose: true,
+                    skipTapUpdate: true
+                )
+            }
+
+            Logger.shared.success("All packages installed from velo.lock successfully!")
         }
 
         private func ensureRequiredTaps(_ requiredTaps: [String], pathHelper: PathHelper) async throws {

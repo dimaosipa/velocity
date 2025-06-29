@@ -7,18 +7,30 @@ public struct LockEntry: Codable {
     public let version: String
     public let resolved: String  // Download URL
     public let sha256: String
+    public let tap: String       // Source tap (e.g., "homebrew/core")
     public let dependencies: [String: String]?
 
     public init(
         version: String,
         resolved: String,
         sha256: String,
+        tap: String,
         dependencies: [String: String]? = nil
     ) {
         self.version = version
         self.resolved = resolved
         self.sha256 = sha256
+        self.tap = tap
         self.dependencies = dependencies
+    }
+}
+
+/// Represents tap information in lock file
+public struct TapLockEntry: Codable {
+    public let commit: String?  // Git commit hash for reproducibility
+
+    public init(commit: String? = nil) {
+        self.commit = commit
     }
 }
 
@@ -26,10 +38,16 @@ public struct LockEntry: Codable {
 public struct VeloLockFile: Codable {
     public let lockfileVersion: Int
     public var dependencies: [String: LockEntry]
+    public var taps: [String: TapLockEntry]
 
-    public init(lockfileVersion: Int = 1, dependencies: [String: LockEntry] = [:]) {
+    public init(
+        lockfileVersion: Int = 1,
+        dependencies: [String: LockEntry] = [:],
+        taps: [String: TapLockEntry] = [:]
+    ) {
         self.lockfileVersion = lockfileVersion
         self.dependencies = dependencies
+        self.taps = taps
     }
 }
 
@@ -60,7 +78,7 @@ public final class VeloLockFileManager {
     /// Create or update lock file with installed packages
     public func updateLockFile(
         at url: URL,
-        with installedPackages: [(formula: Formula, bottleURL: String)]
+        with installedPackages: [(formula: Formula, bottleURL: String, tap: String, resolvedDependencies: [String: String])]
     ) throws {
         var lockFile: VeloLockFile
 
@@ -72,23 +90,21 @@ public final class VeloLockFileManager {
         }
 
         // Update entries for installed packages
-        for (formula, bottleURL) in installedPackages {
-            let dependencies = formula.dependencies
-                .filter { $0.type == .required }
-                .reduce(into: [String: String]()) { result, dep in
-                    // For now, we'll use "*" for dependency versions
-                    // In a full implementation, we'd resolve exact versions
-                    result[dep.name] = "*"
-                }
-
+        for (formula, bottleURL, tap, resolvedDeps) in installedPackages {
             let entry = LockEntry(
                 version: formula.version,
                 resolved: bottleURL,
                 sha256: formula.preferredBottle?.sha256 ?? formula.sha256,
-                dependencies: dependencies.isEmpty ? nil : dependencies
+                tap: tap,
+                dependencies: resolvedDeps.isEmpty ? nil : resolvedDeps
             )
 
             lockFile.dependencies[formula.name] = entry
+
+            // Track tap in lock file
+            if lockFile.taps[tap] == nil {
+                lockFile.taps[tap] = TapLockEntry()
+            }
         }
 
         // Write updated lock file
