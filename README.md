@@ -1,4 +1,4 @@
-# Velo 🚀
+# Velocity 🚀
 
 A lightning-fast, modern package manager for macOS - built for Apple Silicon.
 
@@ -15,7 +15,7 @@ A lightning-fast, modern package manager for macOS - built for Apple Silicon.
 
 ### Requirements
 
-- **Apple Silicon Mac** (M1/M2/M3)
+- **Apple Silicon Mac**
 - **macOS 12+** (Monterey or later)
 
 ### Installation
