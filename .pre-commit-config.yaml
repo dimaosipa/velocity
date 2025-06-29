@@ -7,14 +7,14 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
-        stages: [commit]
+        stages: [pre-commit]
         
       - id: swift-format
         name: Swift Format
         entry: swift-format --in-place
         language: system
         files: \.swift$
-        stages: [commit]
+        stages: [pre-commit]
         
       - id: architecture-check
         name: Architecture Check
@@ -23,21 +23,21 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
-        stages: [commit]
+        stages: [pre-commit]
         
       - id: performance-check
         name: Performance Regression Check
         entry: swift test --filter PerformanceBenchmarks
         language: system
         pass_filenames: false
-        stages: [commit]
+        stages: [pre-commit]
         
       - id: memory-check
         name: Memory Leak Check
         entry: leaks --atExit -- swift test
         language: system
         pass_filenames: false
-        stages: [push]
+        stages: [pre-push]
         
       - id: no-homebrew-name
         name: No Homebrew Name Check
@@ -46,4 +46,4 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
-        stages: [commit]
+        stages: [pre-commit]
