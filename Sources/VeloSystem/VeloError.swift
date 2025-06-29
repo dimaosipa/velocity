@@ -5,44 +5,44 @@ public enum VeloError: LocalizedError {
     case formulaNotFound(name: String)
     case formulaParseError(formula: String, details: String)
     case invalidFormulaFormat(details: String)
-    
+
     // Download errors
     case downloadFailed(url: String, error: Error)
     case checksumMismatch(expected: String, actual: String)
     case networkError(Error)
     case bottleNotAccessible(url: String, reason: String)
-    
+
     // Installation errors
     case installationFailed(package: String, reason: String)
     case alreadyInstalled(package: String)
     case extractionFailed(reason: String)
     case symlinkFailed(from: String, to: String)
-    
+
     // System errors
     case unsupportedArchitecture(current: String)
     case insufficientPermissions(path: String)
     case pathNotFound(path: String)
     case ioError(Error)
-    
+
     // Dependency errors
     case dependencyNotFound(dependency: String, package: String)
     case circularDependency(packages: [String])
-    
+
     // Tap errors
     case tapCloneFailed(url: String, error: Error)
     case tapUpdateFailed(tap: String, error: Error)
     case tapNotFound(name: String)
     case invalidTapName(String)
-    
+
     // Process errors
     case processError(command: String, exitCode: Int, description: String)
-    
+
     // Library path errors
     case libraryPathRewriteFailed(binary: String, reason: String)
-    
+
     // Project context errors
     case notInProjectContext
-    
+
     public var errorDescription: String? {
         switch self {
         case .formulaNotFound(let name):

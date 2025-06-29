@@ -12,10 +12,10 @@ let package = Package(
         .executable(
             name: "velo",
             targets: ["Velo"]
-        ),
+        )
     ],
     dependencies: [
-        .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.3.0"),
+        .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.3.0")
     ],
     targets: [
         // Main executable
@@ -30,10 +30,10 @@ let package = Package(
             ],
             swiftSettings: [
                 .unsafeFlags(["-O", "-whole-module-optimization"], .when(configuration: .release)),
-                .define("ARCH_ARM64", .when(platforms: [.macOS])),
+                .define("ARCH_ARM64", .when(platforms: [.macOS]))
             ]
         ),
-        
+
         // CLI module
         .target(
             name: "VeloCLI",
@@ -44,25 +44,25 @@ let package = Package(
                 "VeloSystem"
             ]
         ),
-        
+
         // Formula parsing
         .target(
             name: "VeloFormula",
             dependencies: ["VeloSystem"]
         ),
-        
+
         // Core functionality
         .target(
             name: "VeloCore",
             dependencies: ["VeloSystem", "VeloFormula"]
         ),
-        
+
         // System utilities
         .target(
             name: "VeloSystem",
             dependencies: []
         ),
-        
+
         // Tests
         .testTarget(
             name: "VeloCLITests",
@@ -83,6 +83,6 @@ let package = Package(
         .testTarget(
             name: "VeloIntegrationTests",
             dependencies: ["Velo"]
-        ),
+        )
     ]
 )

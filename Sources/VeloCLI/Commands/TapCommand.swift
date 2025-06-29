@@ -268,6 +268,11 @@ extension Velo.Tap {
             // Clone the tap
             try await cloneTap(from: url, to: tapPath)
 
+            // Update velo.json if in project context and using local taps
+            if useLocal && context.isProjectContext {
+                try await updateManifestWithTap(tapName, context: context, action: .add)
+            }
+
             // Verify the tap was added successfully
             let formulaPath = tapPath.appendingPathComponent("Formula")
             if FileManager.default.fileExists(atPath: formulaPath.path) {
@@ -319,7 +324,7 @@ extension Velo.Tap {
             let normalizedRepo = repo.hasPrefix("homebrew-") ? String(repo.dropFirst(9)) : repo
             let tapName = "\(user)/\(normalizedRepo)"
 
-            // Apply Homebrew naming convention: repositories must be prefixed with "homebrew-"
+            // Apply repository naming convention: repositories must be prefixed with "homebrew-"
             let actualRepo = repo.hasPrefix("homebrew-") ? repo : "homebrew-\(repo)"
             let url = "https://github.com/\(user)/\(actualRepo).git"
 
@@ -485,6 +490,11 @@ extension Velo.Tap {
             if let items = try? FileManager.default.contentsOfDirectory(atPath: parentPath.path),
                items.isEmpty {
                 try? FileManager.default.removeItem(at: parentPath)
+            }
+
+            // Update velo.json if in project context and using local taps
+            if useLocal && context.isProjectContext {
+                try await updateManifestWithTap(normalizedTapName, context: context, action: .remove)
             }
 
             Logger.shared.success("Tap '\(normalizedTapName)' removed successfully")
@@ -672,4 +682,28 @@ private struct TapInfo {
     let path: URL
     let url: String
     let formulaCount: Int?
+}
+
+private enum TapAction {
+    case add
+    case remove
+}
+
+// MARK: - Manifest Management
+
+private func updateManifestWithTap(_ tapName: String, context: ProjectContext, action: TapAction) async throws {
+    guard let manifestPath = context.manifestPath else {
+        return // Not in project context
+    }
+
+    let manifestManager = VeloManifestManager()
+
+    switch action {
+    case .add:
+        try manifestManager.addTap(tapName, to: manifestPath)
+        logInfo("Added \(tapName) to velo.json taps")
+    case .remove:
+        try manifestManager.removeTap(tapName, from: manifestPath)
+        logInfo("Removed \(tapName) from velo.json taps")
+    }
 }

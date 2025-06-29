@@ -191,13 +191,13 @@ Velo supports multiple package repositories (taps) for accessing different softw
 # List all installed taps
 velo tap list
 
-# Add a custom tap
+# Add a custom tap (automatically updates velo.json in project context)
 velo tap add user/homebrew-tools
 
 # Add tap with full URL
 velo tap add https://github.com/user/homebrew-tools.git
 
-# Remove a tap
+# Remove a tap (automatically updates velo.json in project context)
 velo tap remove user/homebrew-tools
 
 # Update all taps
@@ -205,6 +205,10 @@ velo tap update
 
 # Update specific tap
 velo tap update homebrew/core
+
+# Force global tap operations (skip velo.json updates)
+velo tap add user/tools --global
+velo tap list --global
 ```
 
 **Tap Priority:**
@@ -276,9 +280,15 @@ Velo supports project-local package management similar to npm's node_modules, en
     "imagemagick": "^7.1.0",
     "ffmpeg": "^7.0.0",
     "shellcheck": "^0.10.0"
-  }
+  },
+  "taps": [
+    "wix/brew",
+    "user/custom-tools"
+  ]
 }
 ```
+
+The `taps` field ensures required repositories are automatically available when installing dependencies. This is particularly useful for CI/CD environments where taps aren't pre-configured.
 
 ### Local Package Commands
 
@@ -314,7 +324,7 @@ When running commands, Velo resolves binaries in this order:
 
 ### CI/CD Integration
 
-Perfect for continuous integration with caching:
+Perfect for continuous integration with automatic tap resolution and caching:
 
 ```yaml
 # GitHub Actions example
@@ -325,8 +335,13 @@ Perfect for continuous integration with caching:
     key: ${{ runner.os }}-velo-${{ hashFiles('velo.lock') }}
 
 - name: Install dependencies
-  run: velo install
+  run: velo install  # Automatically adds required taps from velo.json
 ```
+
+**Enhanced CI Reliability:**
+- Required taps are automatically cloned from the `taps` field in velo.json
+- No manual tap setup needed in CI environments
+- Consistent package resolution across all environments
 
 ### Benefits
 
@@ -412,6 +427,7 @@ BSD-2-Clause License - see [LICENSE](LICENSE) for details.
 - [x] **Homebrew-compatible structure** - /opt symlinks and complete library resolution
 - [x] **Multi-version support** - Install and manage multiple versions of packages simultaneously
 - [x] **Local package management** - Project-local .velo directories with velo.json manifests
+- [x] **Enhanced tap management** - Context-aware tap operations with automatic velo.json integration for CI/CD reliability
 
 ### 🚧 In Progress
 

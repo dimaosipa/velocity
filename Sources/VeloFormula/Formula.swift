@@ -9,34 +9,34 @@ public struct Formula: Codable, Equatable {
     public let version: String
     public let dependencies: [Dependency]
     public let bottles: [Bottle]
-    
+
     public struct Dependency: Codable, Equatable {
         public let name: String
         public let type: DependencyType
-        
+
         public enum DependencyType: String, Codable {
             case required
             case recommended
             case optional
             case build
         }
-        
+
         public init(name: String, type: DependencyType = .required) {
             self.name = name
             self.type = type
         }
     }
-    
+
     public struct Bottle: Codable, Equatable {
         public let sha256: String
         public let platform: Platform
-        
+
         public enum Platform: String, Codable {
             case arm64_monterey
-            case arm64_ventura 
+            case arm64_ventura
             case arm64_sonoma
             case arm64_sequoia
-            
+
             var osVersion: String {
                 switch self {
                 case .arm64_monterey: return "12"
@@ -45,7 +45,7 @@ public struct Formula: Codable, Equatable {
                 case .arm64_sequoia: return "15"
                 }
             }
-            
+
             public var isCompatible: Bool {
                 // Check if current macOS version is compatible
                 let currentVersion = ProcessInfo.processInfo.operatingSystemVersion
@@ -53,13 +53,13 @@ public struct Formula: Codable, Equatable {
                 return currentVersion.majorVersion >= requiredMajor
             }
         }
-        
+
         public init(sha256: String, platform: Platform) {
             self.sha256 = sha256
             self.platform = platform
         }
     }
-    
+
     public init(
         name: String,
         description: String,
@@ -79,23 +79,23 @@ public struct Formula: Codable, Equatable {
         self.dependencies = dependencies
         self.bottles = bottles
     }
-    
+
     /// Returns the best bottle for the current system
     public var preferredBottle: Bottle? {
         // Filter compatible bottles
         let compatible = bottles.filter { $0.platform.isCompatible }
-        
+
         // Sort by OS version (newest first)
         return compatible.sorted { bottle1, bottle2 in
             bottle1.platform.osVersion > bottle2.platform.osVersion
         }.first
     }
-    
+
     /// Check if formula has any compatible bottles
     public var hasCompatibleBottle: Bool {
         return preferredBottle != nil
     }
-    
+
     /// Get bottle download URL for GHCR
     public func bottleURL(for bottle: Bottle) -> String? {
         // GHCR uses hierarchical paths for @-versioned packages
@@ -105,7 +105,7 @@ public struct Formula: Codable, Equatable {
         //   node@18 -> node/18  
         //   python@3.11 -> python/3.11
         //   tree (no @) -> tree
-        
+
         let ghcrPath: String
         if name.contains("@") {
             // Split package@version into hierarchical path
@@ -122,7 +122,7 @@ public struct Formula: Codable, Equatable {
             // Non-versioned packages use simple name
             ghcrPath = name.lowercased()
         }
-        
+
         return "https://ghcr.io/v2/homebrew/core/\(ghcrPath)/blobs/sha256:\(bottle.sha256)"
     }
 }

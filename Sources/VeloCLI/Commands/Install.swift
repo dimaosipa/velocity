@@ -9,30 +9,30 @@ extension Velo {
         static let configuration = CommandConfiguration(
             abstract: "Install a package"
         )
-        
+
         @Argument(help: "The package to install (optional if velo.json exists)")
         var package: String?
-        
+
         @Flag(help: "Force reinstall even if already installed")
         var force = false
-        
+
         @Flag(help: "Install build dependencies")
         var includeBuildDeps = false
-        
+
         @Option(help: "Install specific version")
         var version: String?
-        
+
         @Flag(help: "Skip dependency installation (internal use)")
         var skipDependencies = false
-        
+
         @Flag(help: "Install globally instead of locally")
         var global = false
-        
+
         func run() throws {
             // Use a simple blocking approach for async operations
             let semaphore = DispatchSemaphore(value: 0)
             var thrownError: Error?
-            
+
             Task {
                 do {
                     try await self.runAsync()
@@ -41,33 +41,33 @@ extension Velo {
                 }
                 semaphore.signal()
             }
-            
+
             semaphore.wait()
-            
+
             if let error = thrownError {
                 throw error
             }
         }
-        
+
         private func runAsync() async throws {
             let context = ProjectContext()
-            
+
             // If no package specified, try to install from velo.json
             if package == nil {
                 try await installFromManifest(context: context)
                 return
             }
-            
+
             guard let packageName = package else {
                 throw VeloError.formulaNotFound(name: "No package specified")
             }
-            
+
             // Determine if we should install locally or globally
             let useLocal = !global && context.isProjectContext
-            
+
             // Get appropriate PathHelper
             let pathHelper = context.getPathHelper(preferLocal: useLocal)
-            
+
             try await installPackage(
                 name: packageName,
                 version: version,
@@ -77,7 +77,7 @@ extension Velo {
                 verbose: true,
                 skipTapUpdate: false
             )
-            
+
             // Automatically add to velo.json if in project context and installing locally
             if useLocal && context.isProjectContext {
                 try await addToManifest(
@@ -87,33 +87,39 @@ extension Velo {
                 )
             }
         }
-        
+
         private func installFromManifest(context: ProjectContext) async throws {
             guard context.isProjectContext else {
                 logError("No velo.json found. Run 'velo init' to create one or specify a package name.")
                 throw ExitCode.failure
             }
-            
+
             guard let manifestPath = context.manifestPath else {
                 throw VeloError.notInProjectContext
             }
-            
+
             logInfo("Installing packages from velo.json...")
-            
+
             let manifestManager = VeloManifestManager()
             let manifest = try manifestManager.read(from: manifestPath)
-            
+
+            let pathHelper = context.getPathHelper(preferLocal: !global)
+
+            // Ensure required taps are available
+            let requiredTaps = manifestManager.getAllTaps(from: manifest)
+            if !requiredTaps.isEmpty {
+                try await ensureRequiredTaps(requiredTaps, pathHelper: pathHelper)
+            }
+
             let allDeps = manifestManager.getAllDependencies(from: manifest)
-            
+
             if allDeps.isEmpty {
                 print("No dependencies found in velo.json")
                 return
             }
-            
-            let pathHelper = context.getPathHelper(preferLocal: !global)
-            
+
             logInfo("Installing \(allDeps.count) packages...")
-            
+
             for (packageName, versionSpec) in allDeps {
                 try await installPackage(
                     name: packageName,
@@ -125,10 +131,106 @@ extension Velo {
                     skipTapUpdate: true // Skip after first update
                 )
             }
-            
+
             Logger.shared.success("All packages installed successfully!")
         }
-        
+
+        private func ensureRequiredTaps(_ requiredTaps: [String], pathHelper: PathHelper) async throws {
+            logInfo("Ensuring required taps are available...")
+
+            let tapsPath = pathHelper.tapsPath
+            var missingTaps: [String] = []
+
+            // Check which taps are missing
+            for tapName in requiredTaps {
+                let tapPath = tapsPath.appendingPathComponent(tapName)
+                if !FileManager.default.fileExists(atPath: tapPath.path) {
+                    missingTaps.append(tapName)
+                }
+            }
+
+            if missingTaps.isEmpty {
+                logInfo("All required taps are available")
+                return
+            }
+
+            logInfo("Adding missing taps: \(missingTaps.joined(separator: ", "))")
+
+            // Add missing taps
+            for tapName in missingTaps {
+                do {
+                    try await addTap(tapName, to: tapsPath)
+                    logInfo("✓ Added tap \(tapName)")
+                } catch {
+                    logError("Failed to add required tap \(tapName): \(error)")
+                    throw VeloError.installationFailed(
+                        package: "velo.json dependencies",
+                        reason: "Required tap '\(tapName)' could not be added: \(error.localizedDescription)"
+                    )
+                }
+            }
+        }
+
+        private func addTap(_ tapName: String, to tapsPath: URL) async throws {
+            let components = tapName.components(separatedBy: "/")
+            guard components.count == 2 else {
+                throw VeloError.invalidTapName(tapName)
+            }
+
+            let user = components[0]
+            let repo = components[1]
+
+            // Apply repository naming convention
+            let actualRepo = repo.hasPrefix("homebrew-") ? repo : "homebrew-\(repo)"
+            let url = "https://github.com/\(user)/\(actualRepo).git"
+            let tapPath = tapsPath.appendingPathComponent(tapName)
+
+            // Ensure parent directory exists
+            try FileManager.default.createDirectory(
+                at: tapPath.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+
+            // Clone the tap
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+            process.arguments = [
+                "clone",
+                "--depth", "1",
+                url,
+                tapPath.path
+            ]
+
+            try await runProcess(process, description: "Cloning tap \(tapName)")
+        }
+
+        private func runProcess(_ process: Process, description: String) async throws {
+            return try await withCheckedThrowingContinuation { continuation in
+                process.terminationHandler = { process in
+                    if process.terminationStatus == 0 {
+                        continuation.resume()
+                    } else {
+                        let error = VeloError.processError(
+                            command: process.executableURL?.lastPathComponent ?? "git",
+                            exitCode: Int(process.terminationStatus),
+                            description: "\(description) failed"
+                        )
+                        continuation.resume(throwing: error)
+                    }
+                }
+
+                do {
+                    try process.run()
+                } catch {
+                    continuation.resume(throwing: VeloError.processError(
+                        command: "git",
+                        exitCode: -1,
+                        description: "Failed to start \(description): \(error.localizedDescription)"
+                    ))
+                }
+            }
+        }
+
         private func addToManifest(
             package: String,
             version: String?,
@@ -137,21 +239,21 @@ extension Velo {
             guard let manifestPath = context.manifestPath else {
                 return // Not in project context, skip
             }
-            
+
             let manifestManager = VeloManifestManager()
-            
+
             // Use the version we installed, or "*" if no specific version
             let versionToSave = version ?? "*"
-            
+
             try manifestManager.addDependency(
                 package,
                 version: versionToSave,
                 to: manifestPath
             )
-            
+
             logInfo("Added \(package)@\(versionToSave) to dependencies")
         }
-        
+
         private func installPackage(
             name: String,
             version: String? = nil,
@@ -163,23 +265,23 @@ extension Velo {
         ) async throws {
             let downloader = BottleDownloader()
             let installer = Installer(pathHelper: pathHelper)
-            let tapManager = TapManager()
+            let tapManager = TapManager(pathHelper: pathHelper)
             let progressHandler = CLIProgress()
-            
+
             if verbose {
                 logInfo("Installing \(name)...")
             }
-            
+
             // Ensure we have the homebrew/core tap (skip for dependencies)
             if !skipTapUpdate {
                 try await tapManager.updateTaps()
             }
-            
+
             // Parse formula
             guard let formula = try tapManager.findFormula(name) else {
                 throw VeloError.formulaNotFound(name: name)
             }
-            
+
             // Check if already installed
             if !force {
                 let status = try installer.verifyInstallation(formula: formula)
@@ -190,12 +292,12 @@ extension Velo {
                     return
                 }
             }
-            
+
             // Install dependencies first (runtime dependencies only)
             if !skipDeps {
                 try await installDependencies(for: formula, context: context, pathHelper: pathHelper)
             }
-            
+
             // Check for compatible bottle
             guard let bottle = formula.preferredBottle else {
                 throw VeloError.installationFailed(
@@ -203,20 +305,20 @@ extension Velo {
                     reason: "No compatible bottle found for Apple Silicon"
                 )
             }
-            
+
             guard let bottleURL = formula.bottleURL(for: bottle) else {
                 throw VeloError.installationFailed(
                     package: name,
                     reason: "Could not generate bottle URL"
                 )
             }
-            
+
             // Download bottle
             let tempFile = PathHelper.shared.temporaryFile(prefix: "bottle-\(name)", extension: "tar.gz")
-            
+
             // Retry download with exponential backoff for transient issues
             let maxRetries = 2
-            
+
             for attempt in 0..<maxRetries {
                 do {
                     if attempt > 0 {
@@ -224,80 +326,80 @@ extension Velo {
                         // Exponential backoff: 1s, 2s
                         try await Task.sleep(nanoseconds: UInt64(pow(2.0, Double(attempt))) * 1_000_000_000)
                     }
-                    
+
                     try await downloader.download(
                         from: bottleURL,
                         to: tempFile,
                         expectedSHA256: bottle.sha256,
                         progress: progressHandler
                     )
-                    
+
                     break // Success, exit retry loop
-                    
+
                 } catch VeloError.bottleNotAccessible(let url, let reason) {
                     // Don't retry for access denied errors
                     logWarning("Bottle not accessible for \(name): \(reason)")
                     logWarning("Skipping \(name) installation due to bottle access restrictions.")
                     logInfo("This may be due to GHCR access limitations or rate limiting.")
                     logInfo("You can try installing \(name) again later or use an alternative installation method.")
-                    
+
                     throw VeloError.bottleNotAccessible(url: url, reason: reason)
-                    
+
                 } catch {
                     logWarning("Download failed (attempt \(attempt + 1)/\(maxRetries)): \(error.localizedDescription)")
-                    
+
                     if attempt == maxRetries - 1 {
                         // Last attempt failed, throw the error
                         throw error
                     }
                 }
             }
-            
+
             // Install
             try await installer.install(
                 formula: formula,
                 from: tempFile,
                 progress: progressHandler
             )
-            
+
             // Clean up
             try? FileManager.default.removeItem(at: tempFile)
-            
+
             Logger.shared.success("\(formula.name) \(formula.version) installed successfully!")
-            
+
             // Show next steps
             if verbose && !PathHelper.shared.isInPath() {
                 logWarning("Add ~/.velo/bin to your PATH to use installed packages:")
                 print("  echo 'export PATH=\"$HOME/.velo/bin:$PATH\"' >> ~/.zshrc")
             }
         }
-        
+
         // MARK: - Dependency Resolution
-        
+
         private func installDependencies(
             for formula: Formula,
             context: ProjectContext,
             pathHelper: PathHelper
         ) async throws {
             let runtimeDependencies = formula.dependencies.filter { $0.type == .required }
-            
+
             if runtimeDependencies.isEmpty {
                 return
             }
-            
+
             logInfo("Checking \(runtimeDependencies.count) runtime dependencies...")
-            
+
             var failedDependencies: [String] = []
-            
+
             for dependency in runtimeDependencies {
                 // Skip if already installed
                 if pathHelper.isPackageInstalled(dependency.name) {
                     logInfo("✓ \(dependency.name) (already installed)")
                     continue
                 }
-                
+
                 logInfo("Installing dependency: \(dependency.name)...")
-                
+
                 // Create a new install instance for the dependency
                 do {
                     try await installPackage(
@@ -318,7 +420,7 @@ extension Velo {
                     failedDependencies.append(dependency.name)
                 }
             }
-            
+
             // If any required dependencies failed, abort the installation
             if !failedDependencies.isEmpty {
                 logError("Installation aborted due to missing critical dependencies:")
@@ -328,14 +430,14 @@ extension Velo {
                 logError("")
                 logError("\(formula.name) requires these dependencies to function properly.")
                 logError("Installation aborted to prevent installing a broken package.")
-                
+
                 throw VeloError.installationFailed(
                     package: formula.name,
                     reason: "Missing critical dependencies: \(failedDependencies.joined(separator: ", "))"
                 )
             }
         }
-        
+
     }
 
 // MARK: - Progress Handler
@@ -343,9 +445,9 @@ extension Velo {
 private class CLIProgress: DownloadProgress, InstallationProgress {
     private var lastProgressUpdate = Date()
     private let updateInterval: TimeInterval = 0.1 // 100ms
-    
+
     // MARK: - DownloadProgress
-    
+
     func downloadDidStart(url: String, totalSize: Int64?) {
         if let size = totalSize {
             logInfo("Downloading \(formatBytes(size))...")
@@ -353,12 +455,12 @@ private class CLIProgress: DownloadProgress, InstallationProgress {
             logInfo("Downloading...")
         }
     }
-    
+
     func downloadDidUpdate(bytesDownloaded: Int64, totalBytes: Int64?) {
         let now = Date()
         guard now.timeIntervalSince(lastProgressUpdate) >= updateInterval else { return }
         lastProgressUpdate = now
-        
+
         if let total = totalBytes {
             let percentage = Int((Double(bytesDownloaded) / Double(total)) * 100)
             Logger.shared.progress("Downloading: \(percentage)% (\(formatBytes(bytesDownloaded))/\(formatBytes(total)))")
@@ -366,51 +468,51 @@ private class CLIProgress: DownloadProgress, InstallationProgress {
             Logger.shared.progress("Downloaded: \(formatBytes(bytesDownloaded))")
         }
     }
-    
+
     func downloadDidComplete(url: String) {
         print("\n")
         logInfo("Download complete")
     }
-    
+
     func downloadDidFail(url: String, error: Error) {
         print("\n")
         logError("Download failed: \(error.localizedDescription)")
     }
-    
+
     // MARK: - InstallationProgress
-    
+
     func installationDidStart(package: String, version: String) {
         logInfo("Installing \(package) \(version)...")
     }
-    
+
     func extractionDidStart(totalFiles: Int?) {
         logInfo("Extracting package...")
     }
-    
+
     func extractionDidUpdate(filesExtracted: Int, totalFiles: Int?) {
         // Don't spam with extraction updates
     }
-    
+
     func linkingDidStart(binariesCount: Int) {
         if binariesCount > 0 {
             logInfo("Creating \(binariesCount) symlink(s)...")
         }
     }
-    
+
     func linkingDidUpdate(binariesLinked: Int, totalBinaries: Int) {
         // Progress for linking is usually fast enough to not need updates
     }
-    
+
     func installationDidComplete(package: String) {
         // Handled by the main command
     }
-    
+
     func installationDidFail(package: String, error: Error) {
         logError("Installation of \(package) failed: \(error.localizedDescription)")
     }
-    
+
     // MARK: - Helpers
-    
+
     private func formatBytes(_ bytes: Int64) -> String {
         let formatter = ByteCountFormatter()
         formatter.countStyle = .binary

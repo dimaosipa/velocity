@@ -6,19 +6,19 @@ public struct PathResolutionConfig: Codable {
     public let traverseParents: Bool
     public let preferLocal: Bool
     public let pathPrecedence: [PathScope]
-    
+
     public enum PathScope: String, Codable {
         case local
         case global
         case system
     }
-    
+
     public static let `default` = PathResolutionConfig(
         traverseParents: true,
         preferLocal: true,
         pathPrecedence: [.local, .global, .system]
     )
-    
+
     public init(
         traverseParents: Bool = true,
         preferLocal: Bool = true,
@@ -34,9 +34,9 @@ public struct PathResolutionConfig: Codable {
 public final class PathResolver {
     private let fileManager = FileManager.default
     private let globalPathHelper = PathHelper.shared
-    
+
     public init() {}
-    
+
     /// Resolve a binary to its full path based on current context and configuration
     public func resolveBinary(
         _ name: String,
@@ -48,17 +48,17 @@ public final class PathResolver {
         if let requestedScope = scope {
             return resolveBinaryInScope(name, scope: requestedScope, context: context)
         }
-        
+
         // Otherwise, check scopes in configured order
         for scope in config.pathPrecedence {
             if let resolved = resolveBinaryInScope(name, scope: scope, context: context, config: config) {
                 return resolved
             }
         }
-        
+
         return nil
     }
-    
+
     /// Resolve which command will be executed (shows all possible matches)
     public func which(
         _ name: String,
@@ -66,7 +66,7 @@ public final class PathResolver {
         config: PathResolutionConfig = .default
     ) -> WhichResult {
         var results: [WhichResult.Match] = []
-        
+
         // Check local installations
         if let localPaths = findLocalBinaries(name, context: context, config: config) {
             results.append(contentsOf: localPaths.map { path in
@@ -78,7 +78,7 @@ public final class PathResolver {
                 )
             })
         }
-        
+
         // Check global installation
         let globalBinPath = globalPathHelper.binPath.appendingPathComponent(name)
         if fileManager.fileExists(atPath: globalBinPath.path) {
@@ -89,7 +89,7 @@ public final class PathResolver {
                 isDefault: false
             ))
         }
-        
+
         // Check system paths
         if let systemPath = findInSystemPath(name) {
             results.append(WhichResult.Match(
@@ -99,7 +99,7 @@ public final class PathResolver {
                 isDefault: false
             ))
         }
-        
+
         // Mark the first match as default based on precedence
         if !results.isEmpty {
             for scope in config.pathPrecedence {
@@ -109,12 +109,12 @@ public final class PathResolver {
                 }
             }
         }
-        
+
         return WhichResult(binary: name, matches: results)
     }
-    
+
     // MARK: - Private Methods
-    
+
     private func resolveBinaryInScope(
         _ name: String,
         scope: PathResolutionConfig.PathScope,
@@ -131,14 +131,14 @@ public final class PathResolver {
             return findInSystemPath(name)
         }
     }
-    
+
     private func findLocalBinaries(
         _ name: String,
         context: ProjectContext,
         config: PathResolutionConfig
     ) -> [URL]? {
         var results: [URL] = []
-        
+
         // Check project local .velo
         if let localVeloPath = context.localVeloPath {
             let localBinPath = localVeloPath.appendingPathComponent("bin").appendingPathComponent(name)
@@ -146,11 +146,11 @@ public final class PathResolver {
                 results.append(localBinPath)
             }
         }
-        
+
         // Traverse parent directories if configured
         if config.traverseParents && results.isEmpty {
             var searchPath = context.projectRoot?.deletingLastPathComponent()
-            
+
             while let path = searchPath, path.path != "/" {
                 let parentVeloPath = path.appendingPathComponent(".velo/bin").appendingPathComponent(name)
                 if fileManager.fileExists(atPath: parentVeloPath.path) {
@@ -160,10 +160,10 @@ public final class PathResolver {
                 searchPath = path.deletingLastPathComponent()
             }
         }
-        
+
         return results.isEmpty ? nil : results
     }
-    
+
     private func findInSystemPath(_ name: String) -> URL? {
         let systemPaths = [
             "/usr/local/bin",
@@ -172,17 +172,17 @@ public final class PathResolver {
             "/opt/homebrew/bin", // Homebrew on Apple Silicon
             "/opt/local/bin"     // MacPorts
         ]
-        
+
         for path in systemPaths {
             let binaryPath = URL(fileURLWithPath: path).appendingPathComponent(name)
             if fileManager.fileExists(atPath: binaryPath.path) {
                 return binaryPath
             }
         }
-        
+
         return nil
     }
-    
+
     private func extractVersion(from path: URL, package: String) -> String? {
         // Try to resolve symlink and extract version from the target path
         if let resolvedPath = try? fileManager.destinationOfSymbolicLink(atPath: path.path) {
@@ -201,14 +201,14 @@ public final class PathResolver {
 public struct WhichResult {
     public let binary: String
     public let matches: [Match]
-    
+
     public struct Match {
         public let path: URL
         public let scope: PathResolutionConfig.PathScope
         public let version: String?
         public var isDefault: Bool
     }
-    
+
     public var defaultMatch: Match? {
         matches.first { $0.isDefault }
     }

@@ -4,9 +4,11 @@ import VeloSystem
 /// Represents the velo.json manifest file
 public struct VeloManifest: Codable {
     public var dependencies: [String: String]
+    public var taps: [String]
 
-    public init(dependencies: [String: String] = [:]) {
+    public init(dependencies: [String: String] = [:], taps: [String] = []) {
         self.dependencies = dependencies
+        self.taps = taps
     }
 }
 
@@ -48,8 +50,8 @@ public final class VeloManifestManager {
 
         print("Creating new velo.json...")
 
-        // Create simple manifest with empty dependencies
-        let manifest = VeloManifest(dependencies: [:])
+        // Create simple manifest with empty dependencies and taps
+        let manifest = VeloManifest(dependencies: [:], taps: [])
 
         // Write to file
         try write(manifest, to: url)
@@ -81,5 +83,33 @@ public final class VeloManifestManager {
     /// Get all dependencies
     public func getAllDependencies(from manifest: VeloManifest) -> [String: String] {
         return manifest.dependencies
+    }
+
+    /// Get all taps
+    public func getAllTaps(from manifest: VeloManifest) -> [String] {
+        return manifest.taps
+    }
+
+    /// Add a tap to the manifest
+    public func addTap(
+        _ tap: String,
+        to manifestURL: URL
+    ) throws {
+        var manifest = try read(from: manifestURL)
+        if !manifest.taps.contains(tap) {
+            manifest.taps.append(tap)
+            manifest.taps.sort() // Keep taps sorted
+            try write(manifest, to: manifestURL)
+        }
+    }
+
+    /// Remove a tap from the manifest
+    public func removeTap(
+        _ tap: String,
+        from manifestURL: URL
+    ) throws {
+        var manifest = try read(from: manifestURL)
+        manifest.taps.removeAll { $0 == tap }
+        try write(manifest, to: manifestURL)
     }
 }

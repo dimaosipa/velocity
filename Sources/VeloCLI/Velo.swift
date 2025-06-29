@@ -26,21 +26,21 @@ public struct Velo: ParsableCommand {
         ],
         defaultSubcommand: Velo.Doctor.self
     )
-    
+
     @Flag(name: .shortAndLong, help: "Enable verbose output")
     var verbose = false
-    
+
     @Flag(name: .long, help: "Disable colored output")
     var noColor = false
-    
+
     @Flag(name: .long, help: "Enable quiet mode (minimal output)")
     var quiet = false
-    
+
     public init() {}
-    
+
     private func setupLogging() {
         let logger = Logger.shared
-        
+
         if quiet {
             logger.logLevel = .error
         } else if verbose {
@@ -48,10 +48,10 @@ public struct Velo: ParsableCommand {
         } else {
             logger.logLevel = .info
         }
-        
+
         logger.enableColors = !noColor
         logger.enableTimestamps = verbose
-        
+
         // Set up log file
         let logPath = PathHelper.shared.logsPath.appendingPathComponent("velo.log").path
         try? logger.setLogFile(logPath)

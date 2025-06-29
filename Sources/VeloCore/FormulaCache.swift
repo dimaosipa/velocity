@@ -26,113 +26,113 @@ public final class FormulaCache: FormulaCacheProtocol {
     private let queue = DispatchQueue(label: "com.velo.formula-cache", attributes: .concurrent)
     private var memoryCache: [String: Formula] = [:]
     private let maxMemoryCacheSize: Int
-    
+
     public init(pathHelper: PathHelper = PathHelper.shared, maxMemoryCacheSize: Int = 1000) {
         self.pathHelper = pathHelper
         self.maxMemoryCacheSize = maxMemoryCacheSize
     }
-    
+
     // MARK: - Public Interface
-    
+
     public func get(_ name: String) throws -> Formula? {
         return try queue.sync {
             // Check memory cache first
             if let cached = memoryCache[name] {
                 return cached
             }
-            
+
             // Check disk cache
             let cacheFile = pathHelper.cacheFile(for: "formula-\(name)")
             guard FileManager.default.fileExists(atPath: cacheFile.path) else {
                 return nil
             }
-            
+
             let data = try Data(contentsOf: cacheFile)
             let formula = try JSONDecoder().decode(Formula.self, from: data)
-            
+
             // Store in memory cache
             setMemoryCache(formula)
-            
+
             return formula
         }
     }
-    
+
     public func set(_ formula: Formula) throws {
         try queue.sync(flags: .barrier) {
             // Update memory cache
             setMemoryCache(formula)
-            
+
             // Update disk cache
             let cacheFile = pathHelper.cacheFile(for: "formula-\(formula.name)")
             let data = try JSONEncoder().encode(formula)
             try data.write(to: cacheFile)
         }
     }
-    
+
     public func contains(_ name: String) -> Bool {
         return queue.sync {
             if memoryCache[name] != nil {
                 return true
             }
-            
+
             let cacheFile = pathHelper.cacheFile(for: "formula-\(name)")
             return FileManager.default.fileExists(atPath: cacheFile.path)
         }
     }
-    
+
     public func remove(_ name: String) throws {
         try queue.sync(flags: .barrier) {
             memoryCache.removeValue(forKey: name)
-            
+
             let cacheFile = pathHelper.cacheFile(for: "formula-\(name)")
             if FileManager.default.fileExists(atPath: cacheFile.path) {
                 try FileManager.default.removeItem(at: cacheFile)
             }
         }
     }
-    
+
     public func clear() throws {
         try queue.sync(flags: .barrier) {
             memoryCache.removeAll()
-            
+
             let cacheDir = pathHelper.cachePath
             let contents = try FileManager.default.contentsOfDirectory(at: cacheDir, includingPropertiesForKeys: nil)
-            
+
             for file in contents where file.pathExtension == "velocache" && file.lastPathComponent.hasPrefix("formula-") {
                 try FileManager.default.removeItem(at: file)
             }
         }
     }
-    
+
     public func preload(formulae: [Formula]) throws {
         try queue.sync(flags: .barrier) {
             logInfo("Preloading \(formulae.count) formulae to cache...")
-            
+
             for formula in formulae {
                 // Update memory cache
                 setMemoryCache(formula)
-                
+
                 // Update disk cache
                 let cacheFile = pathHelper.cacheFile(for: "formula-\(formula.name)")
                 let data = try JSONEncoder().encode(formula)
                 try data.write(to: cacheFile)
             }
-            
+
             logInfo("Formula cache preloaded successfully")
         }
     }
-    
+
     // MARK: - Cache Statistics
-    
+
     public func statistics() -> CacheStatistics {
         return queue.sync {
             let memoryCacheSize = memoryCache.count
-            
+
             let cacheDir = pathHelper.cachePath
             let diskCacheSize = (try? FileManager.default.contentsOfDirectory(at: cacheDir, includingPropertiesForKeys: nil))?.count { file in
                 file.pathExtension == "velocache" && file.lastPathComponent.hasPrefix("formula-")
             } ?? 0
-            
+
             var totalDiskSize: Int64 = 0
             if let contents = try? FileManager.default.contentsOfDirectory(at: cacheDir, includingPropertiesForKeys: [.fileSizeKey]) {
                 for file in contents where file.pathExtension == "velocache" && file.lastPathComponent.hasPrefix("formula-") {
@@ -142,7 +142,7 @@ public final class FormulaCache: FormulaCacheProtocol {
                     }
                 }
             }
-            
+
             return CacheStatistics(
                 memoryCacheCount: memoryCacheSize,
                 diskCacheCount: diskCacheSize,
@@ -150,12 +150,12 @@ public final class FormulaCache: FormulaCacheProtocol {
             )
         }
     }
-    
+
     // MARK: - Private Methods
-    
+
     private func setMemoryCache(_ formula: Formula) {
         memoryCache[formula.name] = formula
-        
+
         // Evict oldest entries if cache is too large
         if memoryCache.count > maxMemoryCacheSize {
             let excess = memoryCache.count - maxMemoryCacheSize
@@ -173,7 +173,7 @@ public struct CacheStatistics {
     public let memoryCacheCount: Int
     public let diskCacheCount: Int
     public let totalDiskSizeBytes: Int64
-    
+
     public var formattedDiskSize: String {
         let formatter = ByteCountFormatter()
         formatter.countStyle = .binary
@@ -188,50 +188,50 @@ public final class FormulaIndex {
     private let queue = DispatchQueue(label: "com.velo.formula-index", attributes: .concurrent)
     private var nameIndex: [String: String] = [:] // lowercase name -> actual name
     private var descriptionIndex: [String: Set<String>] = [:] // keyword -> formula names
-    
+
     public init(cache: FormulaCacheProtocol) {
         self.cache = cache
     }
-    
+
     public func buildIndex(from formulae: [Formula]) throws {
         queue.sync(flags: .barrier) {
             logInfo("Building formula search index...")
-            
+
             nameIndex.removeAll()
             descriptionIndex.removeAll()
-            
+
             for formula in formulae {
                 // Index by name
                 nameIndex[formula.name.lowercased()] = formula.name
-                
+
                 // Index by description keywords
                 let keywords = formula.description.lowercased()
                     .components(separatedBy: .whitespacesAndNewlines)
                     .filter { !$0.isEmpty && $0.count > 2 } // Skip very short words
-                
+
                 for keyword in keywords {
                     var formulas = descriptionIndex[keyword] ?? Set<String>()
                     formulas.insert(formula.name)
                     descriptionIndex[keyword] = formulas
                 }
             }
-            
+
             logInfo("Index built with \(nameIndex.count) formulae and \(descriptionIndex.count) keywords")
         }
     }
-    
+
     public func search(_ term: String, includeDescriptions: Bool = false) -> [String] {
         return queue.sync {
             var results = Set<String>()
             let searchTerm = term.lowercased()
-            
+
             // Search by name (exact and partial matches)
             for (indexedName, actualName) in nameIndex {
                 if indexedName.contains(searchTerm) {
                     results.insert(actualName)
                 }
             }
-            
+
             // Search by description if requested
             if includeDescriptions {
                 for (keyword, formulaNames) in descriptionIndex {
@@ -240,20 +240,20 @@ public final class FormulaIndex {
                     }
                 }
             }
-            
+
             // Sort results by relevance
             return Array(results).sorted { name1, name2 in
                 let exact1 = name1.lowercased() == searchTerm
                 let exact2 = name2.lowercased() == searchTerm
-                
+
                 if exact1 && !exact2 { return true }
                 if !exact1 && exact2 { return false }
-                
+
                 return name1.localizedCompare(name2) == .orderedAscending
             }
         }
     }
-    
+
     public func find(_ name: String) -> String? {
         return queue.sync {
             return nameIndex[name.lowercased()]
@@ -267,51 +267,51 @@ public final class TapManager {
     private let pathHelper: PathHelper
     private let cache: FormulaCacheProtocol
     private let index: FormulaIndex
-    
+
     public init(pathHelper: PathHelper = PathHelper.shared) {
         self.pathHelper = pathHelper
         self.cache = FormulaCache(pathHelper: pathHelper)
         self.index = FormulaIndex(cache: cache)
     }
-    
+
     public func updateTaps() async throws {
         logInfo("Updating taps...")
-        
+
         // Ensure homebrew/core tap is cloned and up to date
         try await ensureCoreTap()
-        
+
         // For lazy loading, we don't parse all formulae upfront
         // Instead, we'll parse them on-demand as they're requested
         logInfo("Tap ready for on-demand formula parsing")
     }
-    
+
     /// Full index build - only run when explicitly requested (e.g., for search functionality)
     public func buildFullIndex() async throws {
         logInfo("Building full formula index...")
-        
+
         let parser = FormulaParser()
         var formulae: [Formula] = []
         let tapsPath = pathHelper.tapsPath
-        
+
         if FileManager.default.fileExists(atPath: tapsPath.path) {
             // Process all taps
             let organizations = try FileManager.default.contentsOfDirectory(atPath: tapsPath.path)
                 .filter { !$0.hasPrefix(".") }
-            
+
             for org in organizations {
                 let orgPath = tapsPath.appendingPathComponent(org)
                 let repos = try FileManager.default.contentsOfDirectory(atPath: orgPath.path)
                     .filter { !$0.hasPrefix(".") }
-                
+
                 for repo in repos {
                     let tapName = "\(org)/\(repo)"
                     let tapPath = orgPath.appendingPathComponent(repo)
                     let formulaPath = tapPath.appendingPathComponent("Formula")
-                    
+
                     guard FileManager.default.fileExists(atPath: formulaPath.path) else {
                         continue
                     }
-                    
+
                     logInfo("Parsing formulae from \(tapName) tap...")
                     try await processFormulaeFromTap(tapPath: formulaPath, tapName: tapName, parser: parser, formulae: &formulae)
                 }
@@ -321,22 +321,22 @@ public final class TapManager {
             logWarning("No taps found, using test fixtures...")
             try await loadTestFixtures(parser: parser, formulae: &formulae)
         }
-        
+
         // Update cache and index
         try cache.preload(formulae: formulae)
         try index.buildIndex(from: formulae)
-        
+
         logInfo("Full index built with \(formulae.count) formulae from all taps")
     }
-    
+
     /// Process formulae from a specific tap
     private func processFormulaeFromTap(tapPath: URL, tapName: String, parser: FormulaParser, formulae: inout [Formula]) async throws {
         var allFormulaFiles: [(path: URL, name: String)] = []
-        
+
         // Check if tap organizes formulae in subdirectories (like homebrew/core)
         let items = try FileManager.default.contentsOfDirectory(atPath: tapPath.path)
             .filter { !$0.hasPrefix(".") }
-        
+
         var hasSubdirectories = false
         for item in items {
             let itemPath = tapPath.appendingPathComponent(item)
@@ -346,17 +346,17 @@ public final class TapManager {
                 break
             }
         }
-        
+
         if hasSubdirectories {
             // Process subdirectories (like homebrew/core structure)
             for item in items {
                 let itemPath = tapPath.appendingPathComponent(item)
                 var isDirectory: ObjCBool = false
-                
+
                 if FileManager.default.fileExists(atPath: itemPath.path, isDirectory: &isDirectory) && isDirectory.boolValue {
                     let files = try FileManager.default.contentsOfDirectory(atPath: itemPath.path)
                         .filter { $0.hasSuffix(".rb") }
-                    
+
                     for file in files {
                         let formulaPath = itemPath.appendingPathComponent(file)
                         let formulaName = String(file.dropLast(3)) // Remove .rb
@@ -377,16 +377,16 @@ public final class TapManager {
                 allFormulaFiles.append((path: formulaPath, name: formulaName))
             }
         }
-        
+
         let totalFormulae = allFormulaFiles.count
         if totalFormulae == 0 {
             logInfo("No formulae found in \(tapName)")
             return
         }
-        
+
         var processed = 0
         logInfo("Found \(totalFormulae) formulae in \(tapName)")
-        
+
         // Process formulae in batches to avoid memory issues
         let batchSize = 100
         for batch in allFormulaFiles.chunked(into: batchSize) {
@@ -402,27 +402,27 @@ public final class TapManager {
                         }
                     }
                 }
-                
+
                 for await result in group {
                     if let formula = result {
                         formulae.append(formula)
                     }
                     processed += 1
-                    
+
                     if processed % 100 == 0 {
                         logInfo("Processed \(processed)/\(totalFormulae) formulae from \(tapName)...")
                     }
                 }
             }
         }
-        
+
         logInfo("Completed processing \(processed) formulae from \(tapName)")
     }
-    
+
     /// Ensure the homebrew/core tap is cloned and up to date
     private func ensureCoreTap() async throws {
         let coreTapPath = pathHelper.tapsPath.appendingPathComponent("homebrew/core")
-        
+
         if FileManager.default.fileExists(atPath: coreTapPath.path) {
             logInfo("Updating homebrew/core tap...")
             try await updateCoreTap(at: coreTapPath)
@@ -431,13 +431,13 @@ public final class TapManager {
             try await cloneCoreTap(to: coreTapPath)
         }
     }
-    
+
     /// Clone the homebrew/core tap
     private func cloneCoreTap(to path: URL) async throws {
         // Ensure parent directory exists
         let parentPath = path.deletingLastPathComponent()
         try FileManager.default.createDirectory(at: parentPath, withIntermediateDirectories: true)
-        
+
         // Clone the tap using git
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
@@ -447,57 +447,57 @@ public final class TapManager {
             "https://github.com/Homebrew/homebrew-core.git",
             path.path
         ]
-        
+
         try await runProcess(process, description: "Cloning homebrew/core tap")
     }
-    
+
     /// Update an existing tap
     private func updateCoreTap(at path: URL) async throws {
         logInfo("Updating homebrew/core tap...")
-        
+
         // Check if we can update (not in detached HEAD state)
         let statusProcess = Process()
         statusProcess.executableURL = URL(fileURLWithPath: "/usr/bin/git")
         statusProcess.arguments = ["status", "--porcelain=v2", "--branch"]
         statusProcess.currentDirectoryURL = path
-        
+
         let statusPipe = Pipe()
         statusProcess.standardOutput = statusPipe
         statusProcess.standardError = statusPipe
-        
+
         do {
             try statusProcess.run()
             statusProcess.waitUntilExit()
-            
+
             let output = String(data: statusPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-            
+
             // Check if we're in detached HEAD state
             if output.contains("(no branch)") || output.contains("HEAD detached") {
                 logInfo("Tap is in detached HEAD state - skipping update")
                 return
             }
-            
+
             // Perform git pull with timeout
             try await gitPullWithTimeout(at: path, timeoutSeconds: 30)
-            
+
         } catch {
             logWarning("Failed to update tap: \(error.localizedDescription)")
             logInfo("Continuing with existing tap content")
         }
     }
-    
+
     private func gitPullWithTimeout(at path: URL, timeoutSeconds: Int) async throws {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
         process.arguments = ["pull", "--ff-only"]
         process.currentDirectoryURL = path
-        
+
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardError = pipe
-        
+
         try process.run()
-        
+
         // Wait for process with timeout
         let start = Date()
         while process.isRunning {
@@ -505,7 +505,7 @@ public final class TapManager {
                 process.terminate()
                 // Give it a moment to terminate gracefully
                 try await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
-                
+
                 // If still running, send SIGKILL via kill command
                 if process.isRunning {
                     let killProcess = Process()
@@ -514,7 +514,7 @@ public final class TapManager {
                     try? killProcess.run()
                     killProcess.waitUntilExit()
                 }
-                
+
                 throw VeloError.processError(
                     command: "git pull",
                     exitCode: -1,
@@ -523,7 +523,7 @@ public final class TapManager {
             }
             try await Task.sleep(nanoseconds: 100_000_000) // 0.1 seconds
         }
-        
+
         if process.terminationStatus != 0 {
             let errorData = pipe.fileHandleForReading.readDataToEndOfFile()
             let errorOutput = String(data: errorData, encoding: .utf8) ?? "Unknown error"
@@ -533,10 +533,10 @@ public final class TapManager {
                 description: errorOutput
             )
         }
-        
+
         logInfo("Tap updated successfully")
     }
-    
+
     /// Load test fixtures as fallback
     private func loadTestFixtures(parser: FormulaParser, formulae: inout [Formula]) async throws {
         let fixturesPath = URL(fileURLWithPath: #file)
@@ -546,15 +546,15 @@ public final class TapManager {
             .appendingPathComponent("Tests")
             .appendingPathComponent("Fixtures")
             .appendingPathComponent("Formulae")
-        
+
         if FileManager.default.fileExists(atPath: fixturesPath.path) {
             let formulaFiles = try FileManager.default.contentsOfDirectory(atPath: fixturesPath.path)
                 .filter { $0.hasSuffix(".rb") }
-            
+
             for file in formulaFiles {
                 let formulaPath = fixturesPath.appendingPathComponent(file)
                 let formulaName = String(file.dropLast(3))
-                
+
                 do {
                     let content = try String(contentsOf: formulaPath)
                     let formula = try parser.parse(rubyContent: content, formulaName: formulaName)
@@ -565,7 +565,7 @@ public final class TapManager {
             }
         }
     }
-    
+
     /// Run a process asynchronously
     private func runProcess(_ process: Process, description: String) async throws {
         return try await withCheckedThrowingContinuation { continuation in
@@ -582,7 +582,7 @@ public final class TapManager {
                     continuation.resume(throwing: error)
                 }
             }
-            
+
             do {
                 try process.run()
             } catch {
@@ -594,68 +594,68 @@ public final class TapManager {
             }
         }
     }
-    
+
     public func findFormula(_ name: String) throws -> Formula? {
         // Try exact name first from cache
         if let formula = try cache.get(name) {
             return formula
         }
-        
+
         // Try case-insensitive search in index
         if let actualName = index.find(name) {
             if let formula = try cache.get(actualName) {
                 return formula
             }
         }
-        
+
         // If not in cache, try to parse it directly from the tap
         return try parseFormulaDirectly(name)
     }
-    
+
     /// Parse a specific formula directly from all available taps without full index
     private func parseFormulaDirectly(_ name: String) throws -> Formula? {
         // Ensure cache directory exists
         try pathHelper.ensureDirectoryExists(at: pathHelper.cachePath)
-        
+
         let tapsPath = pathHelper.tapsPath
         guard FileManager.default.fileExists(atPath: tapsPath.path) else {
             return nil
         }
-        
+
         let parser = FormulaParser()
         let formulaFile = "\(name).rb"
-        
+
         // Get all available taps and prioritize them
         let availableTaps = try getAvailableTaps(from: tapsPath)
         let prioritizedTaps = prioritizeTaps(availableTaps)
-        
+
         // Search taps in priority order
         for tapInfo in prioritizedTaps {
             let formulaPath = tapInfo.path.appendingPathComponent("Formula")
-            
+
             guard FileManager.default.fileExists(atPath: formulaPath.path) else {
                 continue
             }
-            
+
             // Try to find the formula in this tap
             if let formula = try findFormulaInTap(name: name, formulaFile: formulaFile, tapPath: formulaPath, parser: parser) {
                 logInfo("Successfully parsed \(name) from \(tapInfo.name) tap")
                 return formula
             }
         }
-        
+
         return nil
     }
-    
+
     /// Find a formula in a specific tap
     private func findFormulaInTap(name: String, formulaFile: String, tapPath: URL, parser: FormulaParser) throws -> Formula? {
         var possiblePaths: [URL] = []
-        
+
         // First try common locations
         let firstLetter = String(name.prefix(1)).lowercased()
         possiblePaths.append(tapPath.appendingPathComponent(firstLetter).appendingPathComponent(formulaFile))
         possiblePaths.append(tapPath.appendingPathComponent(formulaFile))
-        
+
         // If not found, search all subdirectories
         if let subdirs = try? FileManager.default.contentsOfDirectory(atPath: tapPath.path) {
             for subdir in subdirs.filter({ !$0.hasPrefix(".") }) {
@@ -666,54 +666,54 @@ public final class TapManager {
                 }
             }
         }
-        
+
         for formulaPath in possiblePaths {
             if FileManager.default.fileExists(atPath: formulaPath.path) {
                 do {
                     let content = try String(contentsOf: formulaPath)
                     let formula = try parser.parse(rubyContent: content, formulaName: name)
-                    
+
                     // Cache the parsed formula for future use
                     try cache.set(formula)
-                    
+
                     return formula
                 } catch {
                     logWarning("Failed to parse \(name) from \(formulaPath.path): \(error)")
                 }
             }
         }
-        
+
         return nil
     }
-    
+
     /// Get all available taps
     private func getAvailableTaps(from tapsPath: URL) throws -> [TapReference] {
         var taps: [TapReference] = []
-        
+
         let organizations = try FileManager.default.contentsOfDirectory(atPath: tapsPath.path)
             .filter { !$0.hasPrefix(".") }
-        
+
         for org in organizations {
             let orgPath = tapsPath.appendingPathComponent(org)
             let repos = (try? FileManager.default.contentsOfDirectory(atPath: orgPath.path)) ?? []
-            
+
             for repo in repos.filter({ !$0.hasPrefix(".") }) {
                 let tapPath = orgPath.appendingPathComponent(repo)
                 let tapName = "\(org)/\(repo)"
-                
+
                 var isDirectory: ObjCBool = false
                 guard FileManager.default.fileExists(atPath: tapPath.path, isDirectory: &isDirectory),
                       isDirectory.boolValue else {
                     continue
                 }
-                
+
                 taps.append(TapReference(name: tapName, path: tapPath))
             }
         }
-        
+
         return taps
     }
-    
+
     /// Prioritize taps for formula resolution
     /// homebrew/core has highest priority, then other homebrew taps, then third-party taps
     private func prioritizeTaps(_ taps: [TapReference]) -> [TapReference] {
@@ -721,23 +721,23 @@ public final class TapManager {
             // homebrew/core always comes first
             if tap1.name == "homebrew/core" { return true }
             if tap2.name == "homebrew/core" { return false }
-            
+
             // Other homebrew taps come next
             let tap1IsHomebrew = tap1.name.hasPrefix("homebrew/")
             let tap2IsHomebrew = tap2.name.hasPrefix("homebrew/")
-            
+
             if tap1IsHomebrew && !tap2IsHomebrew { return true }
             if !tap1IsHomebrew && tap2IsHomebrew { return false }
-            
+
             // Within the same category, sort alphabetically
             return tap1.name.localizedCompare(tap2.name) == .orderedAscending
         }
     }
-    
+
     public func searchFormulae(_ term: String, includeDescriptions: Bool = false) -> [String] {
         return index.search(term, includeDescriptions: includeDescriptions)
     }
-    
+
     public func cacheStatistics() -> CacheStatistics {
         return cache.statistics()
     }
