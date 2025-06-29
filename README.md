@@ -160,6 +160,9 @@ Velo can manage its own installation and data:
 # Install velo to ~/.velo/bin and add to PATH
 velo install-self
 
+# Install as symlink for development (auto-updates when you rebuild)
+velo install-self --symlink
+
 # Uninstall velo binary only (keep packages)
 velo uninstall-self --binary-only
 

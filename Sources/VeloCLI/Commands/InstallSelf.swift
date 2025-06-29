@@ -15,6 +15,9 @@ extension Velo {
         @Flag(help: "Force reinstall even if already installed")
         var force = false
         
+        @Flag(help: "Create symlink instead of copying binary (useful for development)")
+        var symlink = false
+        
         func run() throws {
             // Use a simple blocking approach for async operations
             let semaphore = DispatchSemaphore(value: 0)
@@ -55,37 +58,60 @@ extension Velo {
             
             // Check if already installed
             if fileManager.fileExists(atPath: targetPath.path) && !force {
-                // Check if it's the same version
-                if try isSameBinary(currentBinaryPath, targetPath) {
-                    logInfo("Velo is already installed at \(targetPath.path)")
-                    
-                    if !skipPath {
-                        try updateShellProfiles()
+                // Check if it's the same installation type and version
+                let isCurrentlySymlink = try isSymlink(targetPath)
+                if isCurrentlySymlink == symlink {
+                    var isSameVersion = false
+                    if symlink {
+                        // For symlinks, we just check that both are symlinks
+                        isSameVersion = true
+                    } else {
+                        // For copies, check if it's the same binary
+                        isSameVersion = try isSameBinary(currentBinaryPath, targetPath)
                     }
                     
-                    Logger.shared.success("Velo installation verified!")
-                    showNextSteps()
-                    return
-                } else {
-                    logInfo("Updating existing velo installation...")
+                    if isSameVersion {
+                        let installType = symlink ? "symlinked" : "installed"
+                        logInfo("Velo is already \(installType) at \(targetPath.path)")
+                        
+                        if !skipPath {
+                            try updateShellProfiles()
+                        }
+                        
+                        Logger.shared.success("Velo installation verified!")
+                        showNextSteps()
+                        return
+                    }
                 }
+                
+                let oldType = isCurrentlySymlink ? "symlink" : "copy"
+                let newType = symlink ? "symlink" : "copy"
+                logInfo("Updating velo installation (\(oldType) → \(newType))...")
             }
             
-            // Copy binary
-            logInfo("Installing velo to \(targetPath.path)...")
+            // Install binary (copy or symlink)
+            let installType = symlink ? "Symlinking" : "Installing"
+            logInfo("\(installType) velo to \(targetPath.path)...")
             
             // Remove existing if present
             if fileManager.fileExists(atPath: targetPath.path) {
                 try fileManager.removeItem(at: targetPath)
             }
             
-            try fileManager.copyItem(at: currentBinaryPath, to: targetPath)
-            
-            // Make executable
-            let attributes = [FileAttributeKey.posixPermissions: 0o755]
-            try fileManager.setAttributes(attributes, ofItemAtPath: targetPath.path)
-            
-            Logger.shared.success("Velo binary installed successfully!")
+            if symlink {
+                // Create symlink
+                try fileManager.createSymbolicLink(at: targetPath, withDestinationURL: currentBinaryPath)
+                Logger.shared.success("Velo binary symlinked successfully!")
+            } else {
+                // Copy binary
+                try fileManager.copyItem(at: currentBinaryPath, to: targetPath)
+                
+                // Make executable
+                let attributes = [FileAttributeKey.posixPermissions: 0o755]
+                try fileManager.setAttributes(attributes, ofItemAtPath: targetPath.path)
+                
+                Logger.shared.success("Velo binary installed successfully!")
+            }
             
             // Update shell profiles
             if !skipPath {
@@ -120,6 +146,12 @@ extension Velo {
             let targetDate = targetAttributes[.modificationDate] as? Date ?? Date.distantPast
             
             return sourceSize == targetSize && abs(sourceDate.timeIntervalSince(targetDate)) < 1.0
+        }
+        
+        private func isSymlink(_ url: URL) throws -> Bool {
+            let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+            let fileType = attributes[.type] as? FileAttributeType
+            return fileType == .typeSymbolicLink
         }
         
         private func updateShellProfiles() throws {
@@ -177,13 +209,18 @@ extension Velo {
         
         private func showNextSteps() {
             print("")
-            print("🎉 Velo is now installed!")
+            let installType = symlink ? "symlinked" : "installed"
+            print("🎉 Velo is now \(installType)!")
             print("")
             print("Next steps:")
             print("  1. Restart your terminal or run: source ~/.zshrc")
             print("  2. Verify installation: velo doctor")
             print("  3. Install your first package: velo install wget")
             print("")
+            if symlink {
+                print("Note: Velo is symlinked for development. Changes to the binary will be reflected immediately.")
+                print("")
+            }
             print("To uninstall: velo uninstall-self")
         }
     }
