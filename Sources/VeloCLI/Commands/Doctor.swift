@@ -70,14 +70,31 @@ extension Velo {
         private func checkArchitecture() -> Int {
             print("Checking architecture...")
             
-            let arch = ProcessInfo.processInfo.environment["HOSTTYPE"] ?? "unknown"
+            // Use uname -m to get the machine architecture
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/uname")
+            process.arguments = ["-m"]
             
-            if arch == "arm64" {
-                print("  ✅ Running on Apple Silicon (\(arch))")
-                return 0
-            } else {
-                print("  ❌ Not running on Apple Silicon (detected: \(arch))")
-                print("     Velo requires Apple Silicon Macs (M1/M2/M3)")
+            let pipe = Pipe()
+            process.standardOutput = pipe
+            
+            do {
+                try process.run()
+                process.waitUntilExit()
+                
+                let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                let arch = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "unknown"
+                
+                if arch == "arm64" {
+                    print("  ✅ Running on Apple Silicon (\(arch))")
+                    return 0
+                } else {
+                    print("  ❌ Not running on Apple Silicon (detected: \(arch))")
+                    print("     Velo requires Apple Silicon Macs (M1/M2/M3)")
+                    return 1
+                }
+            } catch {
+                print("  ⚠️  Could not detect architecture: \(error.localizedDescription)")
                 return 1
             }
         }
