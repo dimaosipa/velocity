@@ -259,14 +259,56 @@ public final class BottleDownloader {
         let (tokenData, _) = try await session.data(from: tokenEndpoint)
         
         struct TokenResponse: Codable {
-            let token: String
+            let token: String?
+            let accessToken: String?
+            let errors: [ErrorResponse]?
+            
+            enum CodingKeys: String, CodingKey {
+                case token
+                case accessToken = "access_token"
+                case errors
+            }
+            
+            var validToken: String? {
+                return token ?? accessToken
+            }
         }
         
-        let tokenResponse = try JSONDecoder().decode(TokenResponse.self, from: tokenData)
+        struct ErrorResponse: Codable {
+            let code: String
+            let message: String
+        }
+        
+        let tokenResponse: TokenResponse
+        do {
+            tokenResponse = try JSONDecoder().decode(TokenResponse.self, from: tokenData)
+        } catch {
+            logWarning("Failed to parse GHCR token response, attempting direct download...")
+            try await simpleDownload(url: url, destination: destination, expectedSHA256: expectedSHA256, progress: progress)
+            return
+        }
+        
+        // Check for authentication errors
+        if let errors = tokenResponse.errors, !errors.isEmpty {
+            // If access is denied, bottle is likely not accessible
+            let errorMessages = errors.map { "\($0.code): \($0.message)" }.joined(separator: ", ")
+            throw VeloError.downloadFailed(
+                url: url.absoluteString,
+                error: NSError(domain: "GHCR", code: 403, userInfo: [
+                    NSLocalizedDescriptionKey: "GHCR access denied: \(errorMessages)"
+                ])
+            )
+        }
+        
+        guard let authToken = tokenResponse.validToken else {
+            logWarning("No valid token received from GHCR, attempting direct download...")
+            try await simpleDownload(url: url, destination: destination, expectedSHA256: expectedSHA256, progress: progress)
+            return
+        }
         
         // Now download with authentication
         var authenticatedRequest = URLRequest(url: url)
-        authenticatedRequest.setValue("Bearer \(tokenResponse.token)", forHTTPHeaderField: "Authorization")
+        authenticatedRequest.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
         
         // Create parent directory if needed
         let parentDir = destination.deletingLastPathComponent()
