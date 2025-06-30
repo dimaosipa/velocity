@@ -8,16 +8,61 @@ const hljs = require('highlight.js');
 
 // Configuration
 const CONFIG = {
-    inputFile: path.join(__dirname, '..', 'README.md'),
-    templateFile: path.join(__dirname, 'template.html'),
-    outputDir: path.join(__dirname, 'dist'),
+    // Input files
+    readmeFile: path.join(__dirname, '..', 'README.md'),
+    docsDir: path.join(__dirname, '..', 'docs'),
+    
+    // Templates
+    homeTemplate: path.join(__dirname, 'templates', 'home.html'),
+    docsTemplate: path.join(__dirname, 'templates', 'docs.html'),
+    
+    // Assets
     assetsDir: path.join(__dirname, 'assets'),
-    title: 'Velo - Lightning-fast Package Manager for macOS',
-    description: 'A lightning-fast, modern package manager for macOS - built for Apple Silicon.',
+    
+    // Output
+    outputDir: path.join(__dirname, 'dist'),
+    
+    // Site info
+    title: 'Velocity - Lightning-fast Package Manager for Apple Silicon',
+    description: 'Native speed. Modern architecture. Zero sudo required. A lightning-fast package manager built exclusively for M1/M2/M3 Macs.',
     baseUrl: process.env.GITHUB_PAGES_URL || 'https://dimaosipa.github.io/velocity'
 };
 
-// Initialize markdown parser with plugins
+// Documentation structure
+const DOCS_STRUCTURE = [
+    { 
+        file: 'installation.md', 
+        title: 'Installation Guide', 
+        path: '/docs/installation',
+        description: 'Complete installation guide for Velocity package manager'
+    },
+    { 
+        file: 'commands.md', 
+        title: 'Command Reference', 
+        path: '/docs/commands',
+        description: 'Complete reference for all Velocity commands'
+    },
+    { 
+        file: 'local-packages.md', 
+        title: 'Local Package Management', 
+        path: '/docs/local-packages',
+        description: 'Project-local dependency management with velo.json'
+    },
+    { 
+        file: 'architecture.md', 
+        title: 'Architecture', 
+        path: '/docs/architecture',
+        description: 'Technical design and implementation details'
+    },
+    { 
+        file: 'contributing.md', 
+        title: 'Contributing', 
+        path: '/docs/contributing',
+        description: 'Development guide and contribution workflow'
+    }
+];
+
+// Initialize markdown parser
 const md = new MarkdownIt({
     html: true,
     linkify: true,
@@ -28,7 +73,7 @@ const md = new MarkdownIt({
                 return hljs.highlight(str, { language: lang }).value;
             } catch (__) {}
         }
-        return ''; // use external default escaping
+        return '';
     }
 }).use(markdownItAnchor, {
     permalink: markdownItAnchor.permalink.linkInsideHeader({
@@ -36,6 +81,17 @@ const md = new MarkdownIt({
         renderAttrs: (slug, state) => ({ 'aria-label': `Permalink to "${slug}"` })
     })
 });
+
+/**
+ * Generate slug from text
+ */
+function generateSlug(text) {
+    return text
+        .toLowerCase()
+        .replace(/[^\w\s-]/g, '')
+        .replace(/\s+/g, '-')
+        .trim();
+}
 
 /**
  * Extract table of contents from markdown content
@@ -52,10 +108,7 @@ function generateTableOfContents(content) {
             
             if (nextToken && nextToken.type === 'inline') {
                 const text = nextToken.content;
-                const slug = text.toLowerCase()
-                    .replace(/[^\w\s-]/g, '')
-                    .replace(/\s+/g, '-')
-                    .trim();
+                const slug = generateSlug(text);
                 
                 headings.push({
                     level,
@@ -72,15 +125,14 @@ function generateTableOfContents(content) {
 /**
  * Generate HTML navigation from table of contents
  */
-function generateNavigation(headings) {
+function generateNavigation(headings, isMainNav = false) {
     if (headings.length === 0) return '';
     
     let html = '<ul>\n';
     
     for (const heading of headings) {
-        // Skip h1 (main title) and only show h2-h4
-        if (heading.level === 1) continue;
-        if (heading.level > 4) continue;
+        // Skip h1 for main nav, show h2-h4 only
+        if (isMainNav && (heading.level === 1 || heading.level > 4)) continue;
         
         const levelClass = `level-${heading.level}`;
         html += `    <li><a href="#${heading.slug}" class="${levelClass}">${heading.text}</a></li>\n`;
@@ -91,16 +143,19 @@ function generateNavigation(headings) {
 }
 
 /**
- * Process markdown content and add features
+ * Process markdown content and add proper heading IDs
  */
 function processMarkdown(content) {
-    // Add anchor IDs to headings manually to ensure they match our TOC
+    // First pass: generate headings to get proper slugs
     const headings = generateTableOfContents(content);
     let processedContent = content;
     
     // Replace heading markdown with HTML that includes proper IDs
     for (const heading of headings) {
-        const headingRegex = new RegExp(`^#{${heading.level}}\\s+${heading.text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'm');
+        const headingRegex = new RegExp(
+            `^#{${heading.level}}\\s+${heading.text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 
+            'm'
+        );
         const replacement = `${'#'.repeat(heading.level)} <span id="${heading.slug}">${heading.text}</span>`;
         processedContent = processedContent.replace(headingRegex, replacement);
     }
@@ -109,46 +164,214 @@ function processMarkdown(content) {
 }
 
 /**
- * Copy assets to output directory
+ * Copy and optimize assets
  */
 async function copyAssets() {
     console.log('📁 Copying assets...');
     
-    // Copy CSS file
-    const cssSource = path.join(CONFIG.assetsDir, 'style.css');
-    const cssTarget = path.join(CONFIG.outputDir, 'style.css');
-    await fs.copy(cssSource, cssTarget);
+    // Create assets directory in output
+    const outputAssetsDir = path.join(CONFIG.outputDir, 'assets');
+    await fs.ensureDir(outputAssetsDir);
     
-    // Create a simple favicon if it doesn't exist
-    const faviconPath = path.join(CONFIG.outputDir, 'favicon.ico');
-    if (!await fs.pathExists(faviconPath)) {
-        // Create a simple base64 favicon (16x16 blue square)
-        const faviconData = Buffer.from(
-            'AAABAAEAEBAAAAEAIABoBAAAFgAAACgAAAAQAAAAIAAAAAEAIAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAA' +
-            'AAAAAAD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///' +
-            'wD///8A////AP///wAAhv8AAIX/AACG/wAAhf8AAIX/AACG/wAAhf8AAIX/AACG/wAAhf8AAIX/AACG/wAAh' +
-            'f8AAIX/AP///wD///8AAIX/AACF/wAAhf8AAIX/AACF/wAAhf8AAIX/AACF/wAAhf8AAIX/AACF/wAAhf8AA' +
-            'IX/AACF/wAAhf8A////AACG/wAAhf8AAIX/AACF/wAAhf8AAIX/AACF/wAAhf8AAIX/AACF/wAAhf8AAIX/A' +
-            'ACF/wAAhf8AAIX/AP///wAAhf8AAIX/AACF/wAAhf8AAIX/AACF/wAAhf8AAIX/AACF/wAAhf8AAIX/AACF/' +
-            'wAAhf8AAIX/AACF/wD///8AAIX/AACF/wAAhf8AAIX/AACF/wAAhf8AAIX/AACF/wAAhf8AAIX/AACF/wAAh' +
-            'f8AAIX/AACF/wAAhf8A////AACG/wAAhf8AAIX/AACF/wAAhf8AAIX/AACF/wAAhf8AAIX/AACF/wAAhf8AA' +
-            'IX/AACF/wAAhf8AAIX/AP///wAAhf8AAIX/AACF/wAAhf8AAIX/AACF/wAAhf8AAIX/AACF/wAAhf8AAIX/A' +
-            'ACF/wAAhf8AAIX/AACF/wD///8AAIX/AACF/wAAhf8AAIX/AACF/wAAhf8AAIX/AACF/wAAhf8AAIX/AACF/' +
-            'wAAhf8AAIX/AACF/wAAhf8A////AACG/wAAhf8AAIX/AACF/wAAhf8AAIX/AACF/wAAhf8AAIX/AACF/wAAh' +
-            'f8AAIX/AACF/wAAhf8AAIX/AP///wAAhf8AAIX/AACF/wAAhf8AAIX/AACF/wAAhf8AAIX/AACF/wAAhf8AA' +
-            'IX/AACF/wAAhf8AAIX/AACF/wD///8AAIX/AACF/wAAhf8AAIX/AACF/wAAhf8AAIX/AACF/wAAhf8AAIX/A' +
-            'ACF/wAAhf8AAIX/AACF/wAAhf8A////AACG/wAAhf8AAIX/AACF/wAAhf8AAIX/AACF/wAAhf8AAIX/AACF/' +
-            'wAAhf8AAIX/AACF/wAAhf8AAIX/AP///wAAhf8AAIX/AACF/wAAhf8AAIX/AACF/wAAhf8AAIX/AACF/wAAh' +
-            'f8AAIX/AACF/wAAhf8AAIX/AACF/wD///8AAIX/AACF/wAAhf8AAIX/AACF/wAAhf8AAIX/AACF/wAAhf8AA' +
-            'IX/AACF/wAAhf8AAIX/AACF/wAAhf8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////A' +
-            'P///wD///8A////AP///wD///8A////AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' +
-            'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==', 
-            'base64'
-        );
-        await fs.writeFile(faviconPath, faviconData);
+    // Copy CSS files
+    const cssFiles = ['home.css', 'docs.css'];
+    for (const cssFile of cssFiles) {
+        const srcPath = path.join(CONFIG.assetsDir, 'css', cssFile);
+        const destPath = path.join(CONFIG.outputDir, cssFile);
+        if (await fs.pathExists(srcPath)) {
+            await fs.copy(srcPath, destPath);
+        }
+    }
+    
+    // Copy images
+    const imagesDir = path.join(CONFIG.assetsDir, 'images');
+    if (await fs.pathExists(imagesDir)) {
+        const images = await fs.readdir(imagesDir);
+        for (const image of images) {
+            if (image.endsWith('.png') || image.endsWith('.jpg') || image.endsWith('.svg')) {
+                const srcPath = path.join(imagesDir, image);
+                const destPath = path.join(CONFIG.outputDir, image);
+                await fs.copy(srcPath, destPath);
+            }
+        }
+    }
+    
+    // Copy icons
+    const iconsDir = path.join(CONFIG.assetsDir, 'icons');
+    if (await fs.pathExists(iconsDir)) {
+        const icons = await fs.readdir(iconsDir);
+        for (const icon of icons) {
+            if (icon.endsWith('.ico') || icon.endsWith('.png') || icon.endsWith('.json')) {
+                const srcPath = path.join(iconsDir, icon);
+                const destPath = path.join(CONFIG.outputDir, icon);
+                await fs.copy(srcPath, destPath);
+            }
+        }
     }
     
     console.log('✅ Assets copied successfully');
+}
+
+/**
+ * Generate home page
+ */
+async function generateHomePage() {
+    console.log('🏠 Generating home page...');
+    
+    const template = await fs.readFile(CONFIG.homeTemplate, 'utf8');
+    
+    // For home page, we just need to replace basic placeholders
+    const html = template
+        .replace(/{{TITLE}}/g, CONFIG.title)
+        .replace(/{{DESCRIPTION}}/g, CONFIG.description);
+    
+    const outputFile = path.join(CONFIG.outputDir, 'index.html');
+    await fs.writeFile(outputFile, html, 'utf8');
+    
+    console.log('✅ Home page generated');
+}
+
+/**
+ * Generate documentation overview page
+ */
+async function generateDocsOverview() {
+    console.log('📚 Generating docs overview...');
+    
+    // Create overview content from README
+    const readmeContent = await fs.readFile(CONFIG.readmeFile, 'utf8');
+    const template = await fs.readFile(CONFIG.docsTemplate, 'utf8');
+    
+    // Generate table of contents
+    const headings = generateTableOfContents(readmeContent);
+    const tocHtml = generateNavigation(headings);
+    
+    // Convert markdown to HTML
+    const contentHtml = processMarkdown(readmeContent);
+    
+    // Add documentation links section
+    const docsLinksHtml = `
+        <section class="docs-links" style="margin-top: 2rem; padding: 1.5rem; background: var(--color-surface); border-radius: var(--radius-md); border: 1px solid var(--color-border);">
+            <h2>📚 Documentation Sections</h2>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; margin-top: 1rem;">
+                ${DOCS_STRUCTURE.map(doc => `
+                    <a href="${doc.path}" style="display: block; padding: 1rem; background: white; border: 1px solid var(--color-border); border-radius: var(--radius-sm); text-decoration: none; transition: all 0.2s ease;">
+                        <h3 style="margin: 0 0 0.5rem 0; color: var(--color-primary); font-size: 1rem;">${doc.title}</h3>
+                        <p style="margin: 0; color: var(--color-text-secondary); font-size: 0.875rem; line-height: 1.4;">${doc.description}</p>
+                    </a>
+                `).join('')}
+            </div>
+        </section>
+    `;
+    
+    const finalContent = contentHtml + docsLinksHtml;
+    
+    // Replace template placeholders
+    const html = template
+        .replace(/{{TITLE}}/g, 'Overview')
+        .replace(/{{DESCRIPTION}}/g, CONFIG.description)
+        .replace(/{{TABLE_OF_CONTENTS}}/g, tocHtml)
+        .replace(/{{CONTENT}}/g, finalContent)
+        .replace(/{{SOURCE_FILE}}/g, 'README.md')
+        .replace(/{{#BREADCRUMB}}.*?{{\/BREADCRUMB}}/gs, '')
+        .replace(/{{#PREV_PAGE}}.*?{{\/PREV_PAGE}}/gs, '')
+        .replace(/{{#NEXT_PAGE}}.*?{{\/NEXT_PAGE}}/gs, '');
+    
+    // Create docs directory and write overview
+    const docsOutputDir = path.join(CONFIG.outputDir, 'docs');
+    await fs.ensureDir(docsOutputDir);
+    
+    const outputFile = path.join(docsOutputDir, 'index.html');
+    await fs.writeFile(outputFile, html, 'utf8');
+    
+    console.log('✅ Docs overview generated');
+}
+
+/**
+ * Generate individual documentation pages
+ */
+async function generateDocPages() {
+    console.log('📄 Generating documentation pages...');
+    
+    const template = await fs.readFile(CONFIG.docsTemplate, 'utf8');
+    const docsOutputDir = path.join(CONFIG.outputDir, 'docs');
+    await fs.ensureDir(docsOutputDir);
+    
+    for (let i = 0; i < DOCS_STRUCTURE.length; i++) {
+        const doc = DOCS_STRUCTURE[i];
+        const docFile = path.join(CONFIG.docsDir, doc.file);
+        
+        if (!(await fs.pathExists(docFile))) {
+            console.log(`⚠️  Warning: ${doc.file} not found, skipping...`);
+            continue;
+        }
+        
+        const content = await fs.readFile(docFile, 'utf8');
+        
+        // Generate table of contents
+        const headings = generateTableOfContents(content);
+        const tocHtml = generateNavigation(headings);
+        
+        // Convert markdown to HTML
+        const contentHtml = processMarkdown(content);
+        
+        // Navigation (prev/next)
+        const prevPage = i > 0 ? DOCS_STRUCTURE[i - 1] : null;
+        const nextPage = i < DOCS_STRUCTURE.length - 1 ? DOCS_STRUCTURE[i + 1] : null;
+        
+        let prevPageHtml = '';
+        let nextPageHtml = '';
+        
+        if (prevPage) {
+            prevPageHtml = `
+                <a href="${prevPage.path}" class="footer-nav-link footer-nav-prev">
+                    <svg class="footer-nav-icon" width="16" height="16" viewBox="0 0 16 16" fill="none">
+                        <path d="M10 12L6 8L10 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                    <div>
+                        <div class="footer-nav-label">Previous</div>
+                        <div class="footer-nav-title">${prevPage.title}</div>
+                    </div>
+                </a>
+            `;
+        }
+        
+        if (nextPage) {
+            nextPageHtml = `
+                <a href="${nextPage.path}" class="footer-nav-link footer-nav-next">
+                    <div>
+                        <div class="footer-nav-label">Next</div>
+                        <div class="footer-nav-title">${nextPage.title}</div>
+                    </div>
+                    <svg class="footer-nav-icon" width="16" height="16" viewBox="0 0 16 16" fill="none">
+                        <path d="M6 12L10 8L6 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </a>
+            `;
+        }
+        
+        // Replace template placeholders
+        let html = template
+            .replace(/{{TITLE}}/g, doc.title)
+            .replace(/{{DESCRIPTION}}/g, doc.description)
+            .replace(/{{TABLE_OF_CONTENTS}}/g, tocHtml)
+            .replace(/{{CONTENT}}/g, contentHtml)
+            .replace(/{{SOURCE_FILE}}/g, `docs/${doc.file}`)
+            .replace(/{{#BREADCRUMB}}(.*?){{\/BREADCRUMB}}/gs, `<span class="breadcrumb-separator">/</span><span class="breadcrumb-current">${doc.title}</span>`)
+            .replace(/{{#PREV_PAGE}}.*?{{\/PREV_PAGE}}/gs, prevPageHtml)
+            .replace(/{{#NEXT_PAGE}}.*?{{\/NEXT_PAGE}}/gs, nextPageHtml);
+        
+        // Create subdirectory for clean URLs
+        const pagePath = doc.path.replace('/docs/', '');
+        const pageDir = path.join(docsOutputDir, pagePath);
+        await fs.ensureDir(pageDir);
+        
+        const outputFile = path.join(pageDir, 'index.html');
+        await fs.writeFile(outputFile, html, 'utf8');
+        
+        console.log(`  ✅ Generated ${doc.title}`);
+    }
+    
+    console.log('✅ All documentation pages generated');
 }
 
 /**
@@ -156,48 +379,37 @@ async function copyAssets() {
  */
 async function build() {
     try {
-        console.log('🚀 Building Velo website...');
-        console.log(`📖 Reading README from: ${CONFIG.inputFile}`);
+        console.log('🚀 Building Velocity website...');
         
         // Ensure output directory exists
         await fs.ensureDir(CONFIG.outputDir);
         
-        // Read input files
-        const markdownContent = await fs.readFile(CONFIG.inputFile, 'utf8');
-        const template = await fs.readFile(CONFIG.templateFile, 'utf8');
+        // Clean previous build
+        await fs.emptyDir(CONFIG.outputDir);
         
-        // Generate table of contents
-        const headings = generateTableOfContents(markdownContent);
-        const navigation = generateNavigation(headings);
-        
-        // Convert markdown to HTML
-        const htmlContent = processMarkdown(markdownContent);
-        
-        // Replace template placeholders
-        const finalHtml = template
-            .replace(/{{TITLE}}/g, CONFIG.title)
-            .replace(/{{DESCRIPTION}}/g, CONFIG.description)
-            .replace(/{{TABLE_OF_CONTENTS}}/g, navigation)
-            .replace(/{{CONTENT}}/g, htmlContent);
-        
-        // Write output file
-        const outputFile = path.join(CONFIG.outputDir, 'index.html');
-        await fs.writeFile(outputFile, finalHtml, 'utf8');
-        
-        // Copy assets
+        // Copy assets first
         await copyAssets();
+        
+        // Generate pages
+        await generateHomePage();
+        await generateDocsOverview();
+        await generateDocPages();
+        
+        // Generate stats
+        const files = await fs.readdir(CONFIG.outputDir, { recursive: true });
+        const totalFiles = files.filter(f => f.endsWith('.html')).length;
         
         console.log('✅ Website built successfully!');
         console.log(`📁 Output directory: ${CONFIG.outputDir}`);
-        console.log(`🌐 Open: file://${outputFile}`);
-        
-        // Show build stats
-        const stats = await fs.stat(outputFile);
-        const sizeKB = (stats.size / 1024).toFixed(2);
-        console.log(`📊 Generated ${sizeKB}KB HTML file with ${headings.length} sections`);
+        console.log(`📊 Generated ${totalFiles} HTML pages`);
+        console.log(`🌐 Home: file://${path.join(CONFIG.outputDir, 'index.html')}`);
+        console.log(`📚 Docs: file://${path.join(CONFIG.outputDir, 'docs', 'index.html')}`);
         
     } catch (error) {
         console.error('❌ Build failed:', error.message);
+        if (process.env.NODE_ENV === 'development') {
+            console.error(error.stack);
+        }
         process.exit(1);
     }
 }
@@ -207,4 +419,4 @@ if (require.main === module) {
     build();
 }
 
-module.exports = { build, CONFIG };
+module.exports = { build, CONFIG, DOCS_STRUCTURE };
