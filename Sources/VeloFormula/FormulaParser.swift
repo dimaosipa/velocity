@@ -167,7 +167,10 @@ public struct FormulaParser {
                 #"(\d+_\d+_\d+)"#,                            // underscore separated (2_8_9)
                 #"[a-zA-Z]+(\d+\.\d+)"#,                      // name directly followed by version (tth4.16)
                 #"[-/_](\d{1,2})"#,                           // single or double digit numbers (ngircd-27)
-                #"\.v(\d+[a-z]?)"#                            // .v prefix with letter suffix (jpegsrc.v9f)
+                #"\.v(\d+[a-z]?)"#,                           // .v prefix with letter suffix (jpegsrc.v9f)
+                #"[-/_]r(\d+)"#,                              // r prefix versions (bootstrap-bin-r9)
+                #"/v(\d+)\.tar"#,                             // single digit /v versions (/v7.tar.gz)
+                #"v(\d{8})"#                                  // 8-digit date versions in paths (v20250528)
             ]
 
             for pattern in urlVersionPatterns {
