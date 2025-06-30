@@ -271,6 +271,10 @@ public final class TapManager {
     private let pathHelper: PathHelper
     private let cache: FormulaCacheProtocol
     private let index: FormulaIndex
+    
+    // Static flag to prevent concurrent tap updates
+    private static var isUpdatingTaps = false
+    private static let updateQueue = DispatchQueue(label: "com.velo.tap-update", attributes: .concurrent)
 
     public init(pathHelper: PathHelper = PathHelper.shared) {
         self.pathHelper = pathHelper
@@ -279,6 +283,26 @@ public final class TapManager {
     }
 
     public func updateTaps() async throws {
+        // Check if another tap update is already in progress
+        let shouldUpdate = TapManager.updateQueue.sync {
+            if TapManager.isUpdatingTaps {
+                return false
+            }
+            TapManager.isUpdatingTaps = true
+            return true
+        }
+        
+        if !shouldUpdate {
+            logInfo("Tap update already in progress, skipping...")
+            return
+        }
+        
+        defer {
+            TapManager.updateQueue.sync {
+                TapManager.isUpdatingTaps = false
+            }
+        }
+
         logInfo("Updating taps...")
 
         // Ensure homebrew/core tap is cloned and up to date
@@ -481,8 +505,8 @@ public final class TapManager {
                 return
             }
 
-            // Perform git pull with timeout
-            try await gitPullWithTimeout(at: path, timeoutSeconds: 30)
+            // Perform git pull with timeout (increased for large repos like homebrew/core)
+            try await gitPullWithTimeout(at: path, timeoutSeconds: 120)
 
         } catch {
             logWarning("Failed to update tap: \(error.localizedDescription)")
@@ -491,6 +515,8 @@ public final class TapManager {
     }
 
     private func gitPullWithTimeout(at path: URL, timeoutSeconds: Int) async throws {
+        logInfo("Downloading tap updates (this may take up to \(timeoutSeconds) seconds)...")
+        
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
         process.arguments = ["pull", "--ff-only"]
@@ -504,8 +530,17 @@ public final class TapManager {
 
         // Wait for process with timeout
         let start = Date()
+        var lastProgressTime = start
         while process.isRunning {
-            if Date().timeIntervalSince(start) > TimeInterval(timeoutSeconds) {
+            let elapsed = Date().timeIntervalSince(start)
+            
+            // Show progress every 15 seconds
+            if Date().timeIntervalSince(lastProgressTime) > 15 {
+                logInfo("Still updating tap... (\(Int(elapsed)) seconds elapsed)")
+                lastProgressTime = Date()
+            }
+            
+            if elapsed > TimeInterval(timeoutSeconds) {
                 process.terminate()
                 // Give it a moment to terminate gracefully
                 try await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
