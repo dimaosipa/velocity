@@ -28,39 +28,95 @@ const CONFIG = {
     baseUrl: process.env.GITHUB_PAGES_URL || 'https://dimaosipa.github.io/velocity'
 };
 
-// Documentation structure
-const DOCS_STRUCTURE = [
-    { 
-        file: 'installation.md', 
-        title: 'Installation Guide', 
-        path: '/docs/installation',
-        description: 'Complete installation guide for Velocity package manager'
-    },
-    { 
-        file: 'commands.md', 
-        title: 'Command Reference', 
-        path: '/docs/commands',
-        description: 'Complete reference for all Velocity commands'
-    },
-    { 
-        file: 'local-packages.md', 
-        title: 'Local Package Management', 
-        path: '/docs/local-packages',
-        description: 'Project-local dependency management with velo.json'
-    },
-    { 
-        file: 'architecture.md', 
-        title: 'Architecture', 
-        path: '/docs/architecture',
-        description: 'Technical design and implementation details'
-    },
-    { 
-        file: 'contributing.md', 
-        title: 'Contributing', 
-        path: '/docs/contributing',
-        description: 'Development guide and contribution workflow'
+/**
+ * Parse frontmatter from markdown content
+ */
+function parseFrontmatter(content) {
+    const frontmatterRegex = /^---\r?\n(.*?)\r?\n---\r?\n/s;
+    const match = content.match(frontmatterRegex);
+    
+    if (!match) {
+        return { frontmatter: {}, content: content };
     }
-];
+    
+    const frontmatterText = match[1];
+    const remainingContent = content.substring(match[0].length);
+    
+    // Simple YAML-like parsing for basic fields
+    const frontmatter = {};
+    const lines = frontmatterText.split('\n');
+    
+    for (const line of lines) {
+        const colonIndex = line.indexOf(':');
+        if (colonIndex > 0) {
+            const key = line.substring(0, colonIndex).trim();
+            const value = line.substring(colonIndex + 1).trim().replace(/^["']|["']$/g, '');
+            frontmatter[key] = value;
+        }
+    }
+    
+    return { frontmatter, content: remainingContent };
+}
+
+/**
+ * Auto-discover documentation structure from docs/ directory
+ */
+async function discoverDocsStructure() {
+    const docsFiles = [];
+    
+    try {
+        const files = await fs.readdir(CONFIG.docsDir);
+        
+        for (const file of files) {
+            if (!file.endsWith('.md')) continue;
+            
+            const filePath = path.join(CONFIG.docsDir, file);
+            const stat = await fs.stat(filePath);
+            
+            if (stat.isFile()) {
+                const content = await fs.readFile(filePath, 'utf8');
+                const { frontmatter } = parseFrontmatter(content);
+                
+                // Generate title from filename if not in frontmatter
+                const defaultTitle = file
+                    .replace('.md', '')
+                    .split('-')
+                    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+                    .join(' ');
+                
+                const docInfo = {
+                    file: file,
+                    title: frontmatter.title || defaultTitle,
+                    description: frontmatter.description || `${defaultTitle} documentation`,
+                    order: parseInt(frontmatter.order) || 999,
+                    category: frontmatter.category || 'Other',
+                    path: `/docs/${file.replace('.md', '')}`,
+                    hidden: frontmatter.hidden === 'true'
+                };
+                
+                // Skip hidden files
+                if (!docInfo.hidden) {
+                    docsFiles.push(docInfo);
+                }
+            }
+        }
+        
+        // Sort by order, then by title
+        docsFiles.sort((a, b) => {
+            if (a.order !== b.order) {
+                return a.order - b.order;
+            }
+            return a.title.localeCompare(b.title);
+        });
+        
+        console.log(`📋 Discovered ${docsFiles.length} documentation files`);
+        return docsFiles;
+        
+    } catch (error) {
+        console.warn('⚠️  Could not read docs directory, using empty structure');
+        return [];
+    }
+}
 
 // Initialize markdown parser
 const md = new MarkdownIt({
@@ -143,9 +199,9 @@ function generateNavigation(headings, isMainNav = false) {
 }
 
 /**
- * Generate sidebar navigation based on page depth
+ * Generate sidebar navigation based on page depth and discovered docs
  */
-function generateSidebarNavigation(currentPagePath) {
+function generateSidebarNavigation(currentPagePath, docsStructure) {
     const isRootDocs = currentPagePath === '/docs';
     
     let overviewHref, itemHref;
@@ -163,31 +219,46 @@ function generateSidebarNavigation(currentPagePath) {
         };
     }
     
-    const navigation = `
+    // Group docs by category
+    const categories = {};
+    docsStructure.forEach(doc => {
+        const category = doc.category;
+        if (!categories[category]) {
+            categories[category] = [];
+        }
+        categories[category].push(doc);
+    });
+    
+    // Generate navigation sections
+    let navigation = `
         <div class="nav-section">
-            <h4 class="nav-section-title">Getting Started</h4>
+            <h4 class="nav-section-title">Overview</h4>
             <ul class="nav-list">
                 <li><a href="${overviewHref}" class="nav-item">Overview</a></li>
-                <li><a href="${itemHref('installation')}" class="nav-item">Installation</a></li>
-                <li><a href="${itemHref('commands')}" class="nav-item">Commands</a></li>
-            </ul>
-        </div>
-        
-        <div class="nav-section">
-            <h4 class="nav-section-title">Core Concepts</h4>
-            <ul class="nav-list">
-                <li><a href="${itemHref('local-packages')}" class="nav-item">Local Packages</a></li>
-                <li><a href="${itemHref('architecture')}" class="nav-item">Architecture</a></li>
-            </ul>
-        </div>
-        
-        <div class="nav-section">
-            <h4 class="nav-section-title">Development</h4>
-            <ul class="nav-list">
-                <li><a href="${itemHref('contributing')}" class="nav-item">Contributing</a></li>
             </ul>
         </div>
     `;
+    
+    // Add sections for each category
+    Object.keys(categories).sort().forEach(category => {
+        if (categories[category].length === 0) return;
+        
+        navigation += `
+        <div class="nav-section">
+            <h4 class="nav-section-title">${category}</h4>
+            <ul class="nav-list">`;
+        
+        categories[category].forEach(doc => {
+            const slug = doc.file.replace('.md', '');
+            const href = itemHref(slug);
+            navigation += `
+                <li><a href="${href}" class="nav-item">${doc.title}</a></li>`;
+        });
+        
+        navigation += `
+            </ul>
+        </div>`;
+    });
     
     return navigation;
 }
@@ -286,7 +357,7 @@ async function generateHomePage() {
 /**
  * Generate documentation overview page
  */
-async function generateDocsOverview() {
+async function generateDocsOverview(docsStructure) {
     console.log('📚 Generating docs overview...');
     
     // Create overview content from README
@@ -300,12 +371,12 @@ async function generateDocsOverview() {
     // Convert markdown to HTML
     const contentHtml = processMarkdown(readmeContent);
     
-    // Add documentation links section
-    const docsLinksHtml = `
+    // Add documentation links section using discovered structure
+    const docsLinksHtml = docsStructure.length > 0 ? `
         <section class="docs-links" style="margin-top: 2rem; padding: 1.5rem; background: var(--color-surface); border-radius: var(--radius-md); border: 1px solid var(--color-border);">
             <h2>📚 Documentation Sections</h2>
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; margin-top: 1rem;">
-                ${DOCS_STRUCTURE.map(doc => `
+                ${docsStructure.map(doc => `
                     <a href="${doc.path}" style="display: block; padding: 1rem; background: white; border: 1px solid var(--color-border); border-radius: var(--radius-sm); text-decoration: none; transition: all 0.2s ease;">
                         <h3 style="margin: 0 0 0.5rem 0; color: var(--color-primary); font-size: 1rem;">${doc.title}</h3>
                         <p style="margin: 0; color: var(--color-text-secondary); font-size: 0.875rem; line-height: 1.4;">${doc.description}</p>
@@ -313,12 +384,12 @@ async function generateDocsOverview() {
                 `).join('')}
             </div>
         </section>
-    `;
+    ` : '';
     
     const finalContent = contentHtml + docsLinksHtml;
     
     // Generate sidebar navigation for docs root
-    const sidebarNav = generateSidebarNavigation('/docs');
+    const sidebarNav = generateSidebarNavigation('/docs', docsStructure);
     
     // Replace template placeholders and fix paths for docs root (one level deep)
     const html = template
@@ -347,15 +418,15 @@ async function generateDocsOverview() {
 /**
  * Generate individual documentation pages
  */
-async function generateDocPages() {
+async function generateDocPages(docsStructure) {
     console.log('📄 Generating documentation pages...');
     
     const template = await fs.readFile(CONFIG.docsTemplate, 'utf8');
     const docsOutputDir = path.join(CONFIG.outputDir, 'docs');
     await fs.ensureDir(docsOutputDir);
     
-    for (let i = 0; i < DOCS_STRUCTURE.length; i++) {
-        const doc = DOCS_STRUCTURE[i];
+    for (let i = 0; i < docsStructure.length; i++) {
+        const doc = docsStructure[i];
         const docFile = path.join(CONFIG.docsDir, doc.file);
         
         if (!(await fs.pathExists(docFile))) {
@@ -363,7 +434,8 @@ async function generateDocPages() {
             continue;
         }
         
-        const content = await fs.readFile(docFile, 'utf8');
+        const rawContent = await fs.readFile(docFile, 'utf8');
+        const { frontmatter, content } = parseFrontmatter(rawContent);
         
         // Generate table of contents
         const headings = generateTableOfContents(content);
@@ -373,8 +445,8 @@ async function generateDocPages() {
         const contentHtml = processMarkdown(content);
         
         // Navigation (prev/next)
-        const prevPage = i > 0 ? DOCS_STRUCTURE[i - 1] : null;
-        const nextPage = i < DOCS_STRUCTURE.length - 1 ? DOCS_STRUCTURE[i + 1] : null;
+        const prevPage = i > 0 ? docsStructure[i - 1] : null;
+        const nextPage = i < docsStructure.length - 1 ? docsStructure[i + 1] : null;
         
         let prevPageHtml = '';
         let nextPageHtml = '';
@@ -408,7 +480,7 @@ async function generateDocPages() {
         }
         
         // Generate sidebar navigation for subdoc pages
-        const sidebarNav = generateSidebarNavigation(doc.path);
+        const sidebarNav = generateSidebarNavigation(doc.path, docsStructure);
         
         // Replace template placeholders and fix paths for subdoc pages (two levels deep)
         let html = template
@@ -456,10 +528,13 @@ async function build() {
         // Copy assets first
         await copyAssets();
         
+        // Discover documentation structure
+        const docsStructure = await discoverDocsStructure();
+        
         // Generate pages
         await generateHomePage();
-        await generateDocsOverview();
-        await generateDocPages();
+        await generateDocsOverview(docsStructure);
+        await generateDocPages(docsStructure);
         
         // Generate stats
         const files = await fs.readdir(CONFIG.outputDir, { recursive: true });

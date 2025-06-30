@@ -1,3 +1,10 @@
+---
+title: Command Reference
+description: Complete reference for all Velocity commands
+category: Getting Started
+order: 2
+---
+
 # Command Reference
 
 Complete reference for all Velo commands.

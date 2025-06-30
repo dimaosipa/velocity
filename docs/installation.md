@@ -1,3 +1,10 @@
+---
+title: Installation Guide
+description: Complete installation guide for Velocity package manager
+category: Getting Started
+order: 1
+---
+
 # Installation Guide
 
 ## Requirements
