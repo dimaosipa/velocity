@@ -1,20 +1,28 @@
 import Foundation
 
-/// Utility to run async operations synchronously in CLI commands
+/// Async/sync bridge for CLI commands
 func runAsyncAndWait<T>(_ operation: @escaping () async throws -> T) throws -> T {
-    let semaphore = DispatchSemaphore(value: 0)
+    let runLoop = RunLoop.current
     var result: Result<T, Error>?
 
-    Task { @MainActor in
+    let task = Task {
         do {
             let value = try await operation()
             result = .success(value)
         } catch {
             result = .failure(error)
         }
-        semaphore.signal()
+        CFRunLoopStop(runLoop.getCFRunLoop())
     }
 
-    semaphore.wait()
-    return try result!.get()
+    while result == nil && !task.isCancelled {
+        runLoop.run(mode: .default, before: Date(timeIntervalSinceNow: 0.1))
+    }
+
+    if let result = result {
+        return try result.get()
+    } else {
+        task.cancel()
+        throw CancellationError()
+    }
 }
