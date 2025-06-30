@@ -307,7 +307,7 @@ jobs:
         tar -czf dist/velo-macos-arm64.tar.gz -C dist velo-arm64
         
     - name: Upload Release Artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: velo-pre-release-${{ github.run_number }}
         path: |

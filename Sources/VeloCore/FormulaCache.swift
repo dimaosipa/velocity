@@ -125,13 +125,13 @@ public final class FormulaCache: FormulaCacheProtocol {
     // MARK: - Cache Statistics
 
     public func statistics() -> CacheStatistics {
-        return queue.sync {
+        return queue.sync { [self] in
             let memoryCacheSize = memoryCache.count
 
             let cacheDir = pathHelper.cachePath
-            let diskCacheSize = (try? FileManager.default.contentsOfDirectory(at: cacheDir, includingPropertiesForKeys: nil))?.count { file in
+            let diskCacheSize = (try? FileManager.default.contentsOfDirectory(at: cacheDir, includingPropertiesForKeys: nil))?.filter { file in
                 file.pathExtension == "velocache" && file.lastPathComponent.hasPrefix("formula-")
-            } ?? 0
+            }.count ?? 0
 
             var totalDiskSize: Int64 = 0
             if let contents = try? FileManager.default.contentsOfDirectory(at: cacheDir, includingPropertiesForKeys: [.fileSizeKey]) {

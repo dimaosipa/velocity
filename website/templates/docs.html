@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{TITLE}} - Velocity Documentation</title>
+    <meta name="description" content="{{DESCRIPTION}}">
+    <meta name="keywords" content="velocity, velo, package manager, documentation, swift, macos, apple silicon">
+    
+    <!-- Open Graph Meta Tags -->
+    <meta property="og:title" content="{{TITLE}} - Velocity Documentation">
+    <meta property="og:description" content="{{DESCRIPTION}}">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://dimaosipa.github.io/velocity/docs">
+    
+    <!-- Twitter Card Meta Tags -->
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="{{TITLE}} - Velocity Documentation">
+    <meta name="twitter:description" content="{{DESCRIPTION}}">
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    
+    <!-- Styles -->
+    <link rel="stylesheet" href="/docs.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
+    
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="nav">
+        <div class="nav-container">
+            <div class="nav-logo">
+                <a href="/" class="logo-link">
+                    <img src="/logo.png" alt="Velocity" class="logo">
+                    <span class="logo-text">Velocity</span>
+                </a>
+            </div>
+            <div class="nav-links">
+                <a href="/" class="nav-link">Home</a>
+                <a href="/docs" class="nav-link nav-link-active">Docs</a>
+                <a href="https://github.com/dimaosipa/velocity" class="nav-link nav-link-external" target="_blank">GitHub</a>
+            </div>
+            <button class="nav-toggle" id="nav-toggle" aria-label="Toggle navigation">
+                <span></span>
+                <span></span>
+                <span></span>
+            </button>
+        </div>
+    </nav>
+
+    <div class="docs-layout">
+        <!-- Sidebar -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-content">
+                <div class="sidebar-header">
+                    <h3>Documentation</h3>
+                    <div class="experimental-badge">
+                        <span class="badge-icon">⚠️</span>
+                        <span class="badge-text">Experimental</span>
+                    </div>
+                </div>
+                
+                <nav class="sidebar-nav">
+                    <div class="nav-section">
+                        <h4 class="nav-section-title">Getting Started</h4>
+                        <ul class="nav-list">
+                            <li><a href="/docs" class="nav-item">Overview</a></li>
+                            <li><a href="/docs/installation" class="nav-item">Installation</a></li>
+                            <li><a href="/docs/commands" class="nav-item">Commands</a></li>
+                        </ul>
+                    </div>
+                    
+                    <div class="nav-section">
+                        <h4 class="nav-section-title">Core Concepts</h4>
+                        <ul class="nav-list">
+                            <li><a href="/docs/local-packages" class="nav-item">Local Packages</a></li>
+                            <li><a href="/docs/architecture" class="nav-item">Architecture</a></li>
+                        </ul>
+                    </div>
+                    
+                    <div class="nav-section">
+                        <h4 class="nav-section-title">Development</h4>
+                        <ul class="nav-list">
+                            <li><a href="/docs/contributing" class="nav-item">Contributing</a></li>
+                        </ul>
+                    </div>
+                </nav>
+                
+                <div class="sidebar-footer">
+                    <a href="https://github.com/dimaosipa/velocity/edit/main/{{SOURCE_FILE}}" class="edit-link" target="_blank">
+                        📝 Edit this page
+                    </a>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <div class="content-header">
+                <div class="breadcrumb">
+                    <a href="/" class="breadcrumb-link">Home</a>
+                    <span class="breadcrumb-separator">/</span>
+                    <a href="/docs" class="breadcrumb-link">Docs</a>
+                    {{#BREADCRUMB}}
+                    <span class="breadcrumb-separator">/</span>
+                    <span class="breadcrumb-current">{{BREADCRUMB}}</span>
+                    {{/BREADCRUMB}}
+                </div>
+            </div>
+            
+            <article class="content">
+                {{CONTENT}}
+            </article>
+            
+            <div class="content-footer">
+                <div class="footer-nav">
+                    {{#PREV_PAGE}}
+                    <a href="{{PREV_PAGE.url}}" class="footer-nav-link footer-nav-prev">
+                        <svg class="footer-nav-icon" width="16" height="16" viewBox="0 0 16 16" fill="none">
+                            <path d="M10 12L6 8L10 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                        <div>
+                            <div class="footer-nav-label">Previous</div>
+                            <div class="footer-nav-title">{{PREV_PAGE.title}}</div>
+                        </div>
+                    </a>
+                    {{/PREV_PAGE}}
+                    
+                    {{#NEXT_PAGE}}
+                    <a href="{{NEXT_PAGE.url}}" class="footer-nav-link footer-nav-next">
+                        <div>
+                            <div class="footer-nav-label">Next</div>
+                            <div class="footer-nav-title">{{NEXT_PAGE.title}}</div>
+                        </div>
+                        <svg class="footer-nav-icon" width="16" height="16" viewBox="0 0 16 16" fill="none">
+                            <path d="M6 12L10 8L6 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </a>
+                    {{/NEXT_PAGE}}
+                </div>
+                
+                <div class="help-improve">
+                    <h4>Help improve this page</h4>
+                    <p>Found an issue or have a suggestion? <a href="https://github.com/dimaosipa/velocity/edit/main/{{SOURCE_FILE}}" target="_blank">Edit this page on GitHub</a> or <a href="https://github.com/dimaosipa/velocity/issues/new" target="_blank">create an issue</a>.</p>
+                </div>
+            </div>
+        </main>
+
+        <!-- Table of Contents -->
+        <aside class="toc" id="toc">
+            <div class="toc-content">
+                <h4 class="toc-title">On This Page</h4>
+                <nav class="toc-nav">
+                    {{TABLE_OF_CONTENTS}}
+                </nav>
+            </div>
+        </aside>
+    </div>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="footer-container">
+            <div class="footer-content">
+                <p>© 2024 Velocity Contributors. Licensed under <a href="https://github.com/dimaosipa/velocity/blob/main/LICENSE" target="_blank">BSD-2-Clause</a>.</p>
+                <div class="footer-links">
+                    <a href="https://github.com/dimaosipa/velocity" target="_blank">GitHub</a>
+                    <a href="https://github.com/dimaosipa/velocity/issues" target="_blank">Issues</a>
+                    <a href="https://github.com/dimaosipa/velocity/discussions" target="_blank">Discussions</a>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Scripts -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script>
+        // Initialize syntax highlighting
+        hljs.highlightAll();
+        
+        // Mobile navigation toggle
+        const navToggle = document.getElementById('nav-toggle');
+        const sidebar = document.getElementById('sidebar');
+        const navLinks = document.querySelector('.nav-links');
+        
+        navToggle.addEventListener('click', () => {
+            navLinks.classList.toggle('active');
+            navToggle.classList.toggle('active');
+        });
+        
+        // Sidebar toggle for mobile
+        const sidebarToggle = document.createElement('button');
+        sidebarToggle.className = 'sidebar-toggle';
+        sidebarToggle.innerHTML = '☰ Menu';
+        sidebarToggle.setAttribute('aria-label', 'Toggle sidebar');
+        
+        // Insert sidebar toggle before main content on mobile
+        const mainContent = document.querySelector('.main-content');
+        if (window.innerWidth <= 1024) {
+            mainContent.parentNode.insertBefore(sidebarToggle, mainContent);
+        }
+        
+        sidebarToggle.addEventListener('click', () => {
+            sidebar.classList.toggle('active');
+            sidebarToggle.classList.toggle('active');
+        });
+        
+        // Smooth scrolling for anchor links
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault();
+                const target = document.querySelector(this.getAttribute('href'));
+                if (target) {
+                    target.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'start'
+                    });
+                    // Close mobile nav if open
+                    navLinks.classList.remove('active');
+                    navToggle.classList.remove('active');
+                    sidebar.classList.remove('active');
+                    sidebarToggle.classList.remove('active');
+                }
+            });
+        });
+        
+        // Highlight current section in TOC
+        const tocLinks = document.querySelectorAll('.toc-nav a');
+        const headings = document.querySelectorAll('h1, h2, h3, h4, h5, h6');
+        
+        const observerOptions = {
+            root: null,
+            rootMargin: '-20% 0px -80% 0px',
+            threshold: 0
+        };
+        
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    const id = entry.target.id;
+                    tocLinks.forEach(link => {
+                        link.classList.remove('active');
+                    });
+                    const activeLink = document.querySelector(`.toc-nav a[href="#${id}"]`);
+                    if (activeLink) {
+                        activeLink.classList.add('active');
+                    }
+                }
+            });
+        }, observerOptions);
+        
+        // Observe all headings
+        headings.forEach(heading => {
+            if (heading.id) {
+                observer.observe(heading);
+            }
+        });
+        
+        // Set active nav item based on current URL
+        const currentPath = window.location.pathname;
+        document.querySelectorAll('.nav-item').forEach(link => {
+            if (link.getAttribute('href') === currentPath) {
+                link.classList.add('active');
+            }
+        });
+        
+        // Copy code functionality
+        document.querySelectorAll('pre code').forEach(block => {
+            const button = document.createElement('button');
+            button.className = 'copy-button';
+            button.textContent = 'Copy';
+            button.setAttribute('aria-label', 'Copy code');
+            
+            const pre = block.parentElement;
+            pre.style.position = 'relative';
+            pre.appendChild(button);
+            
+            button.addEventListener('click', () => {
+                navigator.clipboard.writeText(block.textContent).then(() => {
+                    button.textContent = 'Copied!';
+                    button.classList.add('copied');
+                    setTimeout(() => {
+                        button.textContent = 'Copy';
+                        button.classList.remove('copied');
+                    }, 2000);
+                });
+            });
+        });
+        
+        // Handle responsive TOC
+        function handleResize() {
+            const toc = document.getElementById('toc');
+            if (window.innerWidth <= 1024) {
+                toc.style.display = 'none';
+            } else {
+                toc.style.display = 'block';
+            }
+        }
+        
+        window.addEventListener('resize', handleResize);
+        handleResize();
+    </script>
+</body>
+</html>

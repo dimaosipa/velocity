@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Velocity - The Fastest Package Manager for Apple Silicon</title>
+    <meta name="description" content="Native speed. Modern architecture. Zero sudo required. A lightning-fast package manager built exclusively for M1/M2/M3 Macs.">
+    <meta name="keywords" content="velocity, velo, package manager, homebrew, swift, macos, apple silicon, m1, m2, m3">
+    
+    <!-- Open Graph Meta Tags -->
+    <meta property="og:title" content="Velocity - The Fastest Package Manager for Apple Silicon">
+    <meta property="og:description" content="Native speed. Modern architecture. Zero sudo required.">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://dimaosipa.github.io/velocity">
+    <meta property="og:image" content="https://dimaosipa.github.io/velocity/logo.png">
+    
+    <!-- Twitter Card Meta Tags -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Velocity - The Fastest Package Manager for Apple Silicon">
+    <meta name="twitter:description" content="Native speed. Modern architecture. Zero sudo required.">
+    <meta name="twitter:image" content="https://dimaosipa.github.io/velocity/logo.png">
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+    <link rel="manifest" href="/manifest.json">
+    
+    <!-- Styles -->
+    <link rel="stylesheet" href="/home.css">
+    
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="nav">
+        <div class="nav-container">
+            <div class="nav-logo">
+                <img src="/logo.png" alt="Velocity" class="logo">
+                <span class="logo-text">Velocity</span>
+            </div>
+            <div class="nav-links">
+                <a href="#features" class="nav-link">Features</a>
+                <a href="#performance" class="nav-link">Performance</a>
+                <a href="/docs" class="nav-link">Docs</a>
+                <a href="https://github.com/dimaosipa/velocity" class="nav-link nav-link-external" target="_blank">GitHub</a>
+            </div>
+            <button class="nav-toggle" id="nav-toggle" aria-label="Toggle navigation">
+                <span></span>
+                <span></span>
+                <span></span>
+            </button>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section class="hero">
+        <div class="hero-container">
+            <div class="hero-badge">
+                <span class="badge-icon">⚠️</span>
+                <span class="badge-text">Experimental Software - Use with caution</span>
+            </div>
+            
+            <h1 class="hero-title">
+                Velocity: The Fastest<br>
+                Package Manager for<br>
+                <span class="hero-title-accent">Apple Silicon</span>
+            </h1>
+            
+            <p class="hero-subtitle">
+                Native speed. Modern architecture. Zero sudo required.
+            </p>
+            
+            <div class="hero-buttons">
+                <a href="/docs/installation" class="btn btn-primary">
+                    <span>Get Started</span>
+                    <svg class="btn-icon" width="16" height="16" viewBox="0 0 16 16" fill="none">
+                        <path d="M6 12L10 8L6 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </a>
+                <a href="https://github.com/dimaosipa/velocity" class="btn btn-secondary" target="_blank">
+                    <svg class="btn-icon-left" width="16" height="16" viewBox="0 0 16 16" fill="none">
+                        <path fill-rule="evenodd" clip-rule="evenodd" d="M8 0C3.58 0 0 3.58 0 8C0 11.54 2.29 14.53 5.47 15.59C5.87 15.66 6.02 15.42 6.02 15.21C6.02 15.02 6.01 14.39 6.01 13.72C4 14.09 3.48 13.23 3.32 12.78C3.23 12.55 2.84 11.84 2.5 11.65C2.22 11.5 1.82 11.13 2.49 11.12C3.12 11.11 3.57 11.7 3.72 11.94C4.44 13.15 5.59 12.81 6.05 12.6C6.12 12.08 6.33 11.73 6.56 11.53C4.78 11.33 2.92 10.64 2.92 7.58C2.92 6.71 3.23 5.99 3.74 5.43C3.66 5.23 3.38 4.41 3.82 3.31C3.82 3.31 4.49 3.1 6.02 4.13C6.66 3.95 7.34 3.86 8.02 3.86C8.7 3.86 9.38 3.95 10.02 4.13C11.55 3.09 12.22 3.31 12.22 3.31C12.66 4.41 12.38 5.23 12.3 5.43C12.81 5.99 13.12 6.7 13.12 7.58C13.12 10.65 11.25 11.33 9.47 11.53C9.76 11.78 10.01 12.26 10.01 13.01C10.01 14.08 10 14.94 10 15.21C10 15.42 10.15 15.67 10.55 15.59C13.71 14.53 16 11.53 16 8C16 3.58 12.42 0 8 0Z" fill="currentColor"/>
+                    </svg>
+                    <span>View on GitHub</span>
+                </a>
+            </div>
+            
+            <div class="hero-terminal">
+                <div class="terminal">
+                    <div class="terminal-header">
+                        <div class="terminal-buttons">
+                            <span class="terminal-button terminal-button-red"></span>
+                            <span class="terminal-button terminal-button-yellow"></span>
+                            <span class="terminal-button terminal-button-green"></span>
+                        </div>
+                        <div class="terminal-title">Terminal</div>
+                    </div>
+                    <div class="terminal-body">
+                        <div class="terminal-line">
+                            <span class="terminal-prompt">$ </span>
+                            <span class="terminal-command">velo install imagemagick</span>
+                        </div>
+                        <div class="terminal-line terminal-output">
+                            <span>🚀 Installing imagemagick@7.1.1-40...</span>
+                        </div>
+                        <div class="terminal-line terminal-output">
+                            <span>⬇️  Downloading bottle (8 streams)...</span>
+                        </div>
+                        <div class="terminal-line terminal-output">
+                            <span>✅ Installed in 12.3s</span>
+                        </div>
+                        <div class="terminal-line">
+                            <span class="terminal-prompt">$ </span>
+                            <span class="terminal-cursor">█</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features Section -->
+    <section class="features" id="features">
+        <div class="features-container">
+            <div class="section-header">
+                <h2 class="section-title">Built for Apple Silicon</h2>
+                <p class="section-subtitle">Modern architecture designed from the ground up for M1, M2, and M3 Macs</p>
+            </div>
+            
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">⚡</div>
+                    <h3 class="feature-title">Blazing-fast installs</h3>
+                    <p class="feature-description">Parallel downloads with 8-16 concurrent streams and smart caching for instant-feeling package management.</p>
+                </div>
+                
+                <div class="feature-card">
+                    <div class="feature-icon">🛡️</div>
+                    <h3 class="feature-title">Runs entirely in user space</h3>
+                    <p class="feature-description">Everything lives in ~/.velo/. Never requires sudo or writes to system directories.</p>
+                </div>
+                
+                <div class="feature-card">
+                    <div class="feature-icon">🍏</div>
+                    <h3 class="feature-title">Built for M1/M2/M3 Macs</h3>
+                    <p class="feature-description">Native Apple Silicon performance with no x86 overhead or compatibility layers.</p>
+                </div>
+                
+                <div class="feature-card">
+                    <div class="feature-icon">🔁</div>
+                    <h3 class="feature-title">Compatible with Homebrew</h3>
+                    <p class="feature-description">Uses existing .rb formulae from Homebrew core tap. Drop-in replacement with zero migration needed.</p>
+                </div>
+                
+                <div class="feature-card">
+                    <div class="feature-icon">💼</div>
+                    <h3 class="feature-title">Project-local dependencies</h3>
+                    <p class="feature-description">Like npm for system packages. Each project can have its own tool versions with velo.json manifests.</p>
+                </div>
+                
+                <div class="feature-card">
+                    <div class="feature-icon">🔒</div>
+                    <h3 class="feature-title">Security-first design</h3>
+                    <p class="feature-description">SHA256 verification, code signing, and advanced security measures built into every operation.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Performance Section -->
+    <section class="performance" id="performance">
+        <div class="performance-container">
+            <div class="section-header">
+                <h2 class="section-title">Performance That Matters</h2>
+                <p class="section-subtitle">Designed for speed at every level of the stack</p>
+            </div>
+            
+            <div class="performance-grid">
+                <div class="performance-item">
+                    <h3 class="performance-title">Swift-native Formula Parsing</h3>
+                    <p class="performance-description">10x faster than Ruby interpretation with regex optimization and binary caching.</p>
+                </div>
+                
+                <div class="performance-item">
+                    <h3 class="performance-title">Parallel Downloads</h3>
+                    <p class="performance-description">Multi-stream concurrent downloads with intelligent retry logic and progress reporting.</p>
+                </div>
+                
+                <div class="performance-item">
+                    <h3 class="performance-title">Smart Caching</h3>
+                    <p class="performance-description">Memory + disk layers with automatic invalidation and predictive prefetching.</p>
+                </div>
+                
+                <div class="performance-item">
+                    <h3 class="performance-title">Memory Optimization</h3>
+                    <p class="performance-description">Lazy loading, memory-mapped files, and automatic cleanup for minimal resource usage.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- CTA Section -->
+    <section class="cta">
+        <div class="cta-container">
+            <h2 class="cta-title">Ready to try Velocity?</h2>
+            <p class="cta-subtitle">Join developers who are tired of waiting for package operations</p>
+            <div class="cta-buttons">
+                <a href="/docs/installation" class="btn btn-primary btn-large">
+                    <span>Get Started</span>
+                    <svg class="btn-icon" width="20" height="20" viewBox="0 0 16 16" fill="none">
+                        <path d="M6 12L10 8L6 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </a>
+                <a href="/docs" class="btn btn-secondary btn-large">
+                    <span>Read Documentation</span>
+                </a>
+            </div>
+            <p class="cta-note">
+                <strong>Note:</strong> Velocity is experimental software. Please test thoroughly before using in production environments.
+            </p>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="footer-container">
+            <div class="footer-content">
+                <div class="footer-logo">
+                    <img src="/logo.png" alt="Velocity" class="footer-logo-img">
+                    <span class="footer-logo-text">Velocity</span>
+                </div>
+                
+                <div class="footer-links">
+                    <div class="footer-section">
+                        <h4 class="footer-section-title">Product</h4>
+                        <a href="/docs/installation" class="footer-link">Installation</a>
+                        <a href="/docs/commands" class="footer-link">Commands</a>
+                        <a href="/docs/local-packages" class="footer-link">Local Packages</a>
+                    </div>
+                    
+                    <div class="footer-section">
+                        <h4 class="footer-section-title">Resources</h4>
+                        <a href="/docs" class="footer-link">Documentation</a>
+                        <a href="/docs/architecture" class="footer-link">Architecture</a>
+                        <a href="/docs/contributing" class="footer-link">Contributing</a>
+                    </div>
+                    
+                    <div class="footer-section">
+                        <h4 class="footer-section-title">Community</h4>
+                        <a href="https://github.com/dimaosipa/velocity" class="footer-link" target="_blank">GitHub</a>
+                        <a href="https://github.com/dimaosipa/velocity/issues" class="footer-link" target="_blank">Issues</a>
+                        <a href="https://github.com/dimaosipa/velocity/discussions" class="footer-link" target="_blank">Discussions</a>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="footer-bottom">
+                <p class="footer-copyright">
+                    © 2024 Velocity Contributors. Licensed under <a href="https://github.com/dimaosipa/velocity/blob/main/LICENSE" target="_blank">BSD-2-Clause</a>.
+                </p>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Scripts -->
+    <script>
+        // Mobile navigation toggle
+        const navToggle = document.getElementById('nav-toggle');
+        const navLinks = document.querySelector('.nav-links');
+        
+        navToggle.addEventListener('click', () => {
+            navLinks.classList.toggle('active');
+            navToggle.classList.toggle('active');
+        });
+        
+        // Smooth scrolling for anchor links
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault();
+                const target = document.querySelector(this.getAttribute('href'));
+                if (target) {
+                    target.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'start'
+                    });
+                    // Close mobile nav if open
+                    navLinks.classList.remove('active');
+                    navToggle.classList.remove('active');
+                }
+            });
+        });
+        
+        // Terminal animation
+        const terminalCursor = document.querySelector('.terminal-cursor');
+        if (terminalCursor) {
+            setInterval(() => {
+                terminalCursor.style.opacity = terminalCursor.style.opacity === '0' ? '1' : '0';
+            }, 800);
+        }
+        
+        // Intersection Observer for animations
+        const observerOptions = {
+            root: null,
+            rootMargin: '-10% 0px -10% 0px',
+            threshold: 0.1
+        };
+        
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    entry.target.classList.add('animate-in');
+                }
+            });
+        }, observerOptions);
+        
+        // Observe elements for animation
+        document.querySelectorAll('.feature-card, .performance-item').forEach(el => {
+            observer.observe(el);
+        });
+    </script>
+</body>
+</html>
