@@ -261,6 +261,8 @@ public final class Installer {
             return // Skip if no placeholders found
         }
 
+        logInfo("🔧 Rewriting library paths for \(binaryPath.lastPathComponent)")
+
         // Prepare binary for modification
         try prepareForModification(binaryPath: binaryPath)
 
@@ -292,6 +294,7 @@ public final class Installer {
 
         // Find lines containing @@HOMEBREW_PREFIX@@ or @@HOMEBREW_CELLAR@@ and rewrite them
         let lines = dependencies.components(separatedBy: .newlines)
+        var rewriteCount = 0
 
         for line in lines {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
@@ -303,6 +306,8 @@ public final class Installer {
                 // Replace both Homebrew placeholders with our Velo prefix
                 var newPath = oldPath.replacingOccurrences(of: "@@HOMEBREW_PREFIX@@", with: veloPrefix.path)
                 newPath = newPath.replacingOccurrences(of: "@@HOMEBREW_CELLAR@@", with: veloPrefix.path + "/Cellar")
+
+                logInfo("  Rewriting: \(oldPath) -> \(newPath)")
 
                 // Use install_name_tool to change the path
                 let installNameProcess = Process()
@@ -319,11 +324,24 @@ public final class Installer {
                 if installNameProcess.terminationStatus != 0 {
                     let errorOutput = installNamePipe.fileHandleForReading.readDataToEndOfFile()
                     let errorString = String(data: errorOutput, encoding: .utf8) ?? "Unknown error"
+                    logWarning("install_name_tool failed for \(binaryPath.lastPathComponent): \(errorString)")
                     throw VeloError.libraryPathRewriteFailed(
                         binary: binaryPath.lastPathComponent,
                         reason: "install_name_tool failed: \(errorString)"
                     )
+                } else {
+                    rewriteCount += 1
                 }
+            }
+        }
+
+        if rewriteCount > 0 {
+            logInfo("  ✓ Rewrote \(rewriteCount) library paths")
+            
+            // Verify the rewriting worked
+            let verifySuccess = try await verifyPlaceholderReplacement(binaryPath: binaryPath)
+            if !verifySuccess {
+                logWarning("  ⚠️ Some placeholders remain unreplaced in \(binaryPath.lastPathComponent)")
             }
         }
 
@@ -374,6 +392,30 @@ public final class Installer {
         let dependencies = String(data: otoolOutput, encoding: .utf8) ?? ""
 
         return dependencies.contains("@@HOMEBREW_PREFIX@@") || dependencies.contains("@@HOMEBREW_CELLAR@@")
+    }
+
+    private func verifyPlaceholderReplacement(binaryPath: URL) async throws -> Bool {
+        // Check if any Homebrew placeholders remain after rewriting
+        let otoolProcess = Process()
+        otoolProcess.executableURL = URL(fileURLWithPath: "/usr/bin/otool")
+        otoolProcess.arguments = ["-L", binaryPath.path]
+
+        let otoolPipe = Pipe()
+        otoolProcess.standardOutput = otoolPipe
+        otoolProcess.standardError = otoolPipe
+
+        try otoolProcess.run()
+        otoolProcess.waitUntilExit()
+
+        guard otoolProcess.terminationStatus == 0 else {
+            return false // Can't verify, assume failure
+        }
+
+        let otoolOutput = otoolPipe.fileHandleForReading.readDataToEndOfFile()
+        let dependencies = String(data: otoolOutput, encoding: .utf8) ?? ""
+
+        // Return true if NO placeholders remain (success), false if placeholders still exist
+        return !dependencies.contains("@@HOMEBREW_PREFIX@@") && !dependencies.contains("@@HOMEBREW_CELLAR@@")
     }
 
     private func prepareForModification(binaryPath: URL) throws {
@@ -507,6 +549,11 @@ public final class Installer {
 // MARK: - Convenience Extensions
 
 extension Installer {
+    /// Repair library paths for a specific binary or dylib file
+    public func repairBinaryLibraryPaths(binaryPath: URL) async throws {
+        try await rewriteBinaryLibraryPaths(binaryPath: binaryPath)
+    }
+
     public func repairInstallation(formula: Formula, bottleFile: URL) async throws {
         // Uninstall if partially installed
         if pathHelper.isPackageInstalled(formula.name) {

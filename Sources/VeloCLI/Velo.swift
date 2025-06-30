@@ -20,6 +20,7 @@ public struct Velo: ParsableCommand {
             Velo.Update.self,
             Velo.UpdateSelf.self,
             Velo.Verify.self,
+            Velo.Repair.self,
             Velo.Doctor.self,
             Velo.Clean.self,
             Velo.Tap.self,
