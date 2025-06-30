@@ -191,7 +191,53 @@ extension Velo {
                 }
             }
 
+            // Check framework binaries (especially for Python, Node.js, etc.)
+            let frameworksDir = packageDir.appendingPathComponent("Frameworks")
+            if fileManager.fileExists(atPath: frameworksDir.path) {
+                try scanFrameworksDirectory(frameworksDir, filesToRepair: &filesToRepair)
+            }
+
             return filesToRepair
+        }
+
+        private func scanFrameworksDirectory(_ frameworksDir: URL, filesToRepair: inout [URL]) throws {
+            let fileManager = FileManager.default
+            
+            // Recursively scan the Frameworks directory for Mach-O files
+            if let enumerator = fileManager.enumerator(at: frameworksDir, includingPropertiesForKeys: [.isRegularFileKey, .isExecutableKey]) {
+                for case let fileURL as URL in enumerator {
+                    // Skip directories, symlinks, and obviously non-binary files
+                    guard let resourceValues = try? fileURL.resourceValues(forKeys: [.isRegularFileKey, .isExecutableKey]),
+                          resourceValues.isRegularFile == true else {
+                        continue
+                    }
+                    
+                    let fileName = fileURL.lastPathComponent
+                    
+                    // Check for framework executables and dynamic libraries
+                    let isFrameworkBinary = fileName.hasSuffix(".dylib") || 
+                                           fileName.hasSuffix(".so") ||
+                                           resourceValues.isExecutable == true ||
+                                           fileURL.pathExtension.isEmpty // Framework main binary (e.g., Python)
+                    
+                    // Skip obvious non-binary files
+                    let skipExtensions = ["txt", "py", "pyc", "pyo", "h", "plist", "strings", "md", "rst", "html", "xml", "json"]
+                    if skipExtensions.contains(fileURL.pathExtension.lowercased()) {
+                        continue
+                    }
+                    
+                    if isFrameworkBinary {
+                        do {
+                            if try fileNeedsRepair(fileURL) {
+                                filesToRepair.append(fileURL)
+                            }
+                        } catch {
+                            // If we can't read the file with otool, it's probably not a Mach-O binary
+                            continue
+                        }
+                    }
+                }
+            }
         }
 
         private func fileNeedsRepair(_ filePath: URL) throws -> Bool {
