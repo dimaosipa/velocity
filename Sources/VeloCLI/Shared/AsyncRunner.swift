@@ -1,23 +1,33 @@
 import Foundation
 
-/// Simple async/sync bridge for CLI commands that works with Swift 5.9 strict concurrency
+/// Thread-safe async/sync bridge using Foundation synchronization primitives
 func runAsyncAndWait<T>(_ operation: @escaping () async throws -> T) throws -> T {
-    let semaphore = DispatchSemaphore(value: 0)
+    let condition = NSCondition()
     var result: Result<T, Error>?
 
-    // Use a detached task to avoid capturing issues
-    _ = Task.detached {
+    Task.detached {
+        let taskResult: Result<T, Error>
         do {
             let value = try await operation()
-            result = .success(value)
+            taskResult = .success(value)
         } catch {
-            result = .failure(error)
+            taskResult = .failure(error)
         }
-        semaphore.signal()
+
+        // Use DispatchQueue.sync to avoid async context warnings
+        DispatchQueue.global().sync {
+            condition.lock()
+            result = taskResult
+            condition.signal()
+            condition.unlock()
+        }
     }
 
-    semaphore.wait()
+    condition.lock()
+    while result == nil {
+        condition.wait()
+    }
+    condition.unlock()
 
-    // Since we use detached task, no capture warnings
     return try result!.get()
 }
