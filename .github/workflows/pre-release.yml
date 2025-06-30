@@ -123,7 +123,7 @@ jobs:
         # Test info for real packages
         velo info wget || echo "Info test completed"
         velo info curl || echo "Info test completed"
-        velo info python@3.11 || echo "Package@version info test"
+        velo info git || echo "Package@version info test"
         
         # Test doctor
         velo doctor

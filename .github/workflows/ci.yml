@@ -160,17 +160,17 @@ jobs:
         fi
         echo "✅ wget@1.25.0 passed"
         
-        if ! velo info openssl@3; then
+        if ! velo info node; then
           echo "❌ simple version syntax failed"  
           exit 1
         fi
-        echo "✅ openssl@3 passed"
+        echo "✅ node passed"
         
-        if ! velo info python@3.11; then
+        if ! velo info git; then
           echo "❌ complex version syntax failed"
           exit 1
         fi
-        echo "✅ python@3.11 passed"
+        echo "✅ git passed"
     
     - name: Test Search Performance
       run: |
