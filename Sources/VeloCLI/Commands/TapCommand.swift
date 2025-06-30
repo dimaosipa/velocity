@@ -35,23 +35,22 @@ extension Velo.Tap {
         var global = false
 
         func run() throws {
-            let semaphore = DispatchSemaphore(value: 0)
-            var thrownError: Error?
+            let group = DispatchGroup()
+            var result: Result<Void, Error>?
 
+            group.enter()
             Task {
                 do {
                     try await self.runAsync()
+                    result = .success(())
                 } catch {
-                    thrownError = error
+                    result = .failure(error)
                 }
-                semaphore.signal()
+                group.leave()
             }
 
-            semaphore.wait()
-
-            if let error = thrownError {
-                throw error
-            }
+            group.wait()
+            try result?.get()
         }
 
         private func runAsync() async throws {
@@ -213,23 +212,22 @@ extension Velo.Tap {
         var global = false
 
         func run() throws {
-            let semaphore = DispatchSemaphore(value: 0)
-            var thrownError: Error?
+            let group = DispatchGroup()
+            var result: Result<Void, Error>?
 
+            group.enter()
             Task {
                 do {
                     try await self.runAsync()
+                    result = .success(())
                 } catch {
-                    thrownError = error
+                    result = .failure(error)
                 }
-                semaphore.signal()
+                group.leave()
             }
 
-            semaphore.wait()
-
-            if let error = thrownError {
-                throw error
-            }
+            group.wait()
+            try result?.get()
         }
 
         private func runAsync() async throws {
@@ -422,23 +420,22 @@ extension Velo.Tap {
         var global = false
 
         func run() throws {
-            let semaphore = DispatchSemaphore(value: 0)
-            var thrownError: Error?
+            let group = DispatchGroup()
+            var result: Result<Void, Error>?
 
+            group.enter()
             Task {
                 do {
                     try await self.runAsync()
+                    result = .success(())
                 } catch {
-                    thrownError = error
+                    result = .failure(error)
                 }
-                semaphore.signal()
+                group.leave()
             }
 
-            semaphore.wait()
-
-            if let error = thrownError {
-                throw error
-            }
+            group.wait()
+            try result?.get()
         }
 
         private func runAsync() async throws {
@@ -536,23 +533,22 @@ extension Velo.Tap {
         var global = false
 
         func run() throws {
-            let semaphore = DispatchSemaphore(value: 0)
-            var thrownError: Error?
+            let group = DispatchGroup()
+            var result: Result<Void, Error>?
 
+            group.enter()
             Task {
                 do {
                     try await self.runAsync()
+                    result = .success(())
                 } catch {
-                    thrownError = error
+                    result = .failure(error)
                 }
-                semaphore.signal()
+                group.leave()
             }
 
-            semaphore.wait()
-
-            if let error = thrownError {
-                throw error
-            }
+            group.wait()
+            try result?.get()
         }
 
         private func runAsync() async throws {

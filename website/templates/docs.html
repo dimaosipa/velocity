@@ -35,14 +35,14 @@
     <nav class="nav">
         <div class="nav-container">
             <div class="nav-logo">
-                <a href="/" class="logo-link">
+                <a href="../" class="logo-link">
                     <img src="../logo.png" alt="Velocity" class="logo">
                     <span class="logo-text">Velocity</span>
                 </a>
             </div>
             <div class="nav-links">
-                <a href="/" class="nav-link">Home</a>
-                <a href="/docs" class="nav-link nav-link-active">Docs</a>
+                <a href="../" class="nav-link">Home</a>
+                <a href="./" class="nav-link nav-link-active">Docs</a>
                 <a href="https://github.com/dimaosipa/velocity" class="nav-link nav-link-external" target="_blank">GitHub</a>
             </div>
             <button class="nav-toggle" id="nav-toggle" aria-label="Toggle navigation">
@@ -92,9 +92,7 @@
                 </nav>
                 
                 <div class="sidebar-footer">
-                    <a href="https://github.com/dimaosipa/velocity/edit/main/{{SOURCE_FILE}}" class="edit-link" target="_blank">
-                        📝 Edit this page
-                    </a>
+                    <!-- Edit links hidden for owner-only repository -->
                 </div>
             </div>
         </aside>
@@ -103,9 +101,9 @@
         <main class="main-content">
             <div class="content-header">
                 <div class="breadcrumb">
-                    <a href="/" class="breadcrumb-link">Home</a>
+                    <a href="../" class="breadcrumb-link">Home</a>
                     <span class="breadcrumb-separator">/</span>
-                    <a href="/docs" class="breadcrumb-link">Docs</a>
+                    <a href="./" class="breadcrumb-link">Docs</a>
                     {{#BREADCRUMB}}
                     <span class="breadcrumb-separator">/</span>
                     <span class="breadcrumb-current">{{BREADCRUMB}}</span>
@@ -146,7 +144,7 @@
                 
                 <div class="help-improve">
                     <h4>Help improve this page</h4>
-                    <p>Found an issue or have a suggestion? <a href="https://github.com/dimaosipa/velocity/edit/main/{{SOURCE_FILE}}" target="_blank">Edit this page on GitHub</a> or <a href="https://github.com/dimaosipa/velocity/issues/new" target="_blank">create an issue</a>.</p>
+                    <p>Found an issue or have a suggestion? <a href="https://github.com/dimaosipa/velocity/issues/new" target="_blank">Create an issue</a> to help improve Velocity.</p>
                 </div>
             </div>
         </main>
@@ -166,7 +164,7 @@
     <footer class="footer">
         <div class="footer-container">
             <div class="footer-content">
-                <p>© 2024 Velocity Contributors. Licensed under <a href="https://github.com/dimaosipa/velocity/blob/main/LICENSE" target="_blank">BSD-2-Clause</a>.</p>
+                <p>© <span id="current-year">2024</span> Velocity Contributors. Licensed under <a href="https://github.com/dimaosipa/velocity/blob/main/LICENSE" target="_blank">BSD-2-Clause</a>.</p>
                 <div class="footer-links">
                     <a href="https://github.com/dimaosipa/velocity" target="_blank">GitHub</a>
                     <a href="https://github.com/dimaosipa/velocity/issues" target="_blank">Issues</a>
@@ -303,6 +301,9 @@
         
         window.addEventListener('resize', handleResize);
         handleResize();
+        
+        // Update copyright year
+        document.getElementById('current-year').textContent = new Date().getFullYear();
     </script>
 </body>
 </html>

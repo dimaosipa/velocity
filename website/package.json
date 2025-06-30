@@ -7,7 +7,10 @@
     "build": "node build.js",
     "dev": "node build.js && python3 -m http.server 8080 -d dist",
     "clean": "rm -rf dist",
-    "start": "npm run build && npm run dev"
+    "test": "node test.js",
+    "test:serve": "node test.js --serve",
+    "start": "npm run build && npm run dev",
+    "deploy": "npm run build && npm run test"
   },
   "engines": {
     "node": ">=18.0.0"

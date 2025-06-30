@@ -127,7 +127,7 @@
         <div class="features-container">
             <div class="section-header">
                 <h2 class="section-title">Built for Apple Silicon</h2>
-                <p class="section-subtitle">Modern architecture designed from the ground up for M1, M2, and M3 Macs</p>
+                <p class="section-subtitle">Modern architecture designed from the ground up for Apple Silicon Macs</p>
             </div>
             
             <div class="features-grid">
@@ -144,9 +144,9 @@
                 </div>
                 
                 <div class="feature-card">
-                    <div class="feature-icon">🍏</div>
-                    <h3 class="feature-title">Built for M1/M2/M3 Macs</h3>
-                    <p class="feature-description">Native Apple Silicon performance with no x86 overhead or compatibility layers.</p>
+                    <div class="feature-icon">🚀</div>
+                    <h3 class="feature-title">CI Ready</h3>
+                    <p class="feature-description">Built-in GitHub Actions support with automated testing, continuous deployment, and comprehensive CI/CD workflows.</p>
                 </div>
                 
                 <div class="feature-card">
@@ -259,7 +259,7 @@
             
             <div class="footer-bottom">
                 <p class="footer-copyright">
-                    © 2024 Velocity Contributors. Licensed under <a href="https://github.com/dimaosipa/velocity/blob/main/LICENSE" target="_blank">BSD-2-Clause</a>.
+                    © <span id="current-year">2024</span> Velocity Contributors. Licensed under <a href="https://github.com/dimaosipa/velocity/blob/main/LICENSE" target="_blank">BSD-2-Clause</a>.
                 </p>
             </div>
         </div>
@@ -320,6 +320,9 @@
         document.querySelectorAll('.feature-card, .performance-item').forEach(el => {
             observer.observe(el);
         });
+        
+        // Update copyright year
+        document.getElementById('current-year').textContent = new Date().getFullYear();
     </script>
 </body>
 </html>

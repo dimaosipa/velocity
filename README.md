@@ -7,7 +7,7 @@ A lightning-fast, modern package manager for macOS - built for Apple Silicon.
 ## ✨ Key Features
 
 - **🏎️ Performance Focused**: Designed for speed with parallel downloads and smart caching
-- **🔋 Apple Silicon Native**: Built exclusively for M1/M2/M3 Macs
+- **🔋 Apple Silicon Native**: Built exclusively for Apple Silicon Macs
 - **🛡️ User-Space Only**: Never requires `sudo` - everything in `~/.velo/`
 - **🔄 Drop-in Compatible**: Uses existing `.rb` formulae from core tap
 - **⚡ Modern Architecture**: Async/await, concurrent operations, optimized I/O
@@ -17,7 +17,7 @@ A lightning-fast, modern package manager for macOS - built for Apple Silicon.
 
 ### Requirements
 
-- **Apple Silicon Mac** (M1, M2, or M3)
+- **Apple Silicon Mac**
 - **macOS 12+** (Monterey or later)
 
 ### Installation
