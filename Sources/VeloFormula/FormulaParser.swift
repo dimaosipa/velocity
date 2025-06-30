@@ -107,33 +107,51 @@ public struct FormulaParser {
     }
 
     private func extractVersion(from content: String, url: String) throws -> String {
+        var baseVersion: String?
+        
         // First try to find explicit version
         let versionPattern = #"version\s+["']([^"']+)["']"#
         if let match = extractFirstMatch(pattern: versionPattern, from: content) {
-            return match
+            baseVersion = match
         }
 
         // Try to extract from tag field (for Git-based formulae)
-        let tagPattern = #"tag:\s*["']v?([^"']+)["']"#
-        if let match = extractFirstMatch(pattern: tagPattern, from: content) {
-            return match
-        }
-
-        // Try to extract from URL - match version numbers after dash, slash, underscore, or 'v'
-        let urlVersionPatterns = [
-            #"[-/_]v?(\d+\.\d+(?:\.\d+)*(?:-[\w]+)*)"#,  // v2.2.26 or 2.2.26-beta1 or x265_4.1 (including underscore)
-            #"/(\d+\.\d+(?:\.\d+)*(?:-[\w]+)*)"#,        // fallback without v
-            #"(\d+\.\d+\.\d+)"#,                          // simple three-part version
-            #"/archive/refs/tags/([^/]+)\.tar"#           // GitHub archive URLs (for argon2-style date versions)
-        ]
-
-        for pattern in urlVersionPatterns {
-            if let match = extractFirstMatch(pattern: pattern, from: url) {
-                return match
+        if baseVersion == nil {
+            let tagPattern = #"tag:\s*["']v?([^"']+)["']"#
+            if let match = extractFirstMatch(pattern: tagPattern, from: content) {
+                baseVersion = match
             }
         }
 
-        throw VeloError.formulaParseError(formula: "unknown", details: "Could not determine version")
+        // Try to extract from URL - match version numbers after dash, slash, underscore, or 'v'
+        if baseVersion == nil {
+            let urlVersionPatterns = [
+                #"[-/_]v?(\d+\.\d+(?:\.\d+)*(?:-[\w]+)*)"#,  // v2.2.26 or 2.2.26-beta1 or x265_4.1 (including underscore)
+                #"/(\d+\.\d+(?:\.\d+)*(?:-[\w]+)*)"#,        // fallback without v
+                #"(\d+\.\d+\.\d+)"#,                          // simple three-part version
+                #"(\d{4}-\d{2}-\d{2})"#,                      // date-based versions (2025-05-20)
+                #"/archive/refs/tags/([^/]+)\.tar"#           // GitHub archive URLs (for argon2-style date versions)
+            ]
+
+            for pattern in urlVersionPatterns {
+                if let match = extractFirstMatch(pattern: pattern, from: url) {
+                    baseVersion = match
+                    break
+                }
+            }
+        }
+        
+        guard let version = baseVersion else {
+            throw VeloError.formulaParseError(formula: "unknown", details: "Could not determine version")
+        }
+
+        // Check for revision field and append if found
+        let revisionPattern = #"revision\s+(\d+)"#
+        if let revision = extractFirstMatch(pattern: revisionPattern, from: content) {
+            return "\(version)_\(revision)"
+        }
+
+        return version
     }
 
     // MARK: - Dependency Extraction
