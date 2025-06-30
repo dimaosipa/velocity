@@ -376,8 +376,9 @@ public final class Installer {
         // Find lines containing @@HOMEBREW_PREFIX@@ or @@HOMEBREW_CELLAR@@ and rewrite them
         let lines = dependencies.components(separatedBy: .newlines)
         var rewriteCount = 0
+        var installNameFixed = false
 
-        for line in lines {
+        for (index, line) in lines.enumerated() {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             if trimmed.contains("@@HOMEBREW_PREFIX@@") || trimmed.contains("@@HOMEBREW_CELLAR@@") {
                 // Extract the old path (everything before the first space)
@@ -388,30 +389,58 @@ public final class Installer {
                 var newPath = oldPath.replacingOccurrences(of: "@@HOMEBREW_PREFIX@@", with: veloPrefix.path)
                 newPath = newPath.replacingOccurrences(of: "@@HOMEBREW_CELLAR@@", with: veloPrefix.path + "/Cellar")
 
-                logInfo("  Rewriting: \(oldPath) -> \(newPath)")
+                // Check if this is the first line (install name) or a dependency
+                let isInstallName = index == 1 // otool -L output: line 0 is the file path, line 1 is install name
+                
+                if isInstallName && binaryPath.pathExtension == "dylib" {
+                    // Fix the library's own install name (identity)
+                    logInfo("  Rewriting install name: \(oldPath) -> \(newPath)")
+                    
+                    let installNameProcess = Process()
+                    installNameProcess.executableURL = URL(fileURLWithPath: "/usr/bin/install_name_tool")
+                    installNameProcess.arguments = ["-id", newPath, binaryPath.path]
 
-                // Use install_name_tool to change the path
-                let installNameProcess = Process()
-                installNameProcess.executableURL = URL(fileURLWithPath: "/usr/bin/install_name_tool")
-                installNameProcess.arguments = ["-change", oldPath, newPath, binaryPath.path]
+                    let installNamePipe = Pipe()
+                    installNameProcess.standardOutput = installNamePipe
+                    installNameProcess.standardError = installNamePipe
 
-                let installNamePipe = Pipe()
-                installNameProcess.standardOutput = installNamePipe
-                installNameProcess.standardError = installNamePipe
+                    try installNameProcess.run()
+                    installNameProcess.waitUntilExit()
 
-                try installNameProcess.run()
-                installNameProcess.waitUntilExit()
-
-                if installNameProcess.terminationStatus != 0 {
-                    let errorOutput = installNamePipe.fileHandleForReading.readDataToEndOfFile()
-                    let errorString = String(data: errorOutput, encoding: .utf8) ?? "Unknown error"
-                    logWarning("install_name_tool failed for \(binaryPath.lastPathComponent): \(errorString)")
-                    throw VeloError.libraryPathRewriteFailed(
-                        binary: binaryPath.lastPathComponent,
-                        reason: "install_name_tool failed: \(errorString)"
-                    )
+                    if installNameProcess.terminationStatus != 0 {
+                        let errorOutput = installNamePipe.fileHandleForReading.readDataToEndOfFile()
+                        let errorString = String(data: errorOutput, encoding: .utf8) ?? "Unknown error"
+                        logWarning("install_name_tool -id failed for \(binaryPath.lastPathComponent): \(errorString)")
+                    } else {
+                        rewriteCount += 1
+                        installNameFixed = true
+                    }
                 } else {
-                    rewriteCount += 1
+                    // Fix dependency reference
+                    logInfo("  Rewriting dependency: \(oldPath) -> \(newPath)")
+
+                    let installNameProcess = Process()
+                    installNameProcess.executableURL = URL(fileURLWithPath: "/usr/bin/install_name_tool")
+                    installNameProcess.arguments = ["-change", oldPath, newPath, binaryPath.path]
+
+                    let installNamePipe = Pipe()
+                    installNameProcess.standardOutput = installNamePipe
+                    installNameProcess.standardError = installNamePipe
+
+                    try installNameProcess.run()
+                    installNameProcess.waitUntilExit()
+
+                    if installNameProcess.terminationStatus != 0 {
+                        let errorOutput = installNamePipe.fileHandleForReading.readDataToEndOfFile()
+                        let errorString = String(data: errorOutput, encoding: .utf8) ?? "Unknown error"
+                        logWarning("install_name_tool -change failed for \(binaryPath.lastPathComponent): \(errorString)")
+                        throw VeloError.libraryPathRewriteFailed(
+                            binary: binaryPath.lastPathComponent,
+                            reason: "install_name_tool failed: \(errorString)"
+                        )
+                    } else {
+                        rewriteCount += 1
+                    }
                 }
             }
         }
