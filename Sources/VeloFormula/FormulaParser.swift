@@ -140,13 +140,43 @@ public struct FormulaParser {
 
     private func extractDependencies(from content: String) -> [Formula.Dependency] {
         var dependencies: [Formula.Dependency] = []
+        var blockStack: [String] = []
 
         // Split content into lines for better parsing
         let lines = content.components(separatedBy: .newlines)
 
         for line in lines {
+            let trimmedLine = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            
             // Skip comment lines
-            if line.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("#") {
+            if trimmedLine.hasPrefix("#") {
+                continue
+            }
+
+            // Track platform-specific blocks with proper nesting
+            if trimmedLine.starts(with: "on_linux do") {
+                blockStack.append("linux")
+                continue
+            } else if trimmedLine.contains("on_bsd do") || trimmedLine.contains("on_freebsd do") || 
+                      trimmedLine.contains("on_openbsd do") || trimmedLine.contains("on_netbsd do") {
+                blockStack.append("other_platform")
+                continue
+            } else if trimmedLine.starts(with: "on_macos do") || trimmedLine.starts(with: "on_intel do") {
+                blockStack.append("macos_compatible")
+                continue
+            } else if trimmedLine == "end" && !blockStack.isEmpty {
+                blockStack.removeLast()
+                continue
+            }
+
+            // Skip dependencies inside Linux or other non-macOS platform blocks
+            let currentContext = blockStack.last
+            if currentContext == "linux" || currentContext == "other_platform" {
+                continue
+            }
+
+            // Skip platform-specific dependencies that don't apply to macOS
+            if shouldSkipPlatformDependency(line: line) {
                 continue
             }
 
@@ -165,6 +195,27 @@ public struct FormulaParser {
         }
 
         return dependencies
+    }
+
+    /// Check if a line contains a platform-specific dependency that should be skipped on macOS
+    private func shouldSkipPlatformDependency(line: String) -> Bool {
+        let trimmedLine = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        // Skip Linux-only dependencies
+        if trimmedLine.contains("depends_on :linux") {
+            return true
+        }
+        
+        // Skip other non-macOS platform dependencies
+        let nonMacOSPlatforms = [":bsd", ":freebsd", ":openbsd", ":netbsd"]
+        for platform in nonMacOSPlatforms {
+            if trimmedLine.contains("depends_on \(platform)") {
+                return true
+            }
+        }
+        
+        // Keep macOS dependencies and regular string dependencies
+        return false
     }
 
     // MARK: - Bottle Extraction
