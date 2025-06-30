@@ -1,6 +1,3 @@
----
-This file is generated from the main README.md. For the most up-to-date and canonical documentation, see the root README.md.
----
 
 # Installation Management
 

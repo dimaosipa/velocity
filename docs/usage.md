@@ -1,30 +1,37 @@
 # Usage
 
-## Basic Commands
+## Multi-Version Package Support
 
-- `velo init` — Initialize project with velo.json
-- `velo install <pkg>` — Install a package
-- `velo uninstall <pkg>` — Remove a package
-- `velo exec <cmd>` — Run command with local packages
-- `velo which <cmd>` — Show which binary will be used
-- `velo info <pkg>` — Show package details
-- `velo list` — List installed packages
-- `velo search <query>` — Search for packages
-- `velo update` — Update repositories
-- `velo update-self` — Update velo itself
-- `velo verify` — Check installed packages vs velo.lock
-- `velo doctor` — Check system health
-- `velo clean` — Clean packages or cache
-- `velo tap` — Manage package repositories
+Velo supports installing and managing multiple versions of the same package simultaneously.
 
-See [Local Packages](./local-packages.md) for project-local workflows.
-
-## Examples
+### Installing Specific Versions
 
 ```bash
+# Install latest version
 velo install wget
-velo exec convert image.jpg
-velo which wget
+
+# Install specific version (when available)
+velo install wget --version 1.21.3
 ```
 
-For all commands and options, run `velo --help` or see the [full command reference](./usage.md).
+### Managing Multiple Versions
+
+```bash
+# List all installed versions
+velo list --versions
+
+# Switch default version
+velo switch wget 1.21.3
+
+# Remove specific version only
+velo uninstall wget --version 1.21.3
+
+# Remove all versions
+velo uninstall wget
+```
+
+### Binary Access
+
+- **Default symlinks**: `~/.velo/bin/wget` (points to default version)
+- **Versioned symlinks**: `~/.velo/bin/wget@1.21.3` (specific version access)
+- **Library compatibility**: Each version maintains independent library paths

@@ -73,7 +73,7 @@ final class ArgumentParserTests: XCTestCase {
         }
 
         guard let executablePath = executable else {
-            throw VeloError.pathNotFound("Could not find velo binary in any of the expected locations: \(possiblePaths.joined(separator: ", "))")
+            throw VeloError.pathNotFound(path: "Could not find velo binary in any of the expected locations: \(possiblePaths.joined(separator: ", "))")
         }
 
         let process = Process()
