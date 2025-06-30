@@ -1,28 +1,23 @@
 import Foundation
 
-/// Async/sync bridge for CLI commands
+/// Simple async/sync bridge for CLI commands that works with Swift 5.9 strict concurrency
 func runAsyncAndWait<T>(_ operation: @escaping () async throws -> T) throws -> T {
-    let runLoop = RunLoop.current
+    let semaphore = DispatchSemaphore(value: 0)
     var result: Result<T, Error>?
 
-    let task = Task {
+    // Use a detached task to avoid capturing issues
+    _ = Task.detached {
         do {
             let value = try await operation()
             result = .success(value)
         } catch {
             result = .failure(error)
         }
-        CFRunLoopStop(runLoop.getCFRunLoop())
+        semaphore.signal()
     }
 
-    while result == nil && !task.isCancelled {
-        runLoop.run(mode: .default, before: Date(timeIntervalSinceNow: 0.1))
-    }
+    semaphore.wait()
 
-    if let result = result {
-        return try result.get()
-    } else {
-        task.cancel()
-        throw CancellationError()
-    }
+    // Since we use detached task, no capture warnings
+    return try result!.get()
 }

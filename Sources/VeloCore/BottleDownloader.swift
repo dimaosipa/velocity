@@ -1,6 +1,30 @@
 import Foundation
 import VeloSystem
 
+/// Actor to safely manage download progress across concurrent tasks
+actor DownloadProgressActor {
+    private var totalDownloaded: Int64 = 0
+    private var error: Error?
+
+    func addProgress(_ bytes: Int64) {
+        totalDownloaded += bytes
+    }
+
+    func getTotalDownloaded() -> Int64 {
+        return totalDownloaded
+    }
+
+    func setError(_ error: Error) {
+        if self.error == nil { // Only set the first error
+            self.error = error
+        }
+    }
+
+    func getError() -> Error? {
+        return error
+    }
+}
+
 public protocol DownloadProgress {
     func downloadDidStart(url: String, totalSize: Int64?)
     func downloadDidUpdate(bytesDownloaded: Int64, totalBytes: Int64?)
@@ -118,59 +142,41 @@ public final class BottleDownloader {
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tempDir) }
 
-        // Download chunks in parallel
-        let downloadGroup = DispatchGroup()
-        let progressQueue = DispatchQueue(label: "com.velo.download.progress")
-        var totalDownloaded: Int64 = 0
-        var downloadError: Error?
+        // Download chunks in parallel with limited concurrency
+        let progressActor = DownloadProgressActor()
 
-        let semaphore = DispatchSemaphore(value: maxConcurrentStreams)
+        // Process chunks in batches to limit concurrency
+        let batchSize = maxConcurrentStreams
+        let indexedChunks = Array(chunks.enumerated())
+        let chunkedIndices = indexedChunks.chunked(into: batchSize)
 
-        for (index, chunk) in chunks.enumerated() {
-            downloadGroup.enter()
-
-            Task {
-                defer { downloadGroup.leave() }
-
-                await withCheckedContinuation { continuation in
-                    semaphore.wait()
-                    defer { semaphore.signal() }
-
-                    Task {
+        for batch in chunkedIndices {
+            await withTaskGroup(of: Void.self) { group in
+                for (index, chunk) in batch {
+                    group.addTask {
                         do {
                             let chunkFile = tempDir.appendingPathComponent("chunk_\(index)")
-                            try await downloadChunk(
+                            try await self.downloadChunk(
                                 url: url,
                                 range: chunk,
                                 to: chunkFile
                             )
 
-                            progressQueue.sync {
-                                totalDownloaded += (chunk.upperBound - chunk.lowerBound + 1)
-                                progress?.downloadDidUpdate(
-                                    bytesDownloaded: totalDownloaded,
-                                    totalBytes: fileSize
-                                )
-                            }
+                            await progressActor.addProgress(chunk.upperBound - chunk.lowerBound + 1)
+                            let totalDownloaded = await progressActor.getTotalDownloaded()
+                            progress?.downloadDidUpdate(
+                                bytesDownloaded: totalDownloaded,
+                                totalBytes: fileSize
+                            )
                         } catch {
-                            progressQueue.sync {
-                                downloadError = error
-                            }
+                            await progressActor.setError(error)
                         }
-                        continuation.resume()
                     }
                 }
             }
         }
 
-        // Wait for all chunks
-        await withCheckedContinuation { continuation in
-            downloadGroup.notify(queue: .global()) {
-                continuation.resume()
-            }
-        }
-
-        if let error = downloadError {
+        if let error = await progressActor.getError() {
             throw VeloError.downloadFailed(url: url.absoluteString, error: error)
         }
 
@@ -439,6 +445,16 @@ extension BottleDownloader {
 
         func finalize() -> CryptoKit.SHA256.Digest {
             return hasher.finalize()
+        }
+    }
+}
+
+// MARK: - Collection Extensions
+
+private extension Collection {
+    func chunked(into size: Int) -> [[Element]] {
+        return stride(from: 0, to: count, by: size).map {
+            Array(self[index(startIndex, offsetBy: $0)..<index(startIndex, offsetBy: Swift.min($0 + size, count))])
         }
     }
 }

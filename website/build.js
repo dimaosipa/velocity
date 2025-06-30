@@ -143,6 +143,56 @@ function generateNavigation(headings, isMainNav = false) {
 }
 
 /**
+ * Generate sidebar navigation based on page depth
+ */
+function generateSidebarNavigation(currentPagePath) {
+    const isRootDocs = currentPagePath === '/docs';
+    
+    let overviewHref, itemHref;
+    
+    if (isRootDocs) {
+        // From /docs/ page - use relative paths
+        overviewHref = './';
+        itemHref = (path) => `./${path}/`;
+    } else {
+        // From /docs/subpage/ page - calculate proper relative paths
+        overviewHref = '../';
+        itemHref = (path) => {
+            const currentPage = currentPagePath.replace('/docs/', '');
+            return path === currentPage ? './' : `NAVLINK:${path}`;
+        };
+    }
+    
+    const navigation = `
+        <div class="nav-section">
+            <h4 class="nav-section-title">Getting Started</h4>
+            <ul class="nav-list">
+                <li><a href="${overviewHref}" class="nav-item">Overview</a></li>
+                <li><a href="${itemHref('installation')}" class="nav-item">Installation</a></li>
+                <li><a href="${itemHref('commands')}" class="nav-item">Commands</a></li>
+            </ul>
+        </div>
+        
+        <div class="nav-section">
+            <h4 class="nav-section-title">Core Concepts</h4>
+            <ul class="nav-list">
+                <li><a href="${itemHref('local-packages')}" class="nav-item">Local Packages</a></li>
+                <li><a href="${itemHref('architecture')}" class="nav-item">Architecture</a></li>
+            </ul>
+        </div>
+        
+        <div class="nav-section">
+            <h4 class="nav-section-title">Development</h4>
+            <ul class="nav-list">
+                <li><a href="${itemHref('contributing')}" class="nav-item">Contributing</a></li>
+            </ul>
+        </div>
+    `;
+    
+    return navigation;
+}
+
+/**
  * Process markdown content and add proper heading IDs
  */
 function processMarkdown(content) {
@@ -267,12 +317,16 @@ async function generateDocsOverview() {
     
     const finalContent = contentHtml + docsLinksHtml;
     
+    // Generate sidebar navigation for docs root
+    const sidebarNav = generateSidebarNavigation('/docs');
+    
     // Replace template placeholders and fix paths for docs root (one level deep)
     const html = template
         .replace(/{{TITLE}}/g, 'Overview')
         .replace(/{{DESCRIPTION}}/g, CONFIG.description)
         .replace(/{{TABLE_OF_CONTENTS}}/g, tocHtml)
         .replace(/{{CONTENT}}/g, finalContent)
+        .replace(/{{SIDEBAR_NAVIGATION}}/g, sidebarNav)
         .replace(/{{SOURCE_FILE}}/g, 'README.md')
         .replace(/{{#BREADCRUMB}}.*?{{\/BREADCRUMB}}/gs, '')
         .replace(/{{#PREV_PAGE}}.*?{{\/PREV_PAGE}}/gs, '')
@@ -353,17 +407,23 @@ async function generateDocPages() {
             `;
         }
         
+        // Generate sidebar navigation for subdoc pages
+        const sidebarNav = generateSidebarNavigation(doc.path);
+        
         // Replace template placeholders and fix paths for subdoc pages (two levels deep)
         let html = template
             .replace(/{{TITLE}}/g, doc.title)
             .replace(/{{DESCRIPTION}}/g, doc.description)
             .replace(/{{TABLE_OF_CONTENTS}}/g, tocHtml)
             .replace(/{{CONTENT}}/g, contentHtml)
+            .replace(/{{SIDEBAR_NAVIGATION}}/g, sidebarNav)
             .replace(/{{SOURCE_FILE}}/g, `docs/${doc.file}`)
             .replace(/{{#BREADCRUMB}}(.*?){{\/BREADCRUMB}}/gs, `<span class="breadcrumb-separator">/</span><span class="breadcrumb-current">${doc.title}</span>`)
             .replace(/{{#PREV_PAGE}}.*?{{\/PREV_PAGE}}/gs, prevPageHtml)
             .replace(/{{#NEXT_PAGE}}.*?{{\/NEXT_PAGE}}/gs, nextPageHtml)
+            .replace(/href="NAVLINK:([^"]+)"/g, 'href="NAV_FINAL:$1"')  // Mark navigation links to protect them
             .replace(/href="\.\.\/([^"]+)"/g, 'href="../../$1"')  // Fix relative paths for sub-docs (two levels up)
+            .replace(/href="NAV_FINAL:([^"]+)"/g, 'href="../$1/"')  // Restore navigation links AFTER general replacement
             .replace(/src="\.\.\/([^"]+)"/g, 'src="../../$1"');   // Fix relative paths for sub-docs (two levels up)
         
         // Create subdirectory for clean URLs
