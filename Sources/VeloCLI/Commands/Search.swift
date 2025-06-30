@@ -19,18 +19,6 @@ extension Velo {
         @Flag(help: "Search descriptions as well as names")
         var descriptions = false
 
-        // Custom initializer for testing
-        init(term: String = "", verbose: Bool = false, descriptions: Bool = false) {
-            self.term = term
-            self.verbose = verbose
-            self.descriptions = descriptions
-        }
-
-        // Required empty initializer for ArgumentParser
-        init() {
-            self.term = ""
-        }
-
         func run() throws {
             try runAsyncAndWait {
                 try await self.runAsync()
