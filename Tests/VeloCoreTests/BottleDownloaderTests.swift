@@ -2,7 +2,6 @@ import XCTest
 import Foundation
 @testable import VeloCore
 @testable import VeloSystem
-@testable import VeloIntegrationTests // For TestUtilities
 
 final class BottleDownloaderTests: XCTestCase {
     var downloader: BottleDownloader!
@@ -141,7 +140,7 @@ final class BottleDownloaderTests: XCTestCase {
 
     private func computeSHA256(of file: URL) throws -> String {
         let data = try Data(contentsOf: file)
-        return SHA256.hash(data: data).compactMap { String(format: "%02x", $0) }.joined()
+        return CryptoKit.SHA256.hash(data: data).compactMap { String(format: "%02x", $0) }.joined()
     }
 }
 
@@ -175,9 +174,3 @@ private class MockProgress: DownloadProgress {
 // MARK: - SHA256 for Testing
 
 import CryptoKit
-
-private extension SHA256 {
-    static func hash(data: Data) -> SHA256.Digest {
-        return CryptoKit.SHA256.hash(data: data)
-    }
-}

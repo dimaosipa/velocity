@@ -2,7 +2,6 @@ import XCTest
 import ArgumentParser
 @testable import VeloCLI
 @testable import VeloSystem
-@testable import VeloIntegrationTests // For TestUtilities
 
 final class ArgumentParserTests: XCTestCase {
 

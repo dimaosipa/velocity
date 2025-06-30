@@ -3,7 +3,6 @@ import Foundation
 @testable import VeloCore
 @testable import VeloFormula
 @testable import VeloSystem
-@testable import VeloIntegrationTests // For TestUtilities
 
 final class InstallerTests: XCTestCase {
     var installer: Installer!
@@ -275,5 +274,40 @@ extension Installer.InstallationStatus: Equatable {
         default:
             return false
         }
+    }
+}
+
+// MARK: - Test Utilities
+
+extension XCTestCase {
+    func XCTAssertThrowsErrorAsync<T>(
+        _ expression: @autoclosure () async throws -> T,
+        _ message: @autoclosure () -> String = "",
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) async {
+        do {
+            _ = try await expression()
+            XCTFail("Expected error to be thrown - \(message())", file: file, line: line)
+        } catch {
+            // Expected
+        }
+    }
+
+    func measureAsync(
+        _ block: @escaping () async throws -> Void,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) async {
+        let startTime = CFAbsoluteTimeGetCurrent()
+
+        do {
+            try await block()
+        } catch {
+            XCTFail("Async measurement block threw error: \(error)", file: file, line: line)
+        }
+
+        let timeElapsed = CFAbsoluteTimeGetCurrent() - startTime
+        print("Time elapsed: \(timeElapsed) seconds")
     }
 }

@@ -110,6 +110,14 @@ jobs:
         ln -sf $(pwd)/.build/release/velo ~/.velo/bin/velo
         echo "$HOME/.velo/bin" >> $GITHUB_PATH
         
+        # Set up minimal homebrew/core tap for testing
+        mkdir -p ~/.velo/taps/homebrew/core/Formula
+        cd ~/.velo/taps/homebrew/core
+        git init
+        git remote add origin https://github.com/Homebrew/homebrew-core.git
+        git fetch --depth 1 origin HEAD
+        git checkout FETCH_HEAD
+        
         # Verify installation
         ~/.velo/bin/velo --version || echo "Velo not ready yet"
     
