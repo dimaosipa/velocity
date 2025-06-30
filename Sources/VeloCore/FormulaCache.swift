@@ -452,7 +452,6 @@ public final class TapManager {
         let coreTapPath = pathHelper.tapsPath.appendingPathComponent("homebrew/core")
 
         if FileManager.default.fileExists(atPath: coreTapPath.path) {
-            logInfo("Updating homebrew/core tap...")
             try await updateCoreTap(at: coreTapPath)
         } else {
             logInfo("Cloning homebrew/core tap...")
