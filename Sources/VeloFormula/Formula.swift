@@ -36,6 +36,7 @@ public struct Formula: Codable, Equatable {
             case arm64_ventura
             case arm64_sonoma
             case arm64_sequoia
+            case all
 
             var osVersion: String {
                 switch self {
@@ -43,10 +44,16 @@ public struct Formula: Codable, Equatable {
                 case .arm64_ventura: return "13"
                 case .arm64_sonoma: return "14"
                 case .arm64_sequoia: return "15"
+                case .all: return "all"
                 }
             }
 
             public var isCompatible: Bool {
+                // "all" platform is compatible with everything
+                if self == .all {
+                    return true
+                }
+                
                 // Check if current macOS version is compatible
                 let currentVersion = ProcessInfo.processInfo.operatingSystemVersion
                 let requiredMajor = Int(osVersion) ?? 12

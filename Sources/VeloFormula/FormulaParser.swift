@@ -248,15 +248,18 @@ public struct FormulaParser {
 
         let bottleBlock = String(content[bottleBlockRange])
 
-        // Extract sha256 entries for arm64 platforms
-        // Handle both formats:
-        // - sha256 cellar: :any, arm64_sonoma: "hash"
+        // Extract sha256 entries for arm64 platforms and "all" platform
+        // Handle formats:
+        // - sha256 cellar: :any, arm64_sonoma: "hash"  
         // - sha256 arm64_sonoma: "hash"
-        let simplePattern = #"sha256\s+(arm64_\w+):\s*["']([a-fA-F0-9]{64})["']"#
-        let complexPattern = #"sha256\s+[^,]*,\s*(arm64_\w+):\s*["']([a-fA-F0-9]{64})["']"#
+        // - sha256 cellar: :any_skip_relocation, all: "hash"
+        let simpleArm64Pattern = #"sha256\s+(arm64_\w+):\s*["']([a-fA-F0-9]{64})["']"#
+        let complexArm64Pattern = #"sha256\s+[^,]*,\s*(arm64_\w+):\s*["']([a-fA-F0-9]{64})["']"#
+        let allPattern = #"sha256\s+[^,]*,\s*(all):\s*["']([a-fA-F0-9]{64})["']"#
 
-        var matches = extractAllMatchPairs(pattern: simplePattern, from: bottleBlock)
-        matches.append(contentsOf: extractAllMatchPairs(pattern: complexPattern, from: bottleBlock))
+        var matches = extractAllMatchPairs(pattern: simpleArm64Pattern, from: bottleBlock)
+        matches.append(contentsOf: extractAllMatchPairs(pattern: complexArm64Pattern, from: bottleBlock))
+        matches.append(contentsOf: extractAllMatchPairs(pattern: allPattern, from: bottleBlock))
 
         for (platformStr, sha) in matches {
             if let platform = Formula.Bottle.Platform(rawValue: platformStr) {

@@ -493,9 +493,13 @@ extension Velo {
                 }
             }
 
-            // Install dependencies first (runtime dependencies only)
+            // Install dependencies using dependency graph approach
             if !skipDeps {
-                try await installDependencies(for: formula, context: context, pathHelper: pathHelper)
+                try await installDependenciesWithGraph(
+                    for: formula,
+                    tapManager: tapManager,
+                    pathHelper: pathHelper
+                )
             }
 
             // Check for compatible bottle
@@ -574,11 +578,11 @@ extension Velo {
             }
         }
 
-        // MARK: - Dependency Resolution
+        // MARK: - Dependency Resolution with Graph
 
-        private func installDependencies(
+        private func installDependenciesWithGraph(
             for formula: Formula,
-            context: ProjectContext,
+            tapManager: TapManager,
             pathHelper: PathHelper
         ) async throws {
             let runtimeDependencies = formula.dependencies.filter { $0.type == .required }
@@ -587,10 +591,7 @@ extension Velo {
                 return
             }
 
-            logInfo("Checking \(runtimeDependencies.count) runtime dependencies...")
-
-            var failedDependencies: [String] = []
-
+            // For each dependency, build a dependency graph and install
             for dependency in runtimeDependencies {
                 // Skip if already installed
                 if pathHelper.isPackageInstalled(dependency.name) {
@@ -600,42 +601,74 @@ extension Velo {
 
                 logInfo("Installing dependency: \(dependency.name)...")
 
-                // Create a new install instance for the dependency
-                do {
-                    try await installPackage(
-                        name: dependency.name,
-                        version: nil,
-                        context: context,
-                        pathHelper: pathHelper,
-                        skipDeps: true,
-                        verbose: false,
-                        skipTapUpdate: true,
-                        forceTapUpdate: false
-                    )
-                    logInfo("✓ \(dependency.name) installed successfully")
-                } catch VeloError.bottleNotAccessible(_, let reason) {
-                    logError("Critical dependency \(dependency.name) failed to install: \(reason)")
-                    failedDependencies.append(dependency.name)
-                } catch {
-                    logError("Critical dependency \(dependency.name) failed to install: \(error.localizedDescription)")
-                    failedDependencies.append(dependency.name)
-                }
-            }
+                // Build dependency graph for this dependency
+                let graph = DependencyGraph(pathHelper: pathHelper)
+                try await graph.buildGraph(for: dependency.name, tapManager: tapManager)
 
-            // If any required dependencies failed, abort the installation
-            if !failedDependencies.isEmpty {
-                logError("Installation aborted due to missing critical dependencies:")
-                for dep in failedDependencies {
-                    logError("  • \(dep)")
+                // Get packages that need to be installed
+                let newPackages = graph.newPackages
+                if newPackages.isEmpty {
+                    logInfo("✓ \(dependency.name) (no new packages needed)")
+                    continue
                 }
-                logError("")
-                logError("\(formula.name) requires these dependencies to function properly.")
-                logError("Installation aborted to prevent installing a broken package.")
 
-                throw VeloError.installationFailed(
-                    package: formula.name,
-                    reason: "Missing critical dependencies: \(failedDependencies.joined(separator: ", "))"
+                // Download all required packages in parallel
+                let downloadManager = ParallelDownloadManager(pathHelper: pathHelper)
+                let downloads = try await downloadManager.downloadAll(packages: newPackages)
+
+                // Install packages in dependency order
+                let installOrder = try graph.getInstallOrder()
+                try await installPackagesInOrder(
+                    installOrder: installOrder,
+                    downloads: downloads,
+                    graph: graph,
+                    pathHelper: pathHelper
                 )
+
+                logInfo("✓ \(dependency.name) and its dependencies installed successfully")
+            }
+        }
+
+        /// Install packages in the correct dependency order
+        private func installPackagesInOrder(
+            installOrder: [String],
+            downloads: [String: DownloadResult],
+            graph: DependencyGraph,
+            pathHelper: PathHelper
+        ) async throws {
+            let installer = Installer(pathHelper: pathHelper)
+            
+            for packageName in installOrder {
+                guard let node = graph.getNode(for: packageName) else { continue }
+                
+                // Skip if already installed
+                if node.isInstalled {
+                    continue
+                }
+                
+                guard let downloadResult = downloads[packageName] else {
+                    throw VeloError.installationFailed(
+                        package: packageName,
+                        reason: "Download result not found"
+                    )
+                }
+                
+                guard downloadResult.success else {
+                    throw VeloError.installationFailed(
+                        package: packageName,
+                        reason: downloadResult.error?.localizedDescription ?? "Download failed"
+                    )
+                }
+                
+                // Install from pre-downloaded bottle
+                try await installer.install(
+                    formula: node.formula,
+                    from: downloadResult.downloadPath,
+                    progress: nil
+                )
+                
+                // Clean up downloaded file
+                try? FileManager.default.removeItem(at: downloadResult.downloadPath)
             }
         }
 
