@@ -57,13 +57,25 @@ extension Velo {
             }
 
             // Parse package specification (supports package@version syntax)
-            let packageSpec = PackageSpecification.parse(packageInput)
-            guard packageSpec.isValid else {
-                throw VeloError.formulaNotFound(name: "Invalid package specification: \(packageInput)")
+            // Handle versioned formula names (e.g., python@3.9)
+            // First check if the full input exists as a formula name
+            let tapManager = TapManager(pathHelper: PathHelper.shared)
+            let resolvedName: String
+            let resolvedVersion: String?
+            
+            if packageInput.contains("@"), let _ = try tapManager.findFormula(packageInput) {
+                // Full name exists as a formula (e.g., python@3.9)
+                resolvedName = packageInput
+                resolvedVersion = version  // Use only --version flag if provided
+            } else {
+                // Parse as name@version specification
+                let packageSpec = PackageSpecification.parse(packageInput)
+                guard packageSpec.isValid else {
+                    throw VeloError.formulaNotFound(name: "Invalid package specification: \(packageInput)")
+                }
+                resolvedName = packageSpec.name
+                resolvedVersion = packageSpec.version ?? version  // inline @version takes precedence
             }
-
-            // Determine version: inline @version takes precedence over --version flag
-            let finalVersion = packageSpec.version ?? version
 
             // Determine if we should install locally or globally
             let useLocal = !global && context.isProjectContext
@@ -72,8 +84,8 @@ extension Velo {
             let pathHelper = context.getPathHelper(preferLocal: useLocal)
 
             try await installPackage(
-                name: packageSpec.name,
-                version: finalVersion,
+                name: resolvedName,
+                version: resolvedVersion,
                 context: context,
                 pathHelper: pathHelper,
                 skipDeps: skipDependencies,
@@ -85,8 +97,8 @@ extension Velo {
             // Automatically add to velo.json if in project context and installing locally
             if useLocal && context.isProjectContext {
                 try await addToManifest(
-                    package: packageSpec.name,
-                    version: finalVersion,
+                    package: resolvedName,
+                    version: resolvedVersion,
                     context: context
                 )
             }
