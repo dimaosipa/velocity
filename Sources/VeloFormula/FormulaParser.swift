@@ -34,19 +34,35 @@ public struct FormulaParser {
     // MARK: - Basic Field Extraction
 
     private func extractDescription(from content: String) throws -> String {
-        let pattern = #"desc\s+["']([^"']+)["']"#
-        guard let match = extractFirstMatch(pattern: pattern, from: content) else {
-            throw VeloError.formulaParseError(formula: "unknown", details: "Could not find description")
+        // Handle both double and single quoted descriptions
+        // For double quotes: desc "content with 'quotes' inside"
+        // For single quotes: desc 'content with "quotes" inside'
+        let doubleQuotePattern = #"desc\s+"([^"]*)\""#
+        let singleQuotePattern = #"desc\s+'([^']*)'"#
+        
+        if let match = extractFirstMatch(pattern: doubleQuotePattern, from: content) {
+            return match
         }
-        return match
+        if let match = extractFirstMatch(pattern: singleQuotePattern, from: content) {
+            return match
+        }
+        
+        throw VeloError.formulaParseError(formula: "unknown", details: "Could not find description")
     }
 
     private func extractHomepage(from content: String) throws -> String {
-        let pattern = #"homepage\s+["']([^"']+)["']"#
-        guard let match = extractFirstMatch(pattern: pattern, from: content) else {
-            throw VeloError.formulaParseError(formula: "unknown", details: "Could not find homepage")
+        // Handle both double and single quoted homepages
+        let doubleQuotePattern = #"homepage\s+"([^"]*)\""#
+        let singleQuotePattern = #"homepage\s+'([^']*)'"#
+        
+        if let match = extractFirstMatch(pattern: doubleQuotePattern, from: content) {
+            return match
         }
-        return match
+        if let match = extractFirstMatch(pattern: singleQuotePattern, from: content) {
+            return match
+        }
+        
+        throw VeloError.formulaParseError(formula: "unknown", details: "Could not find homepage")
     }
 
     private func extractURL(from content: String) throws -> String {
@@ -97,9 +113,14 @@ public struct FormulaParser {
             }
         }
 
-        // For Git-based formulae, return a placeholder SHA256
-        // The actual source will be cloned, not downloaded as a tarball
+        // For VCS-based formulae, return a placeholder SHA256
+        // The actual source will be cloned/checked out, not downloaded as a tarball
         if content.contains("git") && (content.contains("tag:") || content.contains("revision:")) {
+            return "0000000000000000000000000000000000000000000000000000000000000000"
+        }
+        
+        // Handle SVN, Mercurial, and other VCS checkouts
+        if content.contains("revision:") || content.contains("hg ") || content.contains("svn.") {
             return "0000000000000000000000000000000000000000000000000000000000000000"
         }
 
@@ -130,6 +151,7 @@ public struct FormulaParser {
                 #"/(\d+\.\d+(?:\.\d+)*(?:-[\w]+)*)"#,        // fallback without v
                 #"(\d+\.\d+\.\d+)"#,                          // simple three-part version
                 #"(\d{4}-\d{2}-\d{2})"#,                      // date-based versions (2025-05-20)
+                #"[-/_](\d{8})"#,                             // 8-digit date format (20250622, 20200209)
                 #"/archive/refs/tags/([^/]+)\.tar"#           // GitHub archive URLs (for argon2-style date versions)
             ]
 
