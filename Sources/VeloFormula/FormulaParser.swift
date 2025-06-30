@@ -7,33 +7,42 @@ public struct FormulaParser {
 
     public func parse(rubyContent: String, formulaName: String) throws -> Formula {
         // Extract basic information
-        let description = try extractDescription(from: rubyContent)
-        let homepage = try extractHomepage(from: rubyContent)
-        let url = try extractURL(from: rubyContent)
-        let sha256 = try extractSHA256(from: rubyContent)
-        let version = try extractVersion(from: rubyContent, url: url)
+        do {
+            let description = try extractDescription(from: rubyContent, formulaName: formulaName)
+            let homepage = try extractHomepage(from: rubyContent, formulaName: formulaName)
+            let url = try extractURL(from: rubyContent, formulaName: formulaName)
+            let sha256 = try extractSHA256(from: rubyContent, formulaName: formulaName)
+            let version = try extractVersion(from: rubyContent, url: url, formulaName: formulaName)
 
-        // Extract dependencies
-        let dependencies = extractDependencies(from: rubyContent)
+            // Extract dependencies
+            let dependencies = extractDependencies(from: rubyContent)
 
-        // Extract bottles
-        let bottles = try extractBottles(from: rubyContent)
+            // Extract bottles
+            let bottles = try extractBottles(from: rubyContent)
 
-        return Formula(
-            name: formulaName,
-            description: description,
-            homepage: homepage,
-            url: url,
-            sha256: sha256,
-            version: version,
-            dependencies: dependencies,
-            bottles: bottles
-        )
+            return Formula(
+                name: formulaName,
+                description: description,
+                homepage: homepage,
+                url: url,
+                sha256: sha256,
+                version: version,
+                dependencies: dependencies,
+                bottles: bottles
+            )
+        } catch {
+            // Re-throw with formula name for better error reporting
+            if let veloError = error as? VeloError {
+                throw veloError
+            } else {
+                throw VeloError.formulaParseError(formula: formulaName, details: "Parse error: \(error)")
+            }
+        }
     }
 
     // MARK: - Basic Field Extraction
 
-    private func extractDescription(from content: String) throws -> String {
+    private func extractDescription(from content: String, formulaName: String) throws -> String {
         // Handle both double and single quoted descriptions
         // For double quotes: desc "content with 'quotes' inside"
         // For single quotes: desc 'content with "quotes" inside'
@@ -47,10 +56,10 @@ public struct FormulaParser {
             return match
         }
         
-        throw VeloError.formulaParseError(formula: "unknown", details: "Could not find description")
+        throw VeloError.formulaParseError(formula: formulaName, details: "Could not find description")
     }
 
-    private func extractHomepage(from content: String) throws -> String {
+    private func extractHomepage(from content: String, formulaName: String) throws -> String {
         // Handle both double and single quoted homepages
         let doubleQuotePattern = #"homepage\s+"([^"]*)\""#
         let singleQuotePattern = #"homepage\s+'([^']*)'"#
@@ -62,10 +71,10 @@ public struct FormulaParser {
             return match
         }
         
-        throw VeloError.formulaParseError(formula: "unknown", details: "Could not find homepage")
+        throw VeloError.formulaParseError(formula: formulaName, details: "Could not find homepage")
     }
 
-    private func extractURL(from content: String) throws -> String {
+    private func extractURL(from content: String, formulaName: String) throws -> String {
         let pattern = #"^\s*url\s+["']([^"']+)["']"#
         let lines = content.components(separatedBy: .newlines)
         var inBottleBlock = false
@@ -94,10 +103,10 @@ public struct FormulaParser {
             }
         }
 
-        throw VeloError.formulaParseError(formula: "unknown", details: "Could not find URL")
+        throw VeloError.formulaParseError(formula: formulaName, details: "Could not find URL")
     }
 
-    private func extractSHA256(from content: String) throws -> String {
+    private func extractSHA256(from content: String, formulaName: String) throws -> String {
         let pattern = #"^\s*sha256\s+["']([a-fA-F0-9]{64})["']"#
         let lines = content.components(separatedBy: .newlines)
         var inBottleBlock = false
@@ -124,10 +133,10 @@ public struct FormulaParser {
             return "0000000000000000000000000000000000000000000000000000000000000000"
         }
 
-        throw VeloError.formulaParseError(formula: "unknown", details: "Could not find SHA256")
+        throw VeloError.formulaParseError(formula: formulaName, details: "Could not find SHA256")
     }
 
-    private func extractVersion(from content: String, url: String) throws -> String {
+    private func extractVersion(from content: String, url: String, formulaName: String) throws -> String {
         var baseVersion: String?
         
         // First try to find explicit version
@@ -152,19 +161,26 @@ public struct FormulaParser {
                 #"(\d+\.\d+\.\d+)"#,                          // simple three-part version
                 #"(\d{4}-\d{2}-\d{2})"#,                      // date-based versions (2025-05-20)
                 #"[-/_](\d{8})"#,                             // 8-digit date format (20250622, 20200209)
-                #"/archive/refs/tags/([^/]+)\.tar"#           // GitHub archive URLs (for argon2-style date versions)
+                #"/archive/refs/tags/([^/]+)\.tar"#,          // GitHub archive URLs (for argon2-style date versions)
+                #"[-/_](\d{4}[a-z])"#,                        // year + letter (2007f)
+                #"[-/_](\d{3,})"#,                            // 3+ digit numbers (018)
+                #"(\d+_\d+_\d+)"#,                            // underscore separated (2_8_9)
+                #"[a-zA-Z]+(\d+\.\d+)"#,                      // name directly followed by version (tth4.16)
+                #"[-/_](\d{1,2})"#,                           // single or double digit numbers (ngircd-27)
+                #"\.v(\d+[a-z]?)"#                            // .v prefix with letter suffix (jpegsrc.v9f)
             ]
 
             for pattern in urlVersionPatterns {
                 if let match = extractFirstMatch(pattern: pattern, from: url) {
-                    baseVersion = match
+                    // Convert underscores to dots for consistency (nauty2_8_9 -> 2.8.9)
+                    baseVersion = match.replacingOccurrences(of: "_", with: ".")
                     break
                 }
             }
         }
         
         guard let version = baseVersion else {
-            throw VeloError.formulaParseError(formula: "unknown", details: "Could not determine version")
+            throw VeloError.formulaParseError(formula: formulaName, details: "Could not determine version")
         }
 
         // Check for revision field and append if found
