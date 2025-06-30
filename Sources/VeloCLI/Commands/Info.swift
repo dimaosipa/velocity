@@ -20,23 +20,9 @@ extension Velo {
         var installed = false
 
         func run() throws {
-            // Use a simple blocking approach for async operations
-            let group = DispatchGroup()
-            var result: Result<Void, Error>?
-
-            group.enter()
-            Task {
-                do {
-                    try await self.runAsync()
-                    result = .success(())
-                } catch {
-                    result = .failure(error)
-                }
-                group.leave()
+            try runAsyncAndWait {
+                try await self.runAsync()
             }
-
-            group.wait()
-            try result?.get()
         }
 
         private func runAsync() async throws {
