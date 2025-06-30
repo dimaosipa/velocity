@@ -34,6 +34,9 @@ extension Velo {
         @Flag(help: "Verify lock file before installing, warn about changes")
         var check = false
 
+        @Flag(help: "Force tap update even if cache is fresh")
+        var updateTaps = false
+
         func run() throws {
             try runAsyncAndWait {
                 try await self.runAsync()
@@ -75,7 +78,8 @@ extension Velo {
                 pathHelper: pathHelper,
                 skipDeps: skipDependencies,
                 verbose: true,
-                skipTapUpdate: false
+                skipTapUpdate: false,
+                forceTapUpdate: updateTaps
             )
 
             // Automatically add to velo.json if in project context and installing locally
@@ -138,7 +142,8 @@ extension Velo {
                     pathHelper: pathHelper,
                     skipDeps: false,
                     verbose: false,
-                    skipTapUpdate: true // Skip after first update
+                    skipTapUpdate: true, // Skip after first update
+                    forceTapUpdate: false
                 )
 
                 if let result = installResult {
@@ -161,7 +166,8 @@ extension Velo {
             pathHelper: PathHelper,
             skipDeps: Bool,
             verbose: Bool,
-            skipTapUpdate: Bool = false
+            skipTapUpdate: Bool = false,
+            forceTapUpdate: Bool = false
         ) async throws -> (formula: Formula, bottleURL: String, tap: String, resolvedDependencies: [String: String])? {
             let tapManager = TapManager(pathHelper: pathHelper)
 
@@ -181,7 +187,8 @@ extension Velo {
                 pathHelper: pathHelper,
                 skipDeps: skipDeps,
                 verbose: verbose,
-                skipTapUpdate: skipTapUpdate
+                skipTapUpdate: skipTapUpdate,
+                forceTapUpdate: forceTapUpdate
             )
 
             // Get bottle URL
@@ -319,7 +326,8 @@ extension Velo {
                     pathHelper: pathHelper,
                     skipDeps: false,
                     verbose: true,
-                    skipTapUpdate: true
+                    skipTapUpdate: true,
+                    forceTapUpdate: false
                 )
             }
 
@@ -452,7 +460,8 @@ extension Velo {
             pathHelper: PathHelper,
             skipDeps: Bool,
             verbose: Bool,
-            skipTapUpdate: Bool = false
+            skipTapUpdate: Bool = false,
+            forceTapUpdate: Bool = false
         ) async throws {
             let downloader = BottleDownloader()
             let installer = Installer(pathHelper: pathHelper)
@@ -465,7 +474,7 @@ extension Velo {
 
             // Ensure we have the homebrew/core tap (skip for dependencies)
             if !skipTapUpdate {
-                try await tapManager.updateTaps()
+                try await tapManager.updateTaps(force: forceTapUpdate)
             }
 
             // Parse formula
@@ -600,7 +609,8 @@ extension Velo {
                         pathHelper: pathHelper,
                         skipDeps: true,
                         verbose: false,
-                        skipTapUpdate: true
+                        skipTapUpdate: true,
+                        forceTapUpdate: false
                     )
                     logInfo("✓ \(dependency.name) installed successfully")
                 } catch VeloError.bottleNotAccessible(_, let reason) {

@@ -45,6 +45,10 @@ public struct PathHelper {
     public var optPath: URL {
         veloHome.appendingPathComponent("opt")
     }
+    
+    public var tapMetadataFile: URL {
+        cachePath.appendingPathComponent("tap-metadata.json")
+    }
 
     private init(customHome: URL? = nil) {
         self.customHome = customHome

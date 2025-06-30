@@ -271,6 +271,7 @@ public final class TapManager {
     private let pathHelper: PathHelper
     private let cache: FormulaCacheProtocol
     private let index: FormulaIndex
+    private let cacheManager: TapCacheManager
     
     // Static flag to prevent concurrent tap updates
     private static var isUpdatingTaps = false
@@ -280,9 +281,10 @@ public final class TapManager {
         self.pathHelper = pathHelper
         self.cache = FormulaCache(pathHelper: pathHelper)
         self.index = FormulaIndex(cache: cache)
+        self.cacheManager = TapCacheManager(pathHelper: pathHelper)
     }
 
-    public func updateTaps() async throws {
+    public func updateTaps(force: Bool = false, maxAge: TimeInterval = 3600) async throws {
         // Check if another tap update is already in progress
         let shouldUpdate = TapManager.updateQueue.sync {
             if TapManager.isUpdatingTaps {
@@ -303,10 +305,22 @@ public final class TapManager {
             }
         }
 
-        logInfo("Updating taps...")
+        // Check cache freshness unless forced
+        if !force && cacheManager.isCacheFresh(for: "homebrew/core", maxAge: maxAge) {
+            let status = cacheManager.getCacheStatus(for: "homebrew/core")
+            logInfo("Using cached homebrew/core tap (\(status))")
+            return
+        }
+
+        let startTime = Date()
+        logInfo("Updating homebrew/core tap...")
 
         // Ensure homebrew/core tap is cloned and up to date
         try await ensureCoreTap()
+
+        // Update cache metadata
+        let duration = Date().timeIntervalSince(startTime)
+        cacheManager.updateCacheMetadata(for: "homebrew/core", updateDuration: duration)
 
         // For lazy loading, we don't parse all formulae upfront
         // Instead, we'll parse them on-demand as they're requested
