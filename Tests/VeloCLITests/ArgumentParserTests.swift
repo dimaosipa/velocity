@@ -7,28 +7,28 @@ final class ArgumentParserTests: XCTestCase {
 
     // MARK: - Error Cases for Command Parsing
 
-    func testInstallCommandMissingArgument() throws {
-        XCTAssertThrowsError(try Velo.Install.parseAsRoot([])) { error in
-            XCTAssertTrue(error is ArgumentParser.ValidationError || error is CleanExit)
-        }
+    func testInstallCommandMissingArgument() async throws {
+        let output = try await runCLICommand(["install"])
+        XCTAssertTrue(output.contains("velo init") || output.contains("specify a package name"),
+                     "Install without args should show error about missing package or velo.json")
     }
 
-    func testSearchCommandMissingArgument() throws {
-        XCTAssertThrowsError(try Velo.Search.parseAsRoot([])) { error in
-            XCTAssertTrue(error is ArgumentParser.ValidationError || error is CleanExit)
-        }
+    func testSearchCommandMissingArgument() async throws {
+        let output = try await runCLICommand(["search"])
+        XCTAssertTrue(output.contains("Missing expected argument") || output.contains("<term>"),
+                     "Search without args should show error about missing term")
     }
 
-    func testInfoCommandMissingArgument() throws {
-        XCTAssertThrowsError(try Velo.Info.parseAsRoot([])) { error in
-            XCTAssertTrue(error is ArgumentParser.ValidationError || error is CleanExit)
-        }
+    func testInfoCommandMissingArgument() async throws {
+        let output = try await runCLICommand(["info"])
+        XCTAssertTrue(output.contains("Missing expected argument") || output.contains("<package>"),
+                     "Info without args should show error about missing package")
     }
 
-    func testInvalidFlag() throws {
-        XCTAssertThrowsError(try Velo.Install.parseAsRoot(["wget", "--invalid-flag"])) { error in
-            XCTAssertTrue(error is ArgumentParser.ValidationError || error is CleanExit)
-        }
+    func testInvalidFlag() async throws {
+        let output = try await runCLICommand(["install", "wget", "--invalid-flag"])
+        XCTAssertTrue(output.contains("Unknown option") || output.contains("invalid-flag"),
+                     "Invalid flag should show error")
     }
 
     // MARK: - Integration Test: CLI Process Execution
@@ -42,15 +42,15 @@ final class ArgumentParserTests: XCTestCase {
         XCTAssertTrue(listOutput.contains("No packages installed") || listOutput.contains("package"))
     }
 
-    func testCLIAsyncCommandsShowHelp() async throws {
-        // These currently show help instead of executing - this is the bug we're testing
+    func testCLIAsyncCommandsWork() async throws {
+        // These commands should execute properly (not show help)
         let installOutput = try await runCLICommand(["install", "wget"])
-        XCTAssertTrue(installOutput.contains("OVERVIEW: Install a package"),
-                     "Install command should show help (this is the bug we're fixing)")
+        XCTAssertTrue(installOutput.contains("Installing wget") || installOutput.contains("already installed"),
+                     "Install command should execute (not show help)")
 
         let searchOutput = try await runCLICommand(["search", "test"])
-        XCTAssertTrue(searchOutput.contains("OVERVIEW: Search for packages"),
-                     "Search command should show help (this is the bug we're fixing)")
+        XCTAssertTrue(searchOutput.contains("Search results for") || searchOutput.contains("found"),
+                     "Search command should execute (not show help)")
     }
 
     // MARK: - Helper Methods
