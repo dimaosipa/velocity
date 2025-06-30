@@ -45,14 +45,58 @@ function parseFrontmatter(content) {
     // Simple YAML-like parsing for basic fields
     const frontmatter = {};
     const lines = frontmatterText.split('\n');
+    let currentKey = null;
+    let multilineValue = [];
+    let isMultiline = false;
     
-    for (const line of lines) {
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
         const colonIndex = line.indexOf(':');
-        if (colonIndex > 0) {
+        
+        if (colonIndex > 0 && !isMultiline) {
+            // Save previous multiline value if exists
+            if (currentKey && multilineValue.length > 0) {
+                frontmatter[currentKey] = multilineValue.join('\n').trim();
+                multilineValue = [];
+            }
+            
             const key = line.substring(0, colonIndex).trim();
-            const value = line.substring(colonIndex + 1).trim().replace(/^["']|["']$/g, '');
-            frontmatter[key] = value;
+            const value = line.substring(colonIndex + 1).trim();
+            
+            // Check for multiline indicator |
+            if (value === '|') {
+                currentKey = key;
+                isMultiline = true;
+                multilineValue = [];
+            } else {
+                // Regular single-line value
+                frontmatter[key] = value.replace(/^["']|["']$/g, '');
+                currentKey = null;
+            }
+        } else if (isMultiline && line.trim()) {
+            // Collect multiline content (skip empty lines)
+            const content = line.replace(/^  /, ''); // Remove 2-space indentation
+            if (content.trim()) {
+                multilineValue.push(content);
+            }
+        } else if (isMultiline && !line.trim() && i < lines.length - 1) {
+            // Empty line in multiline - check if next line is indented
+            const nextLine = lines[i + 1];
+            if (nextLine && !nextLine.startsWith('  ') && nextLine.includes(':')) {
+                // End of multiline block
+                if (currentKey && multilineValue.length > 0) {
+                    frontmatter[currentKey] = multilineValue.join('\n').trim();
+                }
+                currentKey = null;
+                multilineValue = [];
+                isMultiline = false;
+            }
         }
+    }
+    
+    // Save final multiline value if exists
+    if (currentKey && multilineValue.length > 0) {
+        frontmatter[currentKey] = multilineValue.join('\n').trim();
     }
     
     return { frontmatter, content: remainingContent };
@@ -105,6 +149,84 @@ async function parseFooterConfig() {
     } catch (error) {
         console.warn('⚠️  Could not parse FOOTER.md, using default footer structure');
         return {};
+    }
+}
+
+/**
+ * Parse home page configuration from HOME.md
+ */
+async function parseHomeConfig() {
+    const homePath = path.join(CONFIG.docsDir, '..', 'HOME.md');
+    
+    try {
+        if (!(await fs.pathExists(homePath))) {
+            console.log('ℹ️  No HOME.md found, using hardcoded home page content');
+            return null;
+        }
+        
+        const content = await fs.readFile(homePath, 'utf8');
+        const { frontmatter, content: markdownContent } = parseFrontmatter(content);
+        
+        // Parse markdown sections
+        const sections = {};
+        const lines = markdownContent.split('\n');
+        let currentSection = null;
+        let currentSubsection = null;
+        let currentContent = [];
+        
+        for (const line of lines) {
+            const trimmed = line.trim();
+            
+            // Check for main section headers (## Section Name)
+            if (trimmed.startsWith('## ')) {
+                // Save previous section if exists
+                if (currentSection && currentSubsection) {
+                    if (!sections[currentSection]) sections[currentSection] = {};
+                    sections[currentSection][currentSubsection] = currentContent.join('\n').trim();
+                }
+                
+                const sectionMatch = trimmed.match(/^## (.+?)(?:\s*\|\s*(.+))?$/);
+                currentSection = sectionMatch[1].trim();
+                
+                // Handle section with subtitle (e.g., "Features | Built for Apple Silicon")
+                if (sectionMatch[2]) {
+                    sections[currentSection] = { subtitle: sectionMatch[2].trim() };
+                } else {
+                    sections[currentSection] = {};
+                }
+                
+                currentSubsection = null;
+                currentContent = [];
+            }
+            // Check for subsection headers (### Subsection Name)
+            else if (trimmed.startsWith('### ')) {
+                // Save previous subsection if exists
+                if (currentSection && currentSubsection) {
+                    if (!sections[currentSection]) sections[currentSection] = {};
+                    sections[currentSection][currentSubsection] = currentContent.join('\n').trim();
+                }
+                
+                currentSubsection = trimmed.substring(4).trim();
+                currentContent = [];
+            }
+            // Content lines
+            else if (currentSection) {
+                currentContent.push(line);
+            }
+        }
+        
+        // Save final section
+        if (currentSection && currentSubsection) {
+            if (!sections[currentSection]) sections[currentSection] = {};
+            sections[currentSection][currentSubsection] = currentContent.join('\n').trim();
+        }
+        
+        console.log(`🏠 Parsed home page configuration with ${Object.keys(sections).length} sections`);
+        return { frontmatter, sections };
+        
+    } catch (error) {
+        console.warn('⚠️  Could not parse HOME.md, using hardcoded home page content');
+        return null;
     }
 }
 
@@ -384,6 +506,97 @@ async function copyAssets() {
 }
 
 /**
+ * Generate features grid HTML from HOME.md configuration
+ */
+function generateFeaturesGrid(featuresSection) {
+    if (!featuresSection || Object.keys(featuresSection).length === 0) {
+        return '';
+    }
+    
+    let featuresHtml = '';
+    
+    Object.keys(featuresSection).forEach(key => {
+        if (key === 'subtitle') return; // Skip subtitle
+        
+        const content = featuresSection[key];
+        const lines = content.split('\n').filter(line => line.trim()); // Remove empty lines
+        const description = lines.join('\n').trim();
+        
+        // Extract emoji from the key (e.g., "⚡ Blazing-fast installs" -> "⚡" and "Blazing-fast installs")
+        const iconMatch = key.match(/^([^\w\s]+)\s*(.+)$/);
+        const icon = iconMatch ? iconMatch[1].trim() : '🔧';
+        const title = iconMatch ? iconMatch[2].trim() : key;
+        
+        featuresHtml += `
+                <div class="feature-card">
+                    <div class="feature-icon">${icon}</div>
+                    <h3 class="feature-title">${title}</h3>
+                    <p class="feature-description">${description}</p>
+                </div>`;
+    });
+    
+    return featuresHtml;
+}
+
+/**
+ * Generate performance grid HTML from HOME.md configuration
+ */
+function generatePerformanceGrid(performanceSection) {
+    if (!performanceSection || Object.keys(performanceSection).length === 0) {
+        return '';
+    }
+    
+    let performanceHtml = '';
+    
+    Object.keys(performanceSection).forEach(key => {
+        if (key === 'subtitle') return; // Skip subtitle
+        
+        const content = performanceSection[key];
+        const lines = content.split('\n').filter(line => line.trim()); // Remove empty lines
+        const description = lines.join('\n').trim();
+        
+        performanceHtml += `
+                <div class="performance-item">
+                    <h3 class="performance-title">${key}</h3>
+                    <p class="performance-description">${description}</p>
+                </div>`;
+    });
+    
+    return performanceHtml;
+}
+
+/**
+ * Generate terminal output HTML from HOME.md configuration
+ */
+function generateTerminalOutput(terminalOutput, command) {
+    if (!terminalOutput) return '';
+    
+    const lines = terminalOutput.trim().split('\n');
+    let terminalHtml = `
+                        <div class="terminal-line">
+                            <span class="terminal-prompt">$ </span>
+                            <span class="terminal-command">${command || 'velo install imagemagick'}</span>
+                        </div>`;
+    
+    lines.forEach(line => {
+        if (line.trim()) {
+            terminalHtml += `
+                        <div class="terminal-line terminal-output">
+                            <span>${line.trim()}</span>
+                        </div>`;
+        }
+    });
+    
+    terminalHtml += `
+                        <div class="terminal-line">
+                            <span class="terminal-prompt">$ </span>
+                            <span class="terminal-cursor">█</span>
+                        </div>`;
+    
+    return terminalHtml;
+}
+
+/**
  * Generate dynamic footer HTML from FOOTER.md configuration
  */
 function generateDynamicFooter(footerConfig, pageDepth = 0) {
@@ -434,14 +647,197 @@ async function generateHomePage() {
     
     const template = await fs.readFile(CONFIG.homeTemplate, 'utf8');
     const footerConfig = await parseFooterConfig();
+    const homeConfig = await parseHomeConfig();
     
     // Generate dynamic footer if available
     const dynamicFooter = generateDynamicFooter(footerConfig, 0);
     
+    // Use HOME.md configuration if available, otherwise fall back to CONFIG defaults
+    let title, description, keywords;
+    let featuresHtml = '';
+    let performanceHtml = '';
+    let terminalHtml = '';
+    let heroContent = {};
+    
+    if (homeConfig) {
+        const { frontmatter, sections } = homeConfig;
+        
+        // Extract metadata from frontmatter
+        title = frontmatter.title || CONFIG.title;
+        description = frontmatter.description || CONFIG.description;
+        keywords = frontmatter.keywords || 'velocity, velo, package manager';
+        
+        // Extract hero content
+        heroContent = {
+            badge_icon: frontmatter.badge_icon || '⚠️',
+            badge_text: frontmatter.badge_text || 'Experimental Software',
+            hero_title: frontmatter.hero_title || 'Velocity',
+            hero_subtitle: frontmatter.hero_subtitle || 'Fast package manager',
+            cta_primary_text: frontmatter.cta_primary_text || 'Get Started',
+            cta_primary_url: frontmatter.cta_primary_url || './docs',
+            cta_secondary_text: frontmatter.cta_secondary_text || 'GitHub',
+            cta_secondary_url: frontmatter.cta_secondary_url || 'https://github.com/dimaosipa/velocity',
+            cta_note: frontmatter.cta_note || '',
+            terminal_command: frontmatter.terminal_command || 'velo install imagemagick',
+            terminal_output: frontmatter.terminal_output || ''
+        };
+        
+        // Generate content sections
+        if (sections.Features) {
+            featuresHtml = generateFeaturesGrid(sections.Features);
+        }
+        
+        if (sections.Performance) {
+            performanceHtml = generatePerformanceGrid(sections.Performance);
+        }
+        
+        if (frontmatter.terminal_output && frontmatter.terminal_output.trim()) {
+            terminalHtml = generateTerminalOutput(frontmatter.terminal_output, frontmatter.terminal_command);
+        } else {
+            // Use fallback terminal output when HOME.md exists but terminal_output is not set
+            terminalHtml = `
+                        <div class="terminal-line">
+                            <span class="terminal-prompt">$ </span>
+                            <span class="terminal-command">${frontmatter.terminal_command || 'velo install imagemagick'}</span>
+                        </div>
+                        <div class="terminal-line terminal-output">
+                            <span>🚀 Installing imagemagick@7.1.1-40...</span>
+                        </div>
+                        <div class="terminal-line terminal-output">
+                            <span>⬇️  Downloading bottle (8 streams)...</span>
+                        </div>
+                        <div class="terminal-line terminal-output">
+                            <span>✅ Installed in 12.3s</span>
+                        </div>
+                        <div class="terminal-line">
+                            <span class="terminal-prompt">$ </span>
+                            <span class="terminal-cursor">█</span>
+                        </div>`;
+        }
+    } else {
+        // Fallback for hardcoded terminal output
+        terminalHtml = `
+                        <div class="terminal-line">
+                            <span class="terminal-prompt">$ </span>
+                            <span class="terminal-command">velo install imagemagick</span>
+                        </div>
+                        <div class="terminal-line terminal-output">
+                            <span>🚀 Installing imagemagick@7.1.1-40...</span>
+                        </div>
+                        <div class="terminal-line terminal-output">
+                            <span>⬇️  Downloading bottle (8 streams)...</span>
+                        </div>
+                        <div class="terminal-line terminal-output">
+                            <span>✅ Installed in 12.3s</span>
+                        </div>
+                        <div class="terminal-line">
+                            <span class="terminal-prompt">$ </span>
+                            <span class="terminal-cursor">█</span>
+                        </div>`;
+    }
+    
+    // Add hardcoded fallback sections for features and performance if HOME.md not available
+    if (!homeConfig) {
+        featuresHtml = `
+                <div class="feature-card">
+                    <div class="feature-icon">⚡</div>
+                    <h3 class="feature-title">Blazing-fast installs</h3>
+                    <p class="feature-description">Parallel downloads with 8-16 concurrent streams and smart caching for instant-feeling package management.</p>
+                </div>
+                
+                <div class="feature-card">
+                    <div class="feature-icon">🛡️</div>
+                    <h3 class="feature-title">Runs entirely in user space</h3>
+                    <p class="feature-description">Everything lives in ~/.velo/. Never requires sudo or writes to system directories.</p>
+                </div>
+                
+                <div class="feature-card">
+                    <div class="feature-icon">🚀</div>
+                    <h3 class="feature-title">CI Ready</h3>
+                    <p class="feature-description">Built-in GitHub Actions support with automated testing, continuous deployment, and comprehensive CI/CD workflows.</p>
+                </div>
+                
+                <div class="feature-card">
+                    <div class="feature-icon">🔁</div>
+                    <h3 class="feature-title">Compatible with Homebrew</h3>
+                    <p class="feature-description">Uses existing .rb formulae from Homebrew core tap. Drop-in replacement with zero migration needed.</p>
+                </div>
+                
+                <div class="feature-card">
+                    <div class="feature-icon">💼</div>
+                    <h3 class="feature-title">Project-local dependencies</h3>
+                    <p class="feature-description">Like npm for system packages. Each project can have its own tool versions with velo.json manifests.</p>
+                </div>
+                
+                <div class="feature-card">
+                    <div class="feature-icon">🔒</div>
+                    <h3 class="feature-title">Security-first design</h3>
+                    <p class="feature-description">SHA256 verification, code signing, and advanced security measures built into every operation.</p>
+                </div>`;
+                
+        performanceHtml = `
+                <div class="performance-item">
+                    <h3 class="performance-title">Swift-native Formula Parsing</h3>
+                    <p class="performance-description">10x faster than Ruby interpretation with regex optimization and binary caching.</p>
+                </div>
+                
+                <div class="performance-item">
+                    <h3 class="performance-title">Parallel Downloads</h3>
+                    <p class="performance-description">Multi-stream concurrent downloads with intelligent retry logic and progress reporting.</p>
+                </div>
+                
+                <div class="performance-item">
+                    <h3 class="performance-title">Smart Caching</h3>
+                    <p class="performance-description">Memory + disk layers with automatic invalidation and predictive prefetching.</p>
+                </div>
+                
+                <div class="performance-item">
+                    <h3 class="performance-title">Memory Optimization</h3>
+                    <p class="performance-description">Lazy loading, memory-mapped files, and automatic cleanup for minimal resource usage.</p>
+                </div>`;
+        
+        // Set hero content for fallback
+        heroContent = {
+            badge_icon: '⚠️',
+            badge_text: 'Experimental Software - Use with caution',
+            hero_title: 'Velocity: The Fastest<br>Package Manager for<br><span class="hero-title-accent">Apple Silicon</span>',
+            hero_subtitle: 'Native speed. Modern architecture. Zero sudo required.',
+            cta_primary_text: 'Get Started',
+            cta_primary_url: './docs/installation',
+            cta_secondary_text: 'View on GitHub',
+            cta_secondary_url: 'https://github.com/dimaosipa/velocity',
+            cta_note: '<strong>Note:</strong> Velocity is experimental software. Please test thoroughly before using in production environments.',
+            terminal_command: 'velo install imagemagick',
+            terminal_output: ''
+        };
+        
+        // Fallback to hardcoded values
+        title = CONFIG.title;
+        description = CONFIG.description;
+        keywords = 'velocity, velo, package manager, homebrew, swift, macos, apple silicon';
+    }
+    
     // For home page, replace placeholders and fix asset paths for GitHub Pages
     let html = template
-        .replace(/{{TITLE}}/g, CONFIG.title)
-        .replace(/{{DESCRIPTION}}/g, CONFIG.description)
+        .replace(/{{TITLE}}/g, title)
+        .replace(/{{DESCRIPTION}}/g, description)
+        .replace(/{{KEYWORDS}}/g, keywords)
+        .replace(/{{BADGE_ICON}}/g, heroContent.badge_icon || '⚠️')
+        .replace(/{{BADGE_TEXT}}/g, heroContent.badge_text || 'Experimental Software - Use with caution')
+        .replace(/{{HERO_TITLE}}/g, heroContent.hero_title || 'Velocity')
+        .replace(/{{HERO_SUBTITLE}}/g, heroContent.hero_subtitle || 'Native speed. Modern architecture. Zero sudo required.')
+        .replace(/{{CTA_PRIMARY_TEXT}}/g, heroContent.cta_primary_text || 'Get Started')
+        .replace(/{{CTA_PRIMARY_URL}}/g, heroContent.cta_primary_url || './docs/installation')
+        .replace(/{{CTA_SECONDARY_TEXT}}/g, heroContent.cta_secondary_text || 'View on GitHub')
+        .replace(/{{CTA_SECONDARY_URL}}/g, heroContent.cta_secondary_url || 'https://github.com/dimaosipa/velocity')
+        .replace(/{{CTA_NOTE}}/g, heroContent.cta_note || '')
+        .replace(/{{FEATURES_GRID}}/g, featuresHtml)
+        .replace(/{{PERFORMANCE_GRID}}/g, performanceHtml)
+        .replace(/{{TERMINAL_OUTPUT}}/g, terminalHtml)
+        .replace(/{{FEATURES_SUBTITLE}}/g, homeConfig?.sections?.Features?.subtitle || 'Modern architecture designed from the ground up for Apple Silicon Macs')
+        .replace(/{{PERFORMANCE_SUBTITLE}}/g, homeConfig?.sections?.Performance?.subtitle || 'Designed for speed at every level of the stack')
+        .replace(/{{CTA_SECTION_TITLE}}/g, homeConfig?.sections?.['Call to Action']?.subtitle?.split(' | ')[0] || 'Ready to try Velocity?')
+        .replace(/{{CTA_SECTION_SUBTITLE}}/g, homeConfig?.sections?.['Call to Action']?.subtitle?.split(' | ')[1] || 'Join developers who are tired of waiting for package operations')
         .replace(/href="\.\/([^"]+)"/g, 'href="./$1"')  // Keep relative paths as-is
         .replace(/src="\.\/([^"]+)"/g, 'src="./$1"');   // Keep relative paths as-is
     

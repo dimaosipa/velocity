@@ -3,21 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Velocity - The Fastest Package Manager for Apple Silicon</title>
-    <meta name="description" content="Native speed. Modern architecture. Zero sudo required. A lightning-fast package manager built exclusively for M1/M2/M3 Macs.">
-    <meta name="keywords" content="velocity, velo, package manager, homebrew, swift, macos, apple silicon, m1, m2, m3">
+    <title>{{TITLE}}</title>
+    <meta name="description" content="{{DESCRIPTION}}">
+    <meta name="keywords" content="{{KEYWORDS}}">
     
     <!-- Open Graph Meta Tags -->
-    <meta property="og:title" content="Velocity - The Fastest Package Manager for Apple Silicon">
-    <meta property="og:description" content="Native speed. Modern architecture. Zero sudo required.">
+    <meta property="og:title" content="{{TITLE}}">
+    <meta property="og:description" content="{{DESCRIPTION}}">
     <meta property="og:type" content="website">
     <meta property="og:url" content="https://dimaosipa.github.io/velocity">
     <meta property="og:image" content="https://dimaosipa.github.io/velocity/logo.png">
     
     <!-- Twitter Card Meta Tags -->
     <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="Velocity - The Fastest Package Manager for Apple Silicon">
-    <meta name="twitter:description" content="Native speed. Modern architecture. Zero sudo required.">
+    <meta name="twitter:title" content="{{TITLE}}">
+    <meta name="twitter:description" content="{{DESCRIPTION}}">
     <meta name="twitter:image" content="https://dimaosipa.github.io/velocity/logo.png">
     
     <!-- Favicon -->
@@ -59,32 +59,30 @@
     <section class="hero">
         <div class="hero-container">
             <div class="hero-badge">
-                <span class="badge-icon">⚠️</span>
-                <span class="badge-text">Experimental Software - Use with caution</span>
+                <span class="badge-icon">{{BADGE_ICON}}</span>
+                <span class="badge-text">{{BADGE_TEXT}}</span>
             </div>
             
             <h1 class="hero-title">
-                Velocity: The Fastest<br>
-                Package Manager for<br>
-                <span class="hero-title-accent">Apple Silicon</span>
+                {{HERO_TITLE}}
             </h1>
             
             <p class="hero-subtitle">
-                Native speed. Modern architecture. Zero sudo required.
+                {{HERO_SUBTITLE}}
             </p>
             
             <div class="hero-buttons">
-                <a href="./docs/installation" class="btn btn-primary">
-                    <span>Get Started</span>
+                <a href="{{CTA_PRIMARY_URL}}" class="btn btn-primary">
+                    <span>{{CTA_PRIMARY_TEXT}}</span>
                     <svg class="btn-icon" width="16" height="16" viewBox="0 0 16 16" fill="none">
                         <path d="M6 12L10 8L6 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                     </svg>
                 </a>
-                <a href="https://github.com/dimaosipa/velocity" class="btn btn-secondary" target="_blank">
+                <a href="{{CTA_SECONDARY_URL}}" class="btn btn-secondary" target="_blank">
                     <svg class="btn-icon-left" width="16" height="16" viewBox="0 0 16 16" fill="none">
                         <path fill-rule="evenodd" clip-rule="evenodd" d="M8 0C3.58 0 0 3.58 0 8C0 11.54 2.29 14.53 5.47 15.59C5.87 15.66 6.02 15.42 6.02 15.21C6.02 15.02 6.01 14.39 6.01 13.72C4 14.09 3.48 13.23 3.32 12.78C3.23 12.55 2.84 11.84 2.5 11.65C2.22 11.5 1.82 11.13 2.49 11.12C3.12 11.11 3.57 11.7 3.72 11.94C4.44 13.15 5.59 12.81 6.05 12.6C6.12 12.08 6.33 11.73 6.56 11.53C4.78 11.33 2.92 10.64 2.92 7.58C2.92 6.71 3.23 5.99 3.74 5.43C3.66 5.23 3.38 4.41 3.82 3.31C3.82 3.31 4.49 3.1 6.02 4.13C6.66 3.95 7.34 3.86 8.02 3.86C8.7 3.86 9.38 3.95 10.02 4.13C11.55 3.09 12.22 3.31 12.22 3.31C12.66 4.41 12.38 5.23 12.3 5.43C12.81 5.99 13.12 6.7 13.12 7.58C13.12 10.65 11.25 11.33 9.47 11.53C9.76 11.78 10.01 12.26 10.01 13.01C10.01 14.08 10 14.94 10 15.21C10 15.42 10.15 15.67 10.55 15.59C13.71 14.53 16 11.53 16 8C16 3.58 12.42 0 8 0Z" fill="currentColor"/>
                     </svg>
-                    <span>View on GitHub</span>
+                    <span>{{CTA_SECONDARY_TEXT}}</span>
                 </a>
             </div>
             
@@ -98,24 +96,7 @@
                         </div>
                         <div class="terminal-title">Terminal</div>
                     </div>
-                    <div class="terminal-body">
-                        <div class="terminal-line">
-                            <span class="terminal-prompt">$ </span>
-                            <span class="terminal-command">velo install imagemagick</span>
-                        </div>
-                        <div class="terminal-line terminal-output">
-                            <span>🚀 Installing imagemagick@7.1.1-40...</span>
-                        </div>
-                        <div class="terminal-line terminal-output">
-                            <span>⬇️  Downloading bottle (8 streams)...</span>
-                        </div>
-                        <div class="terminal-line terminal-output">
-                            <span>✅ Installed in 12.3s</span>
-                        </div>
-                        <div class="terminal-line">
-                            <span class="terminal-prompt">$ </span>
-                            <span class="terminal-cursor">█</span>
-                        </div>
+                    <div class="terminal-body">{{TERMINAL_OUTPUT}}
                     </div>
                 </div>
             </div>
@@ -127,45 +108,10 @@
         <div class="features-container">
             <div class="section-header">
                 <h2 class="section-title">Built for Apple Silicon</h2>
-                <p class="section-subtitle">Modern architecture designed from the ground up for Apple Silicon Macs</p>
+                <p class="section-subtitle">{{FEATURES_SUBTITLE}}</p>
             </div>
             
-            <div class="features-grid">
-                <div class="feature-card">
-                    <div class="feature-icon">⚡</div>
-                    <h3 class="feature-title">Blazing-fast installs</h3>
-                    <p class="feature-description">Parallel downloads with 8-16 concurrent streams and smart caching for instant-feeling package management.</p>
-                </div>
-                
-                <div class="feature-card">
-                    <div class="feature-icon">🛡️</div>
-                    <h3 class="feature-title">Runs entirely in user space</h3>
-                    <p class="feature-description">Everything lives in ~/.velo/. Never requires sudo or writes to system directories.</p>
-                </div>
-                
-                <div class="feature-card">
-                    <div class="feature-icon">🚀</div>
-                    <h3 class="feature-title">CI Ready</h3>
-                    <p class="feature-description">Built-in GitHub Actions support with automated testing, continuous deployment, and comprehensive CI/CD workflows.</p>
-                </div>
-                
-                <div class="feature-card">
-                    <div class="feature-icon">🔁</div>
-                    <h3 class="feature-title">Compatible with Homebrew</h3>
-                    <p class="feature-description">Uses existing .rb formulae from Homebrew core tap. Drop-in replacement with zero migration needed.</p>
-                </div>
-                
-                <div class="feature-card">
-                    <div class="feature-icon">💼</div>
-                    <h3 class="feature-title">Project-local dependencies</h3>
-                    <p class="feature-description">Like npm for system packages. Each project can have its own tool versions with velo.json manifests.</p>
-                </div>
-                
-                <div class="feature-card">
-                    <div class="feature-icon">🔒</div>
-                    <h3 class="feature-title">Security-first design</h3>
-                    <p class="feature-description">SHA256 verification, code signing, and advanced security measures built into every operation.</p>
-                </div>
+            <div class="features-grid">{{FEATURES_GRID}}
             </div>
         </div>
     </section>
@@ -175,29 +121,10 @@
         <div class="performance-container">
             <div class="section-header">
                 <h2 class="section-title">Performance That Matters</h2>
-                <p class="section-subtitle">Designed for speed at every level of the stack</p>
+                <p class="section-subtitle">{{PERFORMANCE_SUBTITLE}}</p>
             </div>
             
-            <div class="performance-grid">
-                <div class="performance-item">
-                    <h3 class="performance-title">Swift-native Formula Parsing</h3>
-                    <p class="performance-description">10x faster than Ruby interpretation with regex optimization and binary caching.</p>
-                </div>
-                
-                <div class="performance-item">
-                    <h3 class="performance-title">Parallel Downloads</h3>
-                    <p class="performance-description">Multi-stream concurrent downloads with intelligent retry logic and progress reporting.</p>
-                </div>
-                
-                <div class="performance-item">
-                    <h3 class="performance-title">Smart Caching</h3>
-                    <p class="performance-description">Memory + disk layers with automatic invalidation and predictive prefetching.</p>
-                </div>
-                
-                <div class="performance-item">
-                    <h3 class="performance-title">Memory Optimization</h3>
-                    <p class="performance-description">Lazy loading, memory-mapped files, and automatic cleanup for minimal resource usage.</p>
-                </div>
+            <div class="performance-grid">{{PERFORMANCE_GRID}}
             </div>
         </div>
     </section>
@@ -205,21 +132,21 @@
     <!-- CTA Section -->
     <section class="cta">
         <div class="cta-container">
-            <h2 class="cta-title">Ready to try Velocity?</h2>
-            <p class="cta-subtitle">Join developers who are tired of waiting for package operations</p>
+            <h2 class="cta-title">{{CTA_SECTION_TITLE}}</h2>
+            <p class="cta-subtitle">{{CTA_SECTION_SUBTITLE}}</p>
             <div class="cta-buttons">
-                <a href="./docs/installation" class="btn btn-primary btn-large">
-                    <span>Get Started</span>
+                <a href="{{CTA_PRIMARY_URL}}" class="btn btn-primary btn-large">
+                    <span>{{CTA_PRIMARY_TEXT}}</span>
                     <svg class="btn-icon" width="20" height="20" viewBox="0 0 16 16" fill="none">
                         <path d="M6 12L10 8L6 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                     </svg>
                 </a>
                 <a href="./docs" class="btn btn-secondary btn-large">
-                    <span>Read Documentation</span>
+                    <span>{{CTA_SECONDARY_TEXT}}</span>
                 </a>
             </div>
             <p class="cta-note">
-                <strong>Note:</strong> Velocity is experimental software. Please test thoroughly before using in production environments.
+                {{CTA_NOTE}}
             </p>
         </div>
     </section>
