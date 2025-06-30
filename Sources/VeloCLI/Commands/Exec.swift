@@ -31,6 +31,9 @@ extension Velo {
         }
 
         private func runAsync() async throws {
+            // Ensure velo directories exist
+            try PathHelper.shared.ensureVeloDirectories()
+
             let context = ProjectContext()
             let resolver = PathResolver()
 

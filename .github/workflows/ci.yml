@@ -41,13 +41,6 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-arm64-spm-
     
-    - name: Cache Homebrew Taps
-      uses: actions/cache@v3
-      with:
-        path: ~/.velo/taps
-        key: velo-taps-${{ github.run_id }}
-        restore-keys: |
-          velo-taps-
     
     - name: Resolve Dependencies
       run: swift package resolve
@@ -60,16 +53,8 @@ jobs:
       
     - name: Setup Test Environment for Unit Tests
       run: |
-        # Create test directories for unit tests that need real formulas
-        mkdir -p ~/.velo/{bin,Cellar,cache,taps,logs,tmp}
-        
-        # Set up minimal homebrew/core tap for testing
-        mkdir -p ~/.velo/taps/homebrew/core/Formula
-        cd ~/.velo/taps/homebrew/core
-        git init
-        git remote add origin https://github.com/Homebrew/homebrew-core.git
-        git fetch --depth 1 origin HEAD
-        git checkout FETCH_HEAD
+        # Tests now create their own isolated environments
+        # No need for external homebrew/core tap download
 
     - name: Run Unit Tests
       run: |
@@ -120,20 +105,12 @@ jobs:
       
     - name: Setup Test Environment
       run: |
-        # Create test directories
+        # Create basic test directories
         mkdir -p ~/.velo/{bin,Cellar,cache,taps,logs,tmp}
         
         # Add velo to PATH
         ln -sf $(pwd)/.build/release/velo ~/.velo/bin/velo
         echo "$HOME/.velo/bin" >> $GITHUB_PATH
-        
-        # Set up minimal homebrew/core tap for testing
-        mkdir -p ~/.velo/taps/homebrew/core/Formula
-        cd ~/.velo/taps/homebrew/core
-        git init
-        git remote add origin https://github.com/Homebrew/homebrew-core.git
-        git fetch --depth 1 origin HEAD
-        git checkout FETCH_HEAD
         
         # Verify installation
         ~/.velo/bin/velo --version || echo "Velo not ready yet"

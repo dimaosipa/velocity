@@ -64,6 +64,10 @@ public final class FormulaCache: FormulaCacheProtocol {
 
             // Update disk cache
             let cacheFile = pathHelper.cacheFile(for: "formula-\(formula.name)")
+
+            // Ensure cache directory exists
+            try pathHelper.ensureDirectoryExists(at: pathHelper.cachePath)
+
             let data = try JSONEncoder().encode(formula)
             try data.write(to: cacheFile)
         }

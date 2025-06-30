@@ -14,7 +14,26 @@ final class FormulaParserTests: XCTestCase {
     // MARK: - Basic Parsing Tests
 
     func testParseSimpleFormula() throws {
-        let content = try loadFixture("simple.rb")
+        let content = """
+        class Simple < Formula
+          desc "A simple test formula"
+          homepage "https://example.com/simple"
+          url "https://example.com/downloads/simple-1.0.0.tar.gz"
+          sha256 "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+          bottle do
+            sha256 arm64_sonoma: "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+            sha256 arm64_ventura: "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+          end
+
+          depends_on "dependency1"
+          depends_on "dependency2"
+
+          def install
+            bin.install "simple"
+          end
+        end
+        """
         let formula = try parser.parse(rubyContent: content, formulaName: "simple")
 
         XCTAssertEqual(formula.name, "simple")
@@ -36,7 +55,23 @@ final class FormulaParserTests: XCTestCase {
     }
 
     func testParseWgetFormula() throws {
-        let content = try loadFixture("wget.rb")
+        let content = """
+        class Wget < Formula
+          desc "Internet file retriever"
+          homepage "https://www.gnu.org/software/wget/"
+          url "https://ftp.gnu.org/gnu/wget/wget-1.25.0.tar.gz"
+          sha256 "766e48423e79359ea31e41db9e5c289675947a7fcf2efdcedb726ac9d0da3784"
+
+          depends_on "pkg-config" => :build
+          depends_on "openssl@3"
+
+          bottle do
+            sha256 arm64_sonoma: "4d180cd4ead91a34e2c2672189fc366b87ae86e6caa3acbf4845b272f57c859a"
+            sha256 arm64_ventura: "7fce09705a52a2aff61c4bdd81b9d2a1a110539718ded2ad45562254ef0f5c22"
+            sha256 arm64_monterey: "498cea03c8c9f5ab7b90a0c333122415f0360c09f837cafae6d8685d6846ced2"
+          end
+        end
+        """
         let formula = try parser.parse(rubyContent: content, formulaName: "wget")
 
         XCTAssertEqual(formula.name, "wget")
@@ -56,7 +91,41 @@ final class FormulaParserTests: XCTestCase {
     }
 
     func testParseComplexFormula() throws {
-        let content = try loadFixture("complex.rb")
+        let content = """
+        class Complex < Formula
+          desc "A complex formula with various features"
+          homepage "https://complex.example.com"
+          url "https://github.com/example/complex/archive/v2.5.1.tar.gz"
+          sha256 "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
+          version "2.5.1"
+          license "MIT"
+
+          bottle do
+            rebuild 1
+            sha256 cellar: :any_skip_relocation, arm64_sequoia: "1111111111111111111111111111111111111111111111111111111111111111"
+            sha256 cellar: :any_skip_relocation, arm64_sonoma:  "2222222222222222222222222222222222222222222222222222222222222222"
+            sha256 cellar: :any_skip_relocation, arm64_ventura: "3333333333333333333333333333333333333333333333333333333333333333"
+            sha256 cellar: :any_skip_relocation, arm64_monterey: "4444444444444444444444444444444444444444444444444444444444444444"
+            sha256 cellar: :any, x86_64_sonoma: "5555555555555555555555555555555555555555555555555555555555555555"
+          end
+
+          depends_on "cmake" => :build
+          depends_on "rust" => :build
+          depends_on "openssl@3"
+          depends_on "zstd"
+          depends_on :macos => :monterey
+
+          def install
+            system "cmake", "-S", ".", "-B", "build", *std_cmake_args
+            system "cmake", "--build", "build"
+            system "cmake", "--install", "build"
+          end
+
+          test do
+            system "#{bin}/complex", "--version"
+          end
+        end
+        """
         let formula = try parser.parse(rubyContent: content, formulaName: "complex")
 
         XCTAssertEqual(formula.name, "complex")
@@ -209,16 +278,4 @@ final class FormulaParserTests: XCTestCase {
 
     // MARK: - Helper Methods
 
-    private func loadFixture(_ filename: String) throws -> String {
-        let bundle = Bundle(for: type(of: self))
-        let url = bundle.url(forResource: "Fixtures/Formulae/\(filename)", withExtension: nil)
-            ?? URL(fileURLWithPath: #file)
-                .deletingLastPathComponent()
-                .deletingLastPathComponent()
-                .appendingPathComponent("Fixtures")
-                .appendingPathComponent("Formulae")
-                .appendingPathComponent(filename)
-
-        return try String(contentsOf: url, encoding: .utf8)
-    }
 }

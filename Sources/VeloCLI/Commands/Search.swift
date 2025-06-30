@@ -26,6 +26,9 @@ extension Velo {
         }
 
         private func runAsync() async throws {
+            // Ensure velo directories exist
+            try PathHelper.shared.ensureVeloDirectories()
+
             logInfo("Searching for '\(term)'...")
 
             do {

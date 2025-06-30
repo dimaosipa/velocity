@@ -25,6 +25,9 @@ extension Velo {
         }
 
         private func runAsync() async throws {
+            // Ensure velo directories exist
+            try PathHelper.shared.ensureVeloDirectories()
+
             logInfo("Updating Velo...")
 
             if !repositoryOnly {

@@ -23,6 +23,10 @@ extension Velo {
 
         func run() throws {
             let pathHelper = PathHelper.shared
+
+            // Ensure velo directories exist
+            try pathHelper.ensureVeloDirectories()
+
             let cellarPath = pathHelper.cellarPath
 
             if all {

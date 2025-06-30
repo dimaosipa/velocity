@@ -79,12 +79,16 @@ final class BottleDownloaderTests: XCTestCase {
         let incorrectSHA256 = "1234567890123456789012345678901234567890123456789012345678901234"
 
         // Should throw checksum mismatch error
-        await XCTAssertThrowsErrorAsync {
-            try await self.downloader.download(
+        do {
+            try await downloader.download(
                 from: testFile.absoluteString,
                 to: destination,
                 expectedSHA256: incorrectSHA256
             )
+            XCTFail("Expected download to throw checksum mismatch error")
+        } catch {
+            // This is expected - incorrect SHA256 should throw an error
+            print("✅ Correctly caught error: \(error)")
         }
 
         // File should be cleaned up on failure
@@ -94,22 +98,30 @@ final class BottleDownloaderTests: XCTestCase {
     func testDownloadNonexistentFile() async {
         let destination = tempDirectory.appendingPathComponent("nonexistent.txt")
 
-        await XCTAssertThrowsErrorAsync {
-            try await self.downloader.download(
+        do {
+            try await downloader.download(
                 from: "file:///nonexistent/path/file.txt",
                 to: destination
             )
+            XCTFail("Expected download to throw an error for nonexistent file")
+        } catch {
+            // This is expected - nonexistent file should throw an error
+            print("✅ Correctly caught error: \(error)")
         }
     }
 
     func testDownloadInvalidURL() async {
         let destination = tempDirectory.appendingPathComponent("invalid.txt")
 
-        await XCTAssertThrowsErrorAsync {
-            try await self.downloader.download(
+        do {
+            try await downloader.download(
                 from: "not-a-valid-url",
                 to: destination
             )
+            XCTFail("Expected download to throw an error for invalid URL")
+        } catch {
+            // This is expected - invalid URL should throw an error
+            print("✅ Correctly caught error: \(error)")
         }
     }
 

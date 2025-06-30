@@ -17,15 +17,17 @@ final class InstallerTests: XCTestCase {
             .appendingPathComponent("velo_installer_test_\(UUID().uuidString)")
         try! FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
 
-        // Use default path helper (installer will use shared instance)
-        testPathHelper = PathHelper.shared
-        installer = Installer()
+        // Create isolated test environment
+        let testVeloHome = tempDirectory.appendingPathComponent(".velo")
+        testPathHelper = PathHelper(customHome: testVeloHome)
+        installer = Installer(pathHelper: testPathHelper)
 
         // Ensure test directories exist
         try! testPathHelper.ensureVeloDirectories()
     }
 
     override func tearDown() {
+        // Clean up temporary directory and all test files
         try? FileManager.default.removeItem(at: tempDirectory)
         super.tearDown()
     }
@@ -58,15 +60,19 @@ final class InstallerTests: XCTestCase {
 
     func testAlreadyInstalledError() async throws {
         let formula = createTestFormula()
-
-        // Create package directory to simulate existing installation
-        let packageDir = testPathHelper.packagePath(for: formula.name, version: formula.version)
-        try FileManager.default.createDirectory(at: packageDir, withIntermediateDirectories: true)
-
         let mockBottle = createMockBottle(for: formula)
 
-        await XCTAssertThrowsErrorAsync {
-            try await self.installer.install(formula: formula, from: mockBottle)
+        // Install the package first
+        try await installer.install(formula: formula, from: mockBottle)
+
+        // Now try to install it again - should throw an error
+        do {
+            try await installer.install(formula: formula, from: mockBottle)
+            XCTFail("Expected alreadyInstalled error to be thrown")
+        } catch VeloError.alreadyInstalled {
+            // This is expected
+        } catch {
+            XCTFail("Expected alreadyInstalled error, got \(error)")
         }
     }
 
@@ -154,12 +160,12 @@ final class InstallerTests: XCTestCase {
     // MARK: - Upgrade Tests
 
     func testUpgradePackage() async throws {
-        let oldFormula = createTestFormula(version: "1.0.0")
-        let newFormula = createTestFormula(version: "2.0.0")
+        let oldFormula = createTestFormula(name: "test-upgrade", version: "1.0.0")
+        let newFormula = createTestFormula(name: "test-upgrade", version: "2.0.0")
 
-        // Install old version first
-        let oldPackageDir = testPathHelper.packagePath(for: oldFormula.name, version: oldFormula.version)
-        try FileManager.default.createDirectory(at: oldPackageDir, withIntermediateDirectories: true)
+        // Install old version first using proper installation
+        let oldBottle = createMockBottle(for: oldFormula)
+        try await installer.install(formula: oldFormula, from: oldBottle)
 
         let newBottle = createMockBottle(for: newFormula)
         let progress = MockInstallationProgress()
@@ -172,6 +178,7 @@ final class InstallerTests: XCTestCase {
         )
 
         // Verify old version is removed
+        let oldPackageDir = testPathHelper.packagePath(for: oldFormula.name, version: oldFormula.version)
         XCTAssertFalse(FileManager.default.fileExists(atPath: oldPackageDir.path))
 
         // Verify new version is installed
@@ -213,10 +220,28 @@ final class InstallerTests: XCTestCase {
     private func createMockBottle(for formula: Formula) -> URL {
         let bottleFile = tempDirectory.appendingPathComponent("\(formula.name)-\(formula.version).tar.gz")
 
-        // Create a simple tar.gz file for testing
-        // In reality, this would be a proper bottle, but for testing we just need a file
-        let testContent = "Mock bottle content for \(formula.name)"
-        try! testContent.write(to: bottleFile, atomically: true, encoding: .utf8)
+        // Create a proper tar.gz file for testing
+        // First create a mock package structure
+        let mockPackageDir = tempDirectory.appendingPathComponent("mock_package")
+        try! FileManager.default.createDirectory(at: mockPackageDir, withIntermediateDirectories: true)
+
+        // Create mock binary
+        let binDir = mockPackageDir.appendingPathComponent("bin")
+        try! FileManager.default.createDirectory(at: binDir, withIntermediateDirectories: true)
+        let mockBinary = binDir.appendingPathComponent(formula.name)
+        try! "#!/bin/bash\necho 'Mock \(formula.name)'\n".write(to: mockBinary, atomically: true, encoding: .utf8)
+
+        // Create the tar.gz using system tar command
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/tar")
+        process.arguments = ["-czf", bottleFile.path, "-C", mockPackageDir.path, "."]
+        process.currentDirectoryURL = tempDirectory
+
+        try! process.run()
+        process.waitUntilExit()
+
+        // Clean up temporary package directory
+        try! FileManager.default.removeItem(at: mockPackageDir)
 
         return bottleFile
     }

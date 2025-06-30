@@ -28,6 +28,9 @@ extension Velo {
             let installer = Installer()
             let pathHelper = PathHelper.shared
 
+            // Ensure velo directories exist
+            try pathHelper.ensureVeloDirectories()
+
             if let specificVersion = version {
                 // Uninstall specific version
                 logInfo("Uninstalling \(package) v\(specificVersion)...")

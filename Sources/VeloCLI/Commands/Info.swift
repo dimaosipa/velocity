@@ -29,6 +29,9 @@ extension Velo {
             let installer = Installer()
             let pathHelper = PathHelper.shared
 
+            // Ensure velo directories exist
+            try pathHelper.ensureVeloDirectories()
+
             do {
                 // Parse package specification (supports package@version syntax)
                 let packageSpec = PackageSpecification.parse(package)

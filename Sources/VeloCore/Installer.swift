@@ -526,7 +526,7 @@ extension Installer {
         // Install new version first
         try await install(formula: newFormula, from: bottleFile, progress: progress)
 
-        // Remove old version
-        try uninstall(package: oldFormula.name)
+        // Remove only the old version (not all versions)
+        try uninstallVersion(package: oldFormula.name, version: oldFormula.version)
     }
 }
