@@ -14,7 +14,7 @@ const CONFIG = {
     assetsDir: path.join(__dirname, 'assets'),
     title: 'Velo - Lightning-fast Package Manager for macOS',
     description: 'A lightning-fast, modern package manager for macOS - built for Apple Silicon.',
-    baseUrl: 'https://velo.pages.dev'
+    baseUrl: process.env.GITHUB_PAGES_URL || 'https://dimaosipa.github.io/velocity'
 };
 
 // Initialize markdown parser with plugins
