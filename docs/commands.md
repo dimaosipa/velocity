@@ -284,6 +284,35 @@ velo doctor --check taps
 - `--verbose` - Show detailed system information
 - `--check <component>` - Check specific component (taps, packages, permissions)
 
+### repair
+
+Repair existing package installations by fixing library path issues.
+
+```bash
+# Check all packages for repair issues (dry run)
+velo repair --dry-run
+
+# Repair all packages with issues
+velo repair
+
+# Repair specific package
+velo repair ffmpeg
+
+# Force repair even if no issues detected
+velo repair --force
+```
+
+**Options:**
+- `--dry-run` - Show what would be repaired without making changes
+- `--force` - Force repair even if no issues are detected
+- `<package>` - Repair specific package only
+
+**When to use repair:**
+- After upgrading from Homebrew to Velo
+- When packages fail with dyld symbol loading errors
+- If binary or library dependencies are broken
+- When `@@HOMEBREW_PREFIX@@` placeholders weren't replaced during installation
+
 ### clean
 
 Clean packages, cache, or temporary files.
@@ -457,4 +486,11 @@ velo update-self     # Update Velocity itself
 ```bash
 velo clean --cache   # Free up disk space
 velo doctor          # Check system health
+```
+
+**Fix broken packages:**
+```bash
+velo repair --dry-run   # Check what needs repair
+velo repair             # Fix all issues
+velo doctor             # Verify system health
 ```
