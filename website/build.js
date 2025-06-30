@@ -852,22 +852,7 @@ async function generateDocsOverview(docsStructure) {
     // Convert markdown to HTML
     const contentHtml = processMarkdown(readmeContent);
     
-    // Add documentation links section using discovered structure
-    const docsLinksHtml = docsStructure.length > 0 ? `
-        <section class="docs-links" style="margin-top: 2rem; padding: 1.5rem; background: var(--color-surface); border-radius: var(--radius-md); border: 1px solid var(--color-border);">
-            <h2>📚 Documentation Sections</h2>
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; margin-top: 1rem;">
-                ${docsStructure.map(doc => `
-                    <a href="${doc.path}" style="display: block; padding: 1rem; background: white; border: 1px solid var(--color-border); border-radius: var(--radius-sm); text-decoration: none; transition: all 0.2s ease;">
-                        <h3 style="margin: 0 0 0.5rem 0; color: var(--color-primary); font-size: 1rem;">${doc.title}</h3>
-                        <p style="margin: 0; color: var(--color-text-secondary); font-size: 0.875rem; line-height: 1.4;">${doc.description}</p>
-                    </a>
-                `).join('')}
-            </div>
-        </section>
-    ` : '';
-    
-    const finalContent = contentHtml + docsLinksHtml;
+    const finalContent = contentHtml;
     
     // Generate sidebar navigation for docs root
     const sidebarNav = generateSidebarNavigation('/docs', docsStructure);
