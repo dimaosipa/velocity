@@ -1,3 +1,10 @@
+---
+title: Local Package Management
+description: Project-local dependency management with velo.json
+category: Core Concepts
+order: 3
+---
+
 # Local Package Management
 
 Velo supports project-local package management similar to npm's node_modules, enabling reproducible builds and CI caching.

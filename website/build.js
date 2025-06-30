@@ -59,6 +59,56 @@ function parseFrontmatter(content) {
 }
 
 /**
+ * Parse footer configuration from FOOTER.md
+ */
+async function parseFooterConfig() {
+    const footerPath = path.join(CONFIG.docsDir, '..', 'FOOTER.md');
+    
+    try {
+        if (!(await fs.pathExists(footerPath))) {
+            console.log('ℹ️  No FOOTER.md found, using default footer structure');
+            return {};
+        }
+        
+        const content = await fs.readFile(footerPath, 'utf8');
+        const { frontmatter, content: markdownContent } = parseFrontmatter(content);
+        
+        // Parse markdown sections into footer structure
+        const sections = {};
+        const lines = markdownContent.split('\n');
+        let currentSection = null;
+        
+        for (const line of lines) {
+            const trimmed = line.trim();
+            
+            // Check for section headers (## Section Name)
+            if (trimmed.startsWith('## ')) {
+                currentSection = trimmed.substring(3).trim();
+                sections[currentSection] = [];
+            }
+            // Check for list items (- [Title](url) - description)
+            else if (trimmed.startsWith('- [') && currentSection) {
+                const linkMatch = trimmed.match(/- \[([^\]]+)\]\(([^)]+)\)(?:\s*-\s*(.+))?/);
+                if (linkMatch) {
+                    sections[currentSection].push({
+                        title: linkMatch[1],
+                        url: linkMatch[2],
+                        description: linkMatch[3] || ''
+                    });
+                }
+            }
+        }
+        
+        console.log(`📄 Parsed footer configuration with ${Object.keys(sections).length} sections`);
+        return sections;
+        
+    } catch (error) {
+        console.warn('⚠️  Could not parse FOOTER.md, using default footer structure');
+        return {};
+    }
+}
+
+/**
  * Auto-discover documentation structure from docs/ directory
  */
 async function discoverDocsStructure() {
@@ -334,19 +384,76 @@ async function copyAssets() {
 }
 
 /**
+ * Generate dynamic footer HTML from FOOTER.md configuration
+ */
+function generateDynamicFooter(footerConfig, pageDepth = 0) {
+    if (Object.keys(footerConfig).length === 0) {
+        // Fallback to current hardcoded structure if no FOOTER.md
+        return '';
+    }
+    
+    // Determine path prefix based on page depth:
+    // 0 = home page (./)
+    // 1 = docs root (../)  
+    // 2 = docs subdirectory (../../)
+    const pathPrefix = pageDepth === 0 ? './' : '../'.repeat(pageDepth);
+    
+    let footerHtml = '';
+    
+    Object.keys(footerConfig).forEach(sectionName => {
+        const links = footerConfig[sectionName];
+        if (links.length === 0) return;
+        
+        footerHtml += `
+                    <div class="footer-section">
+                        <h4 class="footer-section-title">${sectionName}</h4>`;
+        
+        links.forEach(link => {
+            // Adjust relative paths for different page depths
+            let linkUrl = link.url;
+            if (linkUrl.startsWith('./') && pageDepth > 0) {
+                linkUrl = linkUrl.replace('./', pathPrefix);
+            }
+            
+            footerHtml += `
+                        <a href="${linkUrl}" class="footer-link"${link.url.startsWith('http') ? ' target="_blank"' : ''}>${link.title}</a>`;
+        });
+        
+        footerHtml += `
+                    </div>`;
+    });
+    
+    return footerHtml;
+}
+
+/**
  * Generate home page
  */
 async function generateHomePage() {
     console.log('🏠 Generating home page...');
     
     const template = await fs.readFile(CONFIG.homeTemplate, 'utf8');
+    const footerConfig = await parseFooterConfig();
+    
+    // Generate dynamic footer if available
+    const dynamicFooter = generateDynamicFooter(footerConfig, 0);
     
     // For home page, replace placeholders and fix asset paths for GitHub Pages
-    const html = template
+    let html = template
         .replace(/{{TITLE}}/g, CONFIG.title)
         .replace(/{{DESCRIPTION}}/g, CONFIG.description)
         .replace(/href="\.\/([^"]+)"/g, 'href="./$1"')  // Keep relative paths as-is
         .replace(/src="\.\/([^"]+)"/g, 'src="./$1"');   // Keep relative paths as-is
+    
+    // Replace footer links if dynamic footer is available
+    if (dynamicFooter) {
+        html = html.replace(
+            /<div class="footer-links"[\s\S]*?<\/div>\s*<\/div>/,
+            `<div class="footer-links">${dynamicFooter}
+                </div>
+            </div>`
+        );
+    }
     
     const outputFile = path.join(CONFIG.outputDir, 'index.html');
     await fs.writeFile(outputFile, html, 'utf8');
@@ -363,6 +470,7 @@ async function generateDocsOverview(docsStructure) {
     // Create overview content from README
     const readmeContent = await fs.readFile(CONFIG.readmeFile, 'utf8');
     const template = await fs.readFile(CONFIG.docsTemplate, 'utf8');
+    const footerConfig = await parseFooterConfig();
     
     // Generate table of contents
     const headings = generateTableOfContents(readmeContent);
@@ -391,8 +499,11 @@ async function generateDocsOverview(docsStructure) {
     // Generate sidebar navigation for docs root
     const sidebarNav = generateSidebarNavigation('/docs', docsStructure);
     
+    // Generate dynamic footer for docs page
+    const dynamicFooter = generateDynamicFooter(footerConfig, 1);
+    
     // Replace template placeholders and fix paths for docs root (one level deep)
-    const html = template
+    let html = template
         .replace(/{{TITLE}}/g, 'Overview')
         .replace(/{{DESCRIPTION}}/g, CONFIG.description)
         .replace(/{{TABLE_OF_CONTENTS}}/g, tocHtml)
@@ -404,6 +515,16 @@ async function generateDocsOverview(docsStructure) {
         .replace(/{{#NEXT_PAGE}}.*?{{\/NEXT_PAGE}}/gs, '')
         .replace(/href="\.\.\/([^"]+)"/g, 'href="../$1"')  // Fix relative paths for docs root
         .replace(/src="\.\.\/([^"]+)"/g, 'src="../$1"');   // Fix relative paths for docs root
+    
+    // Replace footer links if dynamic footer is available
+    if (dynamicFooter) {
+        html = html.replace(
+            /<div class="footer-links"[\s\S]*?<\/div>\s*<\/div>/,
+            `<div class="footer-links">${dynamicFooter}
+                </div>
+            </div>`
+        );
+    }
     
     // Create docs directory and write overview
     const docsOutputDir = path.join(CONFIG.outputDir, 'docs');
@@ -422,6 +543,7 @@ async function generateDocPages(docsStructure) {
     console.log('📄 Generating documentation pages...');
     
     const template = await fs.readFile(CONFIG.docsTemplate, 'utf8');
+    const footerConfig = await parseFooterConfig();
     const docsOutputDir = path.join(CONFIG.outputDir, 'docs');
     await fs.ensureDir(docsOutputDir);
     
@@ -482,6 +604,9 @@ async function generateDocPages(docsStructure) {
         // Generate sidebar navigation for subdoc pages
         const sidebarNav = generateSidebarNavigation(doc.path, docsStructure);
         
+        // Generate dynamic footer for subdoc pages  
+        const dynamicFooter = generateDynamicFooter(footerConfig, 2);
+        
         // Replace template placeholders and fix paths for subdoc pages (two levels deep)
         let html = template
             .replace(/{{TITLE}}/g, doc.title)
@@ -497,6 +622,16 @@ async function generateDocPages(docsStructure) {
             .replace(/href="\.\.\/([^"]+)"/g, 'href="../../$1"')  // Fix relative paths for sub-docs (two levels up)
             .replace(/href="NAV_FINAL:([^"]+)"/g, 'href="../$1/"')  // Restore navigation links AFTER general replacement
             .replace(/src="\.\.\/([^"]+)"/g, 'src="../../$1"');   // Fix relative paths for sub-docs (two levels up)
+        
+        // Replace footer links if dynamic footer is available
+        if (dynamicFooter) {
+            html = html.replace(
+                /<div class="footer-links"[\s\S]*?<\/div>\s*<\/div>/,
+                `<div class="footer-links">${dynamicFooter}
+                </div>
+            </div>`
+            );
+        }
         
         // Create subdirectory for clean URLs
         const pagePath = doc.path.replace('/docs/', '');
@@ -560,4 +695,4 @@ if (require.main === module) {
     build();
 }
 
-module.exports = { build, CONFIG, DOCS_STRUCTURE };
+module.exports = { build, CONFIG, discoverDocsStructure };

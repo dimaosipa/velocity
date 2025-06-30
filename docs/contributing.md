@@ -1,3 +1,10 @@
+---
+title: Contributing
+description: Development guide and contribution workflow
+category: Development
+order: 5
+---
+
 # Contributing
 
 We welcome contributions to Velo! This guide will help you get started.
