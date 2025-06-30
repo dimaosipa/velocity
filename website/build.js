@@ -220,10 +220,12 @@ async function generateHomePage() {
     
     const template = await fs.readFile(CONFIG.homeTemplate, 'utf8');
     
-    // For home page, we just need to replace basic placeholders
+    // For home page, replace placeholders and fix asset paths for GitHub Pages
     const html = template
         .replace(/{{TITLE}}/g, CONFIG.title)
-        .replace(/{{DESCRIPTION}}/g, CONFIG.description);
+        .replace(/{{DESCRIPTION}}/g, CONFIG.description)
+        .replace(/href="\.\/([^"]+)"/g, 'href="./$1"')  // Keep relative paths as-is
+        .replace(/src="\.\/([^"]+)"/g, 'src="./$1"');   // Keep relative paths as-is
     
     const outputFile = path.join(CONFIG.outputDir, 'index.html');
     await fs.writeFile(outputFile, html, 'utf8');
@@ -265,7 +267,7 @@ async function generateDocsOverview() {
     
     const finalContent = contentHtml + docsLinksHtml;
     
-    // Replace template placeholders
+    // Replace template placeholders and fix paths for docs root (one level deep)
     const html = template
         .replace(/{{TITLE}}/g, 'Overview')
         .replace(/{{DESCRIPTION}}/g, CONFIG.description)
@@ -274,7 +276,9 @@ async function generateDocsOverview() {
         .replace(/{{SOURCE_FILE}}/g, 'README.md')
         .replace(/{{#BREADCRUMB}}.*?{{\/BREADCRUMB}}/gs, '')
         .replace(/{{#PREV_PAGE}}.*?{{\/PREV_PAGE}}/gs, '')
-        .replace(/{{#NEXT_PAGE}}.*?{{\/NEXT_PAGE}}/gs, '');
+        .replace(/{{#NEXT_PAGE}}.*?{{\/NEXT_PAGE}}/gs, '')
+        .replace(/href="\.\.\/([^"]+)"/g, 'href="../$1"')  // Fix relative paths for docs root
+        .replace(/src="\.\.\/([^"]+)"/g, 'src="../$1"');   // Fix relative paths for docs root
     
     // Create docs directory and write overview
     const docsOutputDir = path.join(CONFIG.outputDir, 'docs');
@@ -349,7 +353,7 @@ async function generateDocPages() {
             `;
         }
         
-        // Replace template placeholders
+        // Replace template placeholders and fix paths for subdoc pages (two levels deep)
         let html = template
             .replace(/{{TITLE}}/g, doc.title)
             .replace(/{{DESCRIPTION}}/g, doc.description)
@@ -358,7 +362,9 @@ async function generateDocPages() {
             .replace(/{{SOURCE_FILE}}/g, `docs/${doc.file}`)
             .replace(/{{#BREADCRUMB}}(.*?){{\/BREADCRUMB}}/gs, `<span class="breadcrumb-separator">/</span><span class="breadcrumb-current">${doc.title}</span>`)
             .replace(/{{#PREV_PAGE}}.*?{{\/PREV_PAGE}}/gs, prevPageHtml)
-            .replace(/{{#NEXT_PAGE}}.*?{{\/NEXT_PAGE}}/gs, nextPageHtml);
+            .replace(/{{#NEXT_PAGE}}.*?{{\/NEXT_PAGE}}/gs, nextPageHtml)
+            .replace(/href="\.\.\/([^"]+)"/g, 'href="../../$1"')  // Fix relative paths for sub-docs (two levels up)
+            .replace(/src="\.\.\/([^"]+)"/g, 'src="../../$1"');   // Fix relative paths for sub-docs (two levels up)
         
         // Create subdirectory for clean URLs
         const pagePath = doc.path.replace('/docs/', '');
