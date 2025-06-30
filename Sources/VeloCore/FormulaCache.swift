@@ -438,9 +438,14 @@ public final class TapManager {
                 }
             }
         } else {
-            // Fallback to test fixtures if no taps available
+            #if DEBUG
+            // Fallback to test fixtures if no taps available (development only)
             logWarning("No taps found, using test fixtures...")
             try await loadTestFixtures(parser: parser, formulae: &formulae)
+            #else
+            // In production, no taps means no formulae available
+            logError("No taps found and no formulae available")
+            #endif
         }
 
         // Update cache and index
@@ -777,8 +782,12 @@ public final class TapManager {
             }
         }
 
-        // If not found in taps, try test fixtures as fallback
+        // Only use test fixtures in development/testing environments
+        #if DEBUG
         return try parseFormulaFromFixtures(name: name, parser: parser)
+        #else
+        return nil
+        #endif
     }
 
     /// Find a formula in a specific tap

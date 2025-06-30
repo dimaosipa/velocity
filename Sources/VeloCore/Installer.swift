@@ -156,58 +156,139 @@ public final class Installer {
         progress: InstallationProgress?
     ) async throws {
         let binDir = packageDir.appendingPathComponent("bin")
-        guard fileManager.fileExists(atPath: binDir.path) else {
-            // No binaries to link
-            progress?.linkingDidStart(binariesCount: 0)
-            return
+        var totalBinaries = 0
+        var linkedBinaries = 0
+
+        // Count total binaries from both bin/ and libexec/bin/
+        var binDirectories: [URL] = []
+        
+        if fileManager.fileExists(atPath: binDir.path) {
+            binDirectories.append(binDir)
+            let binaries = try fileManager.contentsOfDirectory(atPath: binDir.path)
+                .filter { !$0.hasPrefix(".") }
+            totalBinaries += binaries.count
         }
 
-        let binaries = try fileManager.contentsOfDirectory(atPath: binDir.path)
-            .filter { !$0.hasPrefix(".") }
+        let libexecBinDir = packageDir.appendingPathComponent("libexec/bin")
+        if fileManager.fileExists(atPath: libexecBinDir.path) {
+            binDirectories.append(libexecBinDir)
+            let libexecBinaries = try fileManager.contentsOfDirectory(atPath: libexecBinDir.path)
+                .filter { !$0.hasPrefix(".") && !$0.hasSuffix(".pyc") }
+            totalBinaries += libexecBinaries.count
+        }
 
-        progress?.linkingDidStart(binariesCount: binaries.count)
+        progress?.linkingDidStart(binariesCount: totalBinaries)
 
-        for (index, binary) in binaries.enumerated() {
-            let sourcePath = binDir.appendingPathComponent(binary)
+        // Process main bin directory first
+        if fileManager.fileExists(atPath: binDir.path) {
+            let binaries = try fileManager.contentsOfDirectory(atPath: binDir.path)
+                .filter { !$0.hasPrefix(".") }
 
-            // Create versioned symlink (e.g., wget@1.25.0)
-            let versionedPath = pathHelper.versionedSymlinkPath(for: binary, package: formula.name, version: formula.version)
-            try pathHelper.createSymlink(from: sourcePath, to: versionedPath)
+            for binary in binaries {
+                let sourcePath = binDir.appendingPathComponent(binary)
 
-            // Create or update default symlink (e.g., wget)
-            let defaultPath = pathHelper.symlinkPath(for: binary)
-            try pathHelper.createSymlink(from: sourcePath, to: defaultPath)
+                // Create versioned symlink (e.g., python3.9@3.9.23)
+                let versionedPath = pathHelper.versionedSymlinkPath(for: binary, package: formula.name, version: formula.version)
+                try pathHelper.createSymlink(from: sourcePath, to: versionedPath)
 
-            progress?.linkingDidUpdate(binariesLinked: index + 1, totalBinaries: binaries.count)
+                // Create or update default symlink (e.g., python3.9)
+                let defaultPath = pathHelper.symlinkPath(for: binary)
+                try pathHelper.createSymlink(from: sourcePath, to: defaultPath)
+
+                linkedBinaries += 1
+                progress?.linkingDidUpdate(binariesLinked: linkedBinaries, totalBinaries: totalBinaries)
+            }
+        }
+
+        // Process libexec/bin directory for unversioned command aliases
+        if fileManager.fileExists(atPath: libexecBinDir.path) {
+            let libexecBinaries = try fileManager.contentsOfDirectory(atPath: libexecBinDir.path)
+                .filter { !$0.hasPrefix(".") && !$0.hasSuffix(".pyc") }
+
+            for binary in libexecBinaries {
+                let sourcePath = libexecBinDir.appendingPathComponent(binary)
+                
+                // For libexec/bin entries, check if they are symlinks to bin/ directory
+                let linkTarget: URL
+                if fileManager.fileExists(atPath: sourcePath.path) {
+                    do {
+                        // Try to resolve the symlink target
+                        let targetPath = try fileManager.destinationOfSymbolicLink(atPath: sourcePath.path)
+                        linkTarget = URL(fileURLWithPath: targetPath, relativeTo: sourcePath.deletingLastPathComponent())
+                    } catch {
+                        // If not a symlink, use the file directly
+                        linkTarget = sourcePath
+                    }
+                } else {
+                    linkTarget = sourcePath
+                }
+
+                // Create versioned symlink for unversioned command (e.g., python@3.9.23_3)
+                let versionedPath = pathHelper.versionedSymlinkPath(for: binary, package: formula.name, version: formula.version)
+                try pathHelper.createSymlink(from: linkTarget, to: versionedPath)
+
+                // Create or update default symlink for unversioned command (e.g., python)
+                let defaultPath = pathHelper.symlinkPath(for: binary)
+                try pathHelper.createSymlink(from: linkTarget, to: defaultPath)
+
+                linkedBinaries += 1
+                progress?.linkingDidUpdate(binariesLinked: linkedBinaries, totalBinaries: totalBinaries)
+            }
+        }
+
+        if totalBinaries == 0 {
+            progress?.linkingDidStart(binariesCount: 0)
         }
     }
 
     private func removeSymlinks(for package: String, version: String, packageDir: URL) throws {
-        let binDir = packageDir.appendingPathComponent("bin")
-        guard fileManager.fileExists(atPath: binDir.path) else {
-            return
-        }
+        // Process both bin/ and libexec/bin/ directories
+        let directories = [
+            packageDir.appendingPathComponent("bin"),
+            packageDir.appendingPathComponent("libexec/bin")
+        ]
 
-        let binaries = try fileManager.contentsOfDirectory(atPath: binDir.path)
-            .filter { !$0.hasPrefix(".") }
-
-        for binary in binaries {
-            // Remove versioned symlink (e.g., wget@1.25.0)
-            let versionedSymlinkPath = pathHelper.versionedSymlinkPath(for: binary, package: package, version: version)
-            if fileManager.fileExists(atPath: versionedSymlinkPath.path) {
-                try fileManager.removeItem(at: versionedSymlinkPath)
+        for directory in directories {
+            guard fileManager.fileExists(atPath: directory.path) else {
+                continue
             }
 
-            // Only remove default symlink if it points to this version
-            let defaultSymlinkPath = pathHelper.symlinkPath(for: binary)
-            if fileManager.fileExists(atPath: defaultSymlinkPath.path) {
-                let targetBinary = binDir.appendingPathComponent(binary)
-                if let resolvedPath = try? fileManager.destinationOfSymbolicLink(atPath: defaultSymlinkPath.path),
-                   resolvedPath == targetBinary.path {
-                    try fileManager.removeItem(at: defaultSymlinkPath)
+            let binaries = try fileManager.contentsOfDirectory(atPath: directory.path)
+                .filter { !$0.hasPrefix(".") && !$0.hasSuffix(".pyc") }
 
-                    // Try to find another version to link as default
-                    try updateDefaultSymlinkAfterRemoval(for: package, binary: binary)
+            for binary in binaries {
+                // Remove versioned symlink (e.g., python@3.9.23_3)
+                let versionedSymlinkPath = pathHelper.versionedSymlinkPath(for: binary, package: package, version: version)
+                if fileManager.fileExists(atPath: versionedSymlinkPath.path) {
+                    try fileManager.removeItem(at: versionedSymlinkPath)
+                }
+
+                // Only remove default symlink if it points to this version
+                let defaultSymlinkPath = pathHelper.symlinkPath(for: binary)
+                if fileManager.fileExists(atPath: defaultSymlinkPath.path) {
+                    let targetBinary = directory.appendingPathComponent(binary)
+                    
+                    // For libexec/bin symlinks, need to resolve the actual target
+                    let actualTarget: URL
+                    if directory.lastPathComponent == "bin" && directory.deletingLastPathComponent().lastPathComponent == "libexec" {
+                        // This is from libexec/bin, need to resolve symlink target
+                        do {
+                            let targetPath = try fileManager.destinationOfSymbolicLink(atPath: targetBinary.path)
+                            actualTarget = URL(fileURLWithPath: targetPath, relativeTo: targetBinary.deletingLastPathComponent())
+                        } catch {
+                            actualTarget = targetBinary
+                        }
+                    } else {
+                        actualTarget = targetBinary
+                    }
+                    
+                    if let resolvedPath = try? fileManager.destinationOfSymbolicLink(atPath: defaultSymlinkPath.path),
+                       resolvedPath == actualTarget.path {
+                        try fileManager.removeItem(at: defaultSymlinkPath)
+
+                        // Try to find another version to link as default
+                        try updateDefaultSymlinkAfterRemoval(for: package, binary: binary)
+                    }
                 }
             }
         }
