@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{TITLE}}</title>
+    <meta name="description" content="{{DESCRIPTION}}">
+    <meta name="keywords" content="velo, package manager, homebrew, swift, macos, apple silicon">
+    
+    <!-- Open Graph Meta Tags -->
+    <meta property="og:title" content="{{TITLE}}">
+    <meta property="og:description" content="{{DESCRIPTION}}">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://velo.pages.dev">
+    
+    <!-- Twitter Card Meta Tags -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="{{TITLE}}">
+    <meta name="twitter:description" content="{{DESCRIPTION}}">
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    
+    <!-- Styles -->
+    <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
+    
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <!-- Navigation -->
+        <nav class="nav" id="nav">
+            <div class="nav-header">
+                <h3>🚀 Velo</h3>
+                <button class="nav-toggle" id="nav-toggle" aria-label="Toggle navigation">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </button>
+            </div>
+            <div class="nav-content" id="nav-content">
+                {{TABLE_OF_CONTENTS}}
+            </div>
+        </nav>
+        
+        <!-- Main Content -->
+        <main class="main" id="main">
+            <div class="content">
+                {{CONTENT}}
+            </div>
+            
+            <!-- Footer -->
+            <footer class="footer">
+                <div class="footer-content">
+                    <p>Built with ❤️ by the Velo team</p>
+                    <div class="footer-links">
+                        <a href="https://github.com/dimaosipa/velocity" target="_blank" rel="noopener">GitHub</a>
+                        <a href="https://github.com/dimaosipa/velocity/issues" target="_blank" rel="noopener">Issues</a>
+                        <a href="https://github.com/dimaosipa/velocity/blob/main/LICENSE" target="_blank" rel="noopener">License</a>
+                    </div>
+                </div>
+            </footer>
+        </main>
+    </div>
+    
+    <!-- Scripts -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script>
+        // Initialize syntax highlighting
+        hljs.highlightAll();
+        
+        // Mobile navigation toggle
+        const navToggle = document.getElementById('nav-toggle');
+        const navContent = document.getElementById('nav-content');
+        
+        navToggle.addEventListener('click', () => {
+            navContent.classList.toggle('active');
+            navToggle.classList.toggle('active');
+        });
+        
+        // Smooth scrolling for anchor links
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault();
+                const target = document.querySelector(this.getAttribute('href'));
+                if (target) {
+                    target.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'start'
+                    });
+                    // Close mobile nav if open
+                    navContent.classList.remove('active');
+                    navToggle.classList.remove('active');
+                }
+            });
+        });
+        
+        // Highlight current section in navigation
+        const observerOptions = {
+            root: null,
+            rootMargin: '-20% 0px -80% 0px',
+            threshold: 0
+        };
+        
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    const id = entry.target.id;
+                    document.querySelectorAll('.nav-content a').forEach(link => {
+                        link.classList.remove('active');
+                    });
+                    const activeLink = document.querySelector(`.nav-content a[href="#${id}"]`);
+                    if (activeLink) {
+                        activeLink.classList.add('active');
+                    }
+                }
+            });
+        }, observerOptions);
+        
+        // Observe all headings
+        document.querySelectorAll('h1, h2, h3, h4, h5, h6').forEach(heading => {
+            if (heading.id) {
+                observer.observe(heading);
+            }
+        });
+    </script>
+</body>
+</html>

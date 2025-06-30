@@ -1,0 +1,31 @@
+{
+  "name": "velo-website",
+  "version": "1.0.0",
+  "description": "Static website generator for Velo package manager documentation",
+  "private": true,
+  "scripts": {
+    "build": "node build.js",
+    "dev": "node build.js && python3 -m http.server 8080 -d dist",
+    "clean": "rm -rf dist",
+    "start": "npm run build && npm run dev"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "markdown-it": "^14.0.0",
+    "markdown-it-anchor": "^8.6.7",
+    "markdown-it-table-of-contents": "^0.6.0",
+    "highlight.js": "^11.9.0",
+    "fs-extra": "^11.2.0"
+  },
+  "devDependencies": {},
+  "keywords": [
+    "velo",
+    "package-manager",
+    "documentation",
+    "static-site"
+  ],
+  "author": "Velo Contributors",
+  "license": "BSD-2-Clause"
+}

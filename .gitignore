@@ -91,4 +91,10 @@ temp/
 .claude/*.local.json
 test-project/
 
+# Website build
+website/node_modules/
+website/dist/
+website/.env
+website/package-lock.json
+
 
