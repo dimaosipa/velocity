@@ -1,6 +1,28 @@
 /* Documentation Styles - Extends home.css base variables */
 @import url('home.css');
 
+/* Navigation Logo Styling - ensure consistency with home page */
+.nav-logo {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    text-decoration: none;
+    color: var(--color-text-primary);
+}
+
+.logo {
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius-sm);
+}
+
+.logo-text {
+    font-size: 1.25rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: var(--color-text-primary);
+}
+
 /* Layout */
 .docs-layout {
     display: grid;
