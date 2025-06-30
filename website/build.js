@@ -391,46 +391,23 @@ function generateSidebarNavigation(currentPagePath, docsStructure) {
         };
     }
     
-    // Group docs by category
-    const categories = {};
-    docsStructure.forEach(doc => {
-        const category = doc.category;
-        if (!categories[category]) {
-            categories[category] = [];
-        }
-        categories[category].push(doc);
-    });
-    
-    // Generate navigation sections
+    // Generate simple navigation list
     let navigation = `
         <div class="nav-section">
-            <h4 class="nav-section-title">Overview</h4>
             <ul class="nav-list">
-                <li><a href="${overviewHref}" class="nav-item">Overview</a></li>
-            </ul>
-        </div>
-    `;
+                <li><a href="${overviewHref}" class="nav-item">Overview</a></li>`;
     
-    // Add sections for each category
-    Object.keys(categories).sort().forEach(category => {
-        if (categories[category].length === 0) return;
-        
+    // Add all docs as a simple list
+    docsStructure.forEach(doc => {
+        const slug = doc.file.replace('.md', '');
+        const href = itemHref(slug);
         navigation += `
-        <div class="nav-section">
-            <h4 class="nav-section-title">${category}</h4>
-            <ul class="nav-list">`;
-        
-        categories[category].forEach(doc => {
-            const slug = doc.file.replace('.md', '');
-            const href = itemHref(slug);
-            navigation += `
                 <li><a href="${href}" class="nav-item">${doc.title}</a></li>`;
-        });
-        
-        navigation += `
+    });
+    
+    navigation += `
             </ul>
         </div>`;
-    });
     
     return navigation;
 }
