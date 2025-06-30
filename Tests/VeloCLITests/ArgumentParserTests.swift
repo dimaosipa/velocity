@@ -56,10 +56,28 @@ final class ArgumentParserTests: XCTestCase {
     // MARK: - Helper Methods
 
     private func runCLICommand(_ args: [String]) async throws -> String {
-        let executable = "/Users/dmitry/Developer/velo/.build/arm64-apple-macosx/release/velo"
+        // Find the actual velo binary path in the current build configuration
+        let possiblePaths = [
+            "./.build/release/velo",
+            "./.build/arm64-apple-macosx/release/velo",
+            "./.build/debug/velo",
+            "./.build/arm64-apple-macosx/debug/velo"
+        ]
+
+        var executable: String?
+        for path in possiblePaths {
+            if FileManager.default.fileExists(atPath: path) {
+                executable = path
+                break
+            }
+        }
+
+        guard let executablePath = executable else {
+            throw VeloError.systemError("Could not find velo binary in any of the expected locations: \(possiblePaths.joined(separator: ", "))")
+        }
 
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: executable)
+        process.executableURL = URL(fileURLWithPath: executablePath)
         process.arguments = args
 
         let pipe = Pipe()

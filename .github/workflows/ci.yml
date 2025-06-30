@@ -74,6 +74,10 @@ jobs:
     - name: Run Unit Tests
       run: |
         echo "=== Running Unit Tests ==="
+        # Unit tests need the release binary for ArgumentParser integration tests
+        echo "Building release binary for unit tests..."
+        swift build --configuration release
+        echo "Running unit tests..."
         swift test --parallel || exit 1
         echo "✅ Unit tests passed"
       
@@ -260,11 +264,34 @@ jobs:
       with:
         swift-version: "5.9"
     
+    - name: Cache Swift Package Manager
+      uses: actions/cache@v3
+      with:
+        path: .build
+        key: ${{ runner.os }}-arm64-spm-${{ hashFiles('Package.resolved') }}
+        restore-keys: |
+          ${{ runner.os }}-arm64-spm-
+    
+    - name: Resolve Dependencies
+      run: swift package resolve
+      
+    - name: Build Debug Configuration
+      run: |
+        echo "=== Building Debug Configuration for Performance Tests ==="
+        swift build --configuration debug
+        echo "Building test target explicitly..."
+        swift build --target VeloCore
+        swift build --target VeloFormula
+        swift build --target VeloSystem
+        echo "✅ Debug build completed"
+    
     - name: Run Performance Tests
       run: |
+        echo "=== Running Performance Benchmarks ==="
         swift test \
           --filter PerformanceBenchmarks \
-          --parallel
+          --parallel || exit 1
+        echo "✅ Performance benchmarks completed"
           
     - name: Parse Benchmark Results
       run: |
