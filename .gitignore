@@ -95,6 +95,5 @@ test-project/
 website/node_modules/
 website/dist/
 website/.env
-website/package-lock.json
 
 
