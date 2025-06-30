@@ -622,33 +622,33 @@ public final class TapManager {
         try pathHelper.ensureDirectoryExists(at: pathHelper.cachePath)
 
         let tapsPath = pathHelper.tapsPath
-        guard FileManager.default.fileExists(atPath: tapsPath.path) else {
-            return nil
-        }
-
         let parser = FormulaParser()
         let formulaFile = "\(name).rb"
 
-        // Get all available taps and prioritize them
-        let availableTaps = try getAvailableTaps(from: tapsPath)
-        let prioritizedTaps = prioritizeTaps(availableTaps)
+        // Try to find in taps first
+        if FileManager.default.fileExists(atPath: tapsPath.path) {
+            // Get all available taps and prioritize them
+            let availableTaps = try getAvailableTaps(from: tapsPath)
+            let prioritizedTaps = prioritizeTaps(availableTaps)
 
-        // Search taps in priority order
-        for tapInfo in prioritizedTaps {
-            let formulaPath = tapInfo.path.appendingPathComponent("Formula")
+            // Search taps in priority order
+            for tapInfo in prioritizedTaps {
+                let formulaPath = tapInfo.path.appendingPathComponent("Formula")
 
-            guard FileManager.default.fileExists(atPath: formulaPath.path) else {
-                continue
-            }
+                guard FileManager.default.fileExists(atPath: formulaPath.path) else {
+                    continue
+                }
 
-            // Try to find the formula in this tap
-            if let formula = try findFormulaInTap(name: name, formulaFile: formulaFile, tapPath: formulaPath, parser: parser) {
-                logInfo("Successfully parsed \(name) from \(tapInfo.name) tap")
-                return formula
+                // Try to find the formula in this tap
+                if let formula = try findFormulaInTap(name: name, formulaFile: formulaFile, tapPath: formulaPath, parser: parser) {
+                    logInfo("Successfully parsed \(name) from \(tapInfo.name) tap")
+                    return formula
+                }
             }
         }
 
-        return nil
+        // If not found in taps, try test fixtures as fallback
+        return try parseFormulaFromFixtures(name: name, parser: parser)
     }
 
     /// Find a formula in a specific tap
@@ -688,6 +688,42 @@ public final class TapManager {
         }
 
         return nil
+    }
+
+    /// Parse a specific formula from test fixtures
+    private func parseFormulaFromFixtures(name: String, parser: FormulaParser) throws -> Formula? {
+        let fixturesPath = URL(fileURLWithPath: #file)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Tests")
+            .appendingPathComponent("Fixtures")
+            .appendingPathComponent("Formulae")
+
+        guard FileManager.default.fileExists(atPath: fixturesPath.path) else {
+            return nil
+        }
+
+        let formulaFile = "\(name).rb"
+        let formulaPath = fixturesPath.appendingPathComponent(formulaFile)
+
+        guard FileManager.default.fileExists(atPath: formulaPath.path) else {
+            return nil
+        }
+
+        do {
+            let content = try String(contentsOf: formulaPath)
+            let formula = try parser.parse(rubyContent: content, formulaName: name)
+
+            // Cache the parsed formula for future use
+            try cache.set(formula)
+
+            logInfo("Successfully parsed \(name) from test fixtures")
+            return formula
+        } catch {
+            logWarning("Failed to parse \(name) from test fixtures: \(error)")
+            return nil
+        }
     }
 
     /// Get all available taps

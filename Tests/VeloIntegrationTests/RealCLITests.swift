@@ -322,17 +322,15 @@ final class RealCLITests: XCTestCase {
         XCTAssertNoThrow(try doctor.run())
 
         // 2. User searches for a package
-        var search = Velo.Search()
-        search.term = "wget"
+        var search = Velo.Search(term: "wget")
         await XCTAssertNoThrowAsync(try await search.run())
 
         // 3. User gets info about specific package
-        var info = Velo.Info()
-        info.package = "wget"
+        var info = Velo.Info(package: "wget")
         await XCTAssertNoThrowAsync(try await info.run())
 
         // 4. User gets info about package with version
-        info.package = "wget@1.25.0"
+        info = Velo.Info(package: "wget@1.25.0")
         await XCTAssertNoThrowAsync(try await info.run())
 
         // 5. User lists installed packages (should be empty)
@@ -340,8 +338,7 @@ final class RealCLITests: XCTestCase {
         XCTAssertNoThrow(try list.run())
 
         // 6. User searches with descriptions
-        search.descriptions = true
-        search.term = "download"
+        search = Velo.Search(term: "download", descriptions: true)
         await XCTAssertNoThrowAsync(try await search.run())
     }
 

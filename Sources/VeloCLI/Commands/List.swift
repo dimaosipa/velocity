@@ -21,6 +21,17 @@ extension Velo {
         @Flag(name: .shortAndLong, help: "List all available packages (not just installed)")
         var all = false
 
+        // Custom initializer for testing
+        init(versions: Bool = false, sizes: Bool = false, filter: String? = nil, all: Bool = false) {
+            self.versions = versions
+            self.sizes = sizes
+            self.filter = filter
+            self.all = all
+        }
+
+        // Required empty initializer for ArgumentParser
+        init() {}
+
         func run() throws {
             let pathHelper = PathHelper.shared
 

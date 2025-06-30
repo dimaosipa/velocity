@@ -18,6 +18,18 @@ extension Velo {
         @Flag(help: "Force uninstall without confirmation")
         var force = false
 
+        // Custom initializer for testing
+        init(package: String = "", version: String? = nil, force: Bool = false) {
+            self.package = package
+            self.version = version
+            self.force = force
+        }
+
+        // Required empty initializer for ArgumentParser
+        init() {
+            self.package = ""
+        }
+
         func run() throws {
             try runAsyncAndWait {
                 try await self.runAsync()

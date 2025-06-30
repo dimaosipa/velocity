@@ -19,6 +19,18 @@ extension Velo {
         @Flag(help: "Show only installation status")
         var installed = false
 
+        // Custom initializer for testing
+        init(package: String = "", verbose: Bool = false, installed: Bool = false) {
+            self.package = package
+            self.verbose = verbose
+            self.installed = installed
+        }
+
+        // Required empty initializer for ArgumentParser
+        init() {
+            self.package = ""
+        }
+
         func run() throws {
             try runAsyncAndWait {
                 try await self.runAsync()
