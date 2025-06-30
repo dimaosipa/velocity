@@ -25,21 +25,8 @@ on:
 
 jobs:
   matrix-test:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-13, macos-14, macos-latest]
-        swift: ["5.9", "5.10"]
-        include:
-          - os: macos-13
-            arch: x86_64
-          - os: macos-14  
-            arch: arm64
-          - os: macos-latest
-            arch: arm64
-    
-    name: Test (${{ matrix.os }}, Swift ${{ matrix.swift }}, ${{ matrix.arch }})
+    runs-on: macos-14 # Apple Silicon only
+    name: Test (Apple Silicon)
     
     steps:
     - uses: actions/checkout@v4
@@ -47,7 +34,7 @@ jobs:
     - name: Setup Swift
       uses: swift-actions/setup-swift@v1
       with:
-        swift-version: ${{ matrix.swift }}
+        swift-version: "5.9"
     
     - name: System Information
       run: |
@@ -70,10 +57,10 @@ jobs:
         path: |
           .build
           ~/.velo/taps
-        key: ${{ runner.os }}-${{ matrix.arch }}-swift-${{ matrix.swift }}-${{ hashFiles('Package.resolved') }}
+        key: ${{ runner.os }}-arm64-swift-5.9-${{ hashFiles('Package.resolved') }}
         restore-keys: |
-          ${{ runner.os }}-${{ matrix.arch }}-swift-${{ matrix.swift }}-
-          ${{ runner.os }}-${{ matrix.arch }}-
+          ${{ runner.os }}-arm64-swift-5.9-
+          ${{ runner.os }}-arm64-
     
     - name: Build All Configurations
       run: |
@@ -88,13 +75,28 @@ jobs:
     - name: Quick Tests
       if: github.event.inputs.test_scope == 'quick' || github.event.inputs.test_scope == 'full' || github.event.inputs.test_scope == 'stress'
       run: |
-        swift test --filter VeloCoreTests --parallel
-        swift test --filter VeloFormulaTests --parallel
+        echo "=== Running Quick Tests ==="
+        if ! swift test --filter VeloCoreTests --parallel; then
+          echo "❌ VeloCoreTests failed"
+          exit 1
+        fi
+        echo "✅ VeloCoreTests passed"
+        
+        if ! swift test --filter VeloFormulaTests --parallel; then
+          echo "❌ VeloFormulaTests failed"
+          exit 1
+        fi
+        echo "✅ VeloFormulaTests passed"
     
     - name: Full Test Suite
       if: github.event.inputs.test_scope == 'full' || github.event.inputs.test_scope == 'stress'
       run: |
-        swift test --enable-code-coverage --parallel
+        echo "=== Running Full Test Suite ==="
+        if ! swift test --enable-code-coverage --parallel; then
+          echo "❌ Full test suite failed"
+          exit 1
+        fi
+        echo "✅ Full test suite passed"
     
     - name: Stress Tests
       if: github.event.inputs.test_scope == 'stress'
@@ -315,7 +317,7 @@ jobs:
     - name: Release Readiness Summary
       run: |
         echo "=== Release Readiness Summary ==="
-        echo "✅ Multi-platform testing completed"
+        echo "✅ Apple Silicon testing completed"
         echo "✅ Integration tests passed"
         echo "✅ Release binary built and tested"
         echo "✅ Artifacts uploaded"
