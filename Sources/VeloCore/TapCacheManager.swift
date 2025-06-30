@@ -5,11 +5,13 @@ public struct TapCacheMetadata: Codable {
     public let lastUpdated: Date
     public let lastCommit: String?
     public let updateDuration: TimeInterval
+    public let searchIndexBuilt: Date?
     
-    public init(lastUpdated: Date = Date(), lastCommit: String? = nil, updateDuration: TimeInterval = 0) {
+    public init(lastUpdated: Date = Date(), lastCommit: String? = nil, updateDuration: TimeInterval = 0, searchIndexBuilt: Date? = nil) {
         self.lastUpdated = lastUpdated
         self.lastCommit = lastCommit
         self.updateDuration = updateDuration
+        self.searchIndexBuilt = searchIndexBuilt
     }
 }
 
@@ -42,10 +44,12 @@ public class TapCacheManager {
     }
     
     public func updateCacheMetadata(for tapName: String, lastCommit: String? = nil, updateDuration: TimeInterval = 0) {
+        let currentMetadata = cache[tapName]
         let metadata = TapCacheMetadata(
             lastUpdated: Date(),
             lastCommit: lastCommit,
-            updateDuration: updateDuration
+            updateDuration: updateDuration,
+            searchIndexBuilt: currentMetadata?.searchIndexBuilt  // Preserve existing search index timestamp
         )
         
         cache[tapName] = metadata
@@ -74,6 +78,40 @@ public class TapCacheManager {
         cache.removeAll()
         saveCacheMetadata()
         logInfo("Cleared tap cache metadata")
+    }
+    
+    // MARK: - Search Index Cache Management
+    
+    public func isSearchIndexFresh(for tapName: String) -> Bool {
+        guard let metadata = cache[tapName],
+              let searchIndexBuilt = metadata.searchIndexBuilt else {
+            return false  // No search index built yet
+        }
+        
+        // Search index is fresh if it was built after the tap was last updated
+        return searchIndexBuilt >= metadata.lastUpdated
+    }
+    
+    public func updateSearchIndexTimestamp(for tapName: String) {
+        guard let currentMetadata = cache[tapName] else {
+            // Create new metadata entry if tap doesn't exist
+            let metadata = TapCacheMetadata(searchIndexBuilt: Date())
+            cache[tapName] = metadata
+            saveCacheMetadata()
+            return
+        }
+        
+        let metadata = TapCacheMetadata(
+            lastUpdated: currentMetadata.lastUpdated,
+            lastCommit: currentMetadata.lastCommit,
+            updateDuration: currentMetadata.updateDuration,
+            searchIndexBuilt: Date()
+        )
+        
+        cache[tapName] = metadata
+        saveCacheMetadata()
+        
+        logInfo("Updated search index timestamp for \(tapName)")
     }
     
     // MARK: - Private Methods

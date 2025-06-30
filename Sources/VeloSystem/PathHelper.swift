@@ -49,6 +49,10 @@ public struct PathHelper {
     public var tapMetadataFile: URL {
         cachePath.appendingPathComponent("tap-metadata.json")
     }
+    
+    public func searchIndexCacheFile(for tapName: String) -> URL {
+        cachePath.appendingPathComponent("search-index-\(tapName.replacingOccurrences(of: "/", with: "-")).velocache")
+    }
 
     private init(customHome: URL? = nil) {
         self.customHome = customHome

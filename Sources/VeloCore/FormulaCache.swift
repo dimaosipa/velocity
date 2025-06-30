@@ -187,14 +187,25 @@ public struct CacheStatistics {
 
 // MARK: - High-Performance Formula Index
 
+// Search index data structure for serialization
+private struct SearchIndexData: Codable {
+    let nameIndex: [String: String]
+    let descriptionIndex: [String: [String]]  // Set<String> -> [String] for Codable
+    let buildTimestamp: Date
+}
+
 public final class FormulaIndex {
     private let cache: FormulaCacheProtocol
+    private let pathHelper: PathHelper
+    private let tapCacheManager: TapCacheManager
     private let queue = DispatchQueue(label: "com.velo.formula-index", attributes: .concurrent)
     private var nameIndex: [String: String] = [:] // lowercase name -> actual name
     private var descriptionIndex: [String: Set<String>] = [:] // keyword -> formula names
 
-    public init(cache: FormulaCacheProtocol) {
+    public init(cache: FormulaCacheProtocol, pathHelper: PathHelper = PathHelper.shared, tapCacheManager: TapCacheManager) {
         self.cache = cache
+        self.pathHelper = pathHelper
+        self.tapCacheManager = tapCacheManager
     }
 
     public func buildIndex(from formulae: [Formula]) throws {
@@ -263,6 +274,64 @@ public final class FormulaIndex {
             return nameIndex[name.lowercased()]
         }
     }
+    
+    // MARK: - Cache Management
+    
+    public func loadIndexFromCache(for tapName: String) -> Bool {
+        return queue.sync {
+            let cacheFile = pathHelper.searchIndexCacheFile(for: tapName)
+            
+            guard FileManager.default.fileExists(atPath: cacheFile.path) else {
+                logVerbose("No search index cache found for \(tapName)")
+                return false
+            }
+            
+            do {
+                let data = try Data(contentsOf: cacheFile)
+                let searchData = try JSONDecoder().decode(SearchIndexData.self, from: data)
+                
+                // Convert back from [String] to Set<String>
+                nameIndex = searchData.nameIndex
+                descriptionIndex = searchData.descriptionIndex.mapValues { Set($0) }
+                
+                logInfo("Loaded search index from cache for \(tapName)")
+                return true
+            } catch {
+                logWarning("Failed to load search index cache: \(error)")
+                // Remove corrupted cache file
+                try? FileManager.default.removeItem(at: cacheFile)
+                return false
+            }
+        }
+    }
+    
+    public func saveIndexToCache(for tapName: String) {
+        queue.sync {
+            let cacheFile = pathHelper.searchIndexCacheFile(for: tapName)
+            
+            do {
+                // Ensure cache directory exists
+                try pathHelper.ensureDirectoryExists(at: pathHelper.cachePath)
+                
+                // Convert Set<String> to [String] for Codable
+                let searchData = SearchIndexData(
+                    nameIndex: nameIndex,
+                    descriptionIndex: descriptionIndex.mapValues { Array($0) },
+                    buildTimestamp: Date()
+                )
+                
+                let data = try JSONEncoder().encode(searchData)
+                try data.write(to: cacheFile)
+                
+                // Update the tap cache manager with search index timestamp
+                tapCacheManager.updateSearchIndexTimestamp(for: tapName)
+                
+                logInfo("Saved search index to cache for \(tapName)")
+            } catch {
+                logWarning("Failed to save search index cache: \(error)")
+            }
+        }
+    }
 }
 
 // MARK: - Performance Optimized Tap Manager
@@ -280,8 +349,8 @@ public final class TapManager {
     public init(pathHelper: PathHelper = PathHelper.shared) {
         self.pathHelper = pathHelper
         self.cache = FormulaCache(pathHelper: pathHelper)
-        self.index = FormulaIndex(cache: cache)
         self.cacheManager = TapCacheManager(pathHelper: pathHelper)
+        self.index = FormulaIndex(cache: cache, pathHelper: pathHelper, tapCacheManager: cacheManager)
     }
 
     public func updateTaps(force: Bool = false, maxAge: TimeInterval = 3600) async throws {
@@ -329,6 +398,16 @@ public final class TapManager {
 
     /// Full index build - only run when explicitly requested (e.g., for search functionality)
     public func buildFullIndex() async throws {
+        // Check if we can load from cache for the primary tap (homebrew/core)
+        let primaryTapName = "homebrew/core"
+        
+        if cacheManager.isSearchIndexFresh(for: primaryTapName) {
+            if index.loadIndexFromCache(for: primaryTapName) {
+                logInfo("Search index loaded from cache for \(primaryTapName)")
+                return
+            }
+        }
+        
         logInfo("Building full formula index...")
 
         let parser = FormulaParser()
@@ -367,6 +446,9 @@ public final class TapManager {
         // Update cache and index
         try cache.preload(formulae: formulae)
         try index.buildIndex(from: formulae)
+        
+        // Save the search index to cache
+        index.saveIndexToCache(for: primaryTapName)
 
         logInfo("Full index built with \(formulae.count) formulae from all taps")
     }
