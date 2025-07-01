@@ -73,6 +73,7 @@ extension Velo {
                 guard packageSpec.isValid else {
                     throw VeloError.formulaNotFound(name: "Invalid package specification: \(packageInput)")
                 }
+                
                 resolvedName = packageSpec.name
                 resolvedVersion = packageSpec.version ?? version  // inline @version takes precedence
             }
@@ -83,16 +84,22 @@ extension Velo {
             // Get appropriate PathHelper
             let pathHelper = context.getPathHelper(preferLocal: useLocal)
 
-            try await installPackage(
-                name: resolvedName,
-                version: resolvedVersion,
-                context: context,
-                pathHelper: pathHelper,
-                skipDeps: skipDependencies,
-                verbose: true,
-                skipTapUpdate: false,
-                forceTapUpdate: updateTaps
-            )
+            do {
+                try await installPackage(
+                    name: resolvedName,
+                    version: resolvedVersion,
+                    context: context,
+                    pathHelper: pathHelper,
+                    skipDeps: skipDependencies,
+                    verbose: true,
+                    skipTapUpdate: false,
+                    forceTapUpdate: updateTaps
+                )
+            } catch VeloError.formulaNotFound(let name) {
+                // Provide helpful search-based alternatives
+                try await handleFormulaNotFound(name: name, tapManager: tapManager)
+                throw VeloError.formulaNotFound(name: name) // Re-throw after showing suggestions
+            }
 
             // Automatically add to velo.json if in project context and installing locally
             if useLocal && context.isProjectContext {
@@ -787,6 +794,124 @@ extension Velo {
             #else
             return "Unknown architecture"
             #endif
+        }
+        
+        // MARK: - Formula Not Found Handling
+        
+        /// Handle formula not found errors by showing search-based alternatives
+        private func handleFormulaNotFound(name: String, tapManager: TapManager) async throws {
+            print("Error: Formula '\(name)' not found.")
+            print("")
+            
+            // Try to build the search index if it hasn't been built yet
+            try await tapManager.buildFullIndex()
+            
+            // Search for similar packages
+            let searchResults = tapManager.searchFormulae(name, includeDescriptions: false)
+            
+            // For common generic names, also search for versioned packages
+            let versionedSearchResults = searchForVersionedPackages(name: name, tapManager: tapManager)
+            let allResults = Array(Set(searchResults + versionedSearchResults))
+            
+            if !allResults.isEmpty {
+                print("Did you mean one of these?")
+                
+                // Show up to 8 results, prioritizing versioned packages and latest versions
+                let sortedResults = allResults.prefix(8).sorted { result1, result2 in
+                    let name1 = result1.lowercased()
+                    let name2 = result2.lowercased()
+                    let searchTerm = name.lowercased()
+                    
+                    // Check if these are versioned packages of the search term
+                    let isVersioned1 = name1.hasPrefix("\(searchTerm)@")
+                    let isVersioned2 = name2.hasPrefix("\(searchTerm)@")
+                    
+                    // Prefer versioned packages for generic names
+                    if isVersioned1 && !isVersioned2 { return true }
+                    if !isVersioned1 && isVersioned2 { return false }
+                    
+                    // If both are versioned packages, sort by version (descending)
+                    if isVersioned1 && isVersioned2 {
+                        return result1 > result2 // String comparison works for most version formats
+                    }
+                    
+                    // Otherwise prefer results that start with the search term
+                    let starts1 = name1.hasPrefix(searchTerm)
+                    let starts2 = name2.hasPrefix(searchTerm)
+                    
+                    if starts1 && !starts2 { return true }
+                    if !starts1 && starts2 { return false }
+                    
+                    // Then prefer shorter names (more specific)
+                    if name1.count != name2.count {
+                        return name1.count < name2.count
+                    }
+                    
+                    return name1 < name2
+                }
+                
+                for result in sortedResults {
+                    print("  \(result)")
+                }
+                
+                // Show specific suggestion for common generic names
+                let suggestion = getSuggestionForGenericName(name, from: Array(sortedResults))
+                if let suggestion = suggestion {
+                    print("")
+                    print("Try: velo install \(suggestion)")
+                }
+            } else {
+                // No search results found
+                print("No similar packages found.")
+                print("")
+                print("You can:")
+                print("  • Check the spelling of the package name")
+                print("  • Search all packages: velo search \(name)")
+                print("  • Browse available packages: velo list")
+            }
+            print("")
+        }
+        
+        /// Search for versioned packages when looking for common generic names
+        private func searchForVersionedPackages(name: String, tapManager: TapManager) -> [String] {
+            let commonGenericNames = ["python", "node", "mysql", "postgresql", "postgres", "openssl"]
+            
+            guard commonGenericNames.contains(name.lowercased()) else {
+                return []
+            }
+            
+            // Search for versioned packages using the @ symbol
+            let versionedSearchTerm = "\(name)@"
+            return tapManager.searchFormulae(versionedSearchTerm, includeDescriptions: false)
+        }
+        
+        /// Get a specific suggestion for common generic package names
+        private func getSuggestionForGenericName(_ name: String, from results: [String]) -> String? {
+            let genericMappings: [String: String] = [
+                "python": "python@",
+                "node": "node@", 
+                "mysql": "mysql@",
+                "postgresql": "postgresql@",
+                "postgres": "postgresql@",
+                "openssl": "openssl@"
+            ]
+            
+            guard let prefix = genericMappings[name.lowercased()] else {
+                return results.first // Default to first result
+            }
+            
+            // Find the latest version of the requested package type
+            let versionedResults = results.filter { $0.lowercased().hasPrefix(prefix) }
+            
+            // Sort by version (latest first) - this is a simple string sort which works for most cases
+            let sortedVersions = versionedResults.sorted { version1, version2 in
+                // Extract version numbers for basic comparison
+                let v1 = version1.replacingOccurrences(of: prefix, with: "")
+                let v2 = version2.replacingOccurrences(of: prefix, with: "")
+                return v1 > v2 // Latest first
+            }
+            
+            return sortedVersions.first ?? results.first
         }
 
     }
