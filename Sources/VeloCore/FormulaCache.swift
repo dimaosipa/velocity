@@ -110,7 +110,7 @@ public final class FormulaCache: FormulaCacheProtocol {
 
     public func preload(formulae: [Formula]) throws {
         try queue.sync(flags: .barrier) {
-            logInfo("Preloading \(formulae.count) formulae to cache...")
+            OSLogger.shared.info("Preloading \(formulae.count) formulae to cache", category: OSLogger.shared.parser)
 
             for formula in formulae {
                 // Update memory cache
@@ -122,7 +122,7 @@ public final class FormulaCache: FormulaCacheProtocol {
                 try data.write(to: cacheFile)
             }
 
-            logInfo("Formula cache preloaded successfully")
+            OSLogger.shared.info("Formula cache preloaded successfully", category: OSLogger.shared.parser)
         }
     }
 
@@ -210,7 +210,7 @@ public final class FormulaIndex {
 
     public func buildIndex(from formulae: [Formula]) throws {
         queue.sync(flags: .barrier) {
-            logInfo("Building formula search index...")
+            OSLogger.shared.info("Building formula search index", category: OSLogger.shared.parser)
 
             nameIndex.removeAll()
             descriptionIndex.removeAll()
@@ -231,7 +231,7 @@ public final class FormulaIndex {
                 }
             }
 
-            logInfo("Index built with \(nameIndex.count) formulae and \(descriptionIndex.count) keywords")
+            OSLogger.shared.info("Index built with \(nameIndex.count) formulae and \(descriptionIndex.count) keywords", category: OSLogger.shared.parser)
         }
     }
 
@@ -282,7 +282,7 @@ public final class FormulaIndex {
             let cacheFile = pathHelper.searchIndexCacheFile(for: tapName)
             
             guard FileManager.default.fileExists(atPath: cacheFile.path) else {
-                logVerbose("No search index cache found for \(tapName)")
+                OSLogger.shared.verbose("No search index cache found for \(tapName)", category: OSLogger.shared.parser)
                 return false
             }
             
@@ -294,10 +294,10 @@ public final class FormulaIndex {
                 nameIndex = searchData.nameIndex
                 descriptionIndex = searchData.descriptionIndex.mapValues { Set($0) }
                 
-                logInfo("Loaded search index from cache for \(tapName)")
+                OSLogger.shared.info("Loaded search index from cache for \(tapName)", category: OSLogger.shared.parser)
                 return true
             } catch {
-                logWarning("Failed to load search index cache: \(error)")
+                OSLogger.shared.parserWarning("Failed to load search index cache: \(error)")
                 // Remove corrupted cache file
                 try? FileManager.default.removeItem(at: cacheFile)
                 return false
@@ -326,9 +326,9 @@ public final class FormulaIndex {
                 // Update the tap cache manager with search index timestamp
                 tapCacheManager.updateSearchIndexTimestamp(for: tapName)
                 
-                logInfo("Saved search index to cache for \(tapName)")
+                OSLogger.shared.info("Saved search index to cache for \(tapName)", category: OSLogger.shared.parser)
             } catch {
-                logWarning("Failed to save search index cache: \(error)")
+                OSLogger.shared.parserWarning("Failed to save search index cache: \(error)")
             }
         }
     }
@@ -364,7 +364,7 @@ public final class TapManager {
         }
         
         if !shouldUpdate {
-            logInfo("Tap update already in progress, skipping...")
+            OSLogger.shared.info("Tap update already in progress, skipping")
             return
         }
         
@@ -377,12 +377,12 @@ public final class TapManager {
         // Check cache freshness unless forced
         if !force && cacheManager.isCacheFresh(for: "homebrew/core", maxAge: maxAge) {
             let status = cacheManager.getCacheStatus(for: "homebrew/core")
-            logInfo("Using cached homebrew/core tap (\(status))")
+            OSLogger.shared.info("Using cached homebrew/core tap (\(status))")
             return
         }
 
         let startTime = Date()
-        logInfo("Updating homebrew/core tap...")
+        OSLogger.shared.info("Updating homebrew/core tap")
 
         // Ensure homebrew/core tap is cloned and up to date
         try await ensureCoreTap()
@@ -393,7 +393,7 @@ public final class TapManager {
 
         // For lazy loading, we don't parse all formulae upfront
         // Instead, we'll parse them on-demand as they're requested
-        logInfo("Tap ready for on-demand formula parsing")
+        OSLogger.shared.info("Tap ready for on-demand formula parsing")
     }
 
     /// Full index build - only run when explicitly requested (e.g., for search functionality)
@@ -403,12 +403,12 @@ public final class TapManager {
         
         if cacheManager.isSearchIndexFresh(for: primaryTapName) {
             if index.loadIndexFromCache(for: primaryTapName) {
-                logInfo("Search index loaded from cache for \(primaryTapName)")
+                OSLogger.shared.info("Search index loaded from cache for \(primaryTapName)")
                 return
             }
         }
         
-        logInfo("Building full formula index...")
+        OSLogger.shared.info("Building full formula index")
 
         let parser = FormulaParser()
         var formulae: [Formula] = []
@@ -433,18 +433,18 @@ public final class TapManager {
                         continue
                     }
 
-                    logInfo("Parsing formulae from \(tapName) tap...")
+                    OSLogger.shared.verbose("Parsing formulae from \(tapName) tap", category: OSLogger.shared.parser)
                     try await processFormulaeFromTap(tapPath: formulaPath, tapName: tapName, parser: parser, formulae: &formulae)
                 }
             }
         } else {
             #if DEBUG
             // Fallback to test fixtures if no taps available (development only)
-            logWarning("No taps found, using test fixtures...")
+            OSLogger.shared.parserWarning("No taps found, using test fixtures")
             try await loadTestFixtures(parser: parser, formulae: &formulae)
             #else
             // In production, no taps means no formulae available
-            logError("No taps found and no formulae available")
+            OSLogger.shared.parserError("No taps found and no formulae available")
             #endif
         }
 
@@ -455,7 +455,7 @@ public final class TapManager {
         // Save the search index to cache
         index.saveIndexToCache(for: primaryTapName)
 
-        logInfo("Full index built with \(formulae.count) formulae from all taps")
+        OSLogger.shared.info("Full index built with \(formulae.count) formulae from all taps")
     }
 
     /// Process formulae from a specific tap
@@ -509,12 +509,12 @@ public final class TapManager {
 
         let totalFormulae = allFormulaFiles.count
         if totalFormulae == 0 {
-            logInfo("No formulae found in \(tapName)")
+            OSLogger.shared.verbose("No formulae found in \(tapName)", category: OSLogger.shared.parser)
             return
         }
 
         var processed = 0
-        logInfo("Found \(totalFormulae) formulae in \(tapName)")
+        OSLogger.shared.verbose("Found \(totalFormulae) formulae in \(tapName)", category: OSLogger.shared.parser)
 
         // Process formulae in batches to avoid memory issues
         let batchSize = 100
@@ -526,7 +526,8 @@ public final class TapManager {
                             let content = try String(contentsOf: formulaInfo.path)
                             return try parser.parse(rubyContent: content, formulaName: formulaInfo.name)
                         } catch {
-                            logWarning("Failed to parse \(formulaInfo.name) from \(tapName): \(error)")
+                            // Formula parsing failures are critical - always show
+                            OSLogger.shared.parserWarning("Failed to parse \(formulaInfo.name) from \(tapName): \(error)")
                             return nil
                         }
                     }
@@ -538,14 +539,15 @@ public final class TapManager {
                     }
                     processed += 1
 
-                    if processed % 100 == 0 {
-                        logInfo("Processed \(processed)/\(totalFormulae) formulae from \(tapName)...")
+                    // Eliminate progress spam - only log at debug level
+                    if processed % 500 == 0 {
+                        OSLogger.shared.debug("Processed \(processed)/\(totalFormulae) formulae from \(tapName)", category: OSLogger.shared.parser)
                     }
                 }
             }
         }
 
-        logInfo("Completed processing \(processed) formulae from \(tapName)")
+        OSLogger.shared.verbose("Completed processing \(processed) formulae from \(tapName)", category: OSLogger.shared.parser)
     }
 
     /// Ensure the homebrew/core tap is cloned and up to date
@@ -555,7 +557,7 @@ public final class TapManager {
         if FileManager.default.fileExists(atPath: coreTapPath.path) {
             try await updateCoreTap(at: coreTapPath)
         } else {
-            logInfo("Cloning homebrew/core tap...")
+            OSLogger.shared.info("Cloning homebrew/core tap")
             try await cloneCoreTap(to: coreTapPath)
         }
     }
@@ -581,7 +583,7 @@ public final class TapManager {
 
     /// Update an existing tap
     private func updateCoreTap(at path: URL) async throws {
-        logInfo("Updating homebrew/core tap...")
+        OSLogger.shared.verbose("Updating homebrew/core tap", category: OSLogger.shared.download)
 
         // Check if we can update (not in detached HEAD state)
         let statusProcess = Process()
@@ -601,7 +603,7 @@ public final class TapManager {
 
             // Check if we're in detached HEAD state
             if output.contains("(no branch)") || output.contains("HEAD detached") {
-                logInfo("Tap is in detached HEAD state - skipping update")
+                OSLogger.shared.warning("Tap is in detached HEAD state - skipping update")
                 return
             }
 
@@ -609,13 +611,13 @@ public final class TapManager {
             try await gitPullWithTimeout(at: path, timeoutSeconds: 120)
 
         } catch {
-            logWarning("Failed to update tap: \(error.localizedDescription)")
-            logInfo("Continuing with existing tap content")
+            OSLogger.shared.warning("Failed to update tap: \(error.localizedDescription)")
+            OSLogger.shared.info("Continuing with existing tap content")
         }
     }
 
     private func gitPullWithTimeout(at path: URL, timeoutSeconds: Int) async throws {
-        logInfo("Downloading tap updates (this may take up to \(timeoutSeconds) seconds)...")
+        OSLogger.shared.info("Downloading tap updates (this may take up to \(timeoutSeconds) seconds)")
         
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
@@ -636,7 +638,7 @@ public final class TapManager {
             
             // Show progress every 15 seconds
             if Date().timeIntervalSince(lastProgressTime) > 15 {
-                logInfo("Still updating tap... (\(Int(elapsed)) seconds elapsed)")
+                OSLogger.shared.progress("Still updating tap... (\(Int(elapsed)) seconds elapsed)")
                 lastProgressTime = Date()
             }
             
@@ -673,7 +675,7 @@ public final class TapManager {
             )
         }
 
-        logInfo("Tap updated successfully")
+        OSLogger.shared.info("Tap updated successfully")
     }
 
     /// Load test fixtures as fallback
@@ -699,7 +701,8 @@ public final class TapManager {
                     let formula = try parser.parse(rubyContent: content, formulaName: formulaName)
                     formulae.append(formula)
                 } catch {
-                    logWarning("Failed to parse \(formulaName): \(error)")
+                    // Formula parsing failures are critical - always show
+                    OSLogger.shared.parserWarning("Failed to parse \(formulaName): \(error)")
                 }
             }
         }
@@ -710,7 +713,7 @@ public final class TapManager {
         return try await withCheckedThrowingContinuation { continuation in
             process.terminationHandler = { process in
                 if process.terminationStatus == 0 {
-                    logInfo("\(description) completed successfully")
+                    OSLogger.shared.verbose("\(description) completed successfully", category: OSLogger.shared.download)
                     continuation.resume()
                 } else {
                     let error = VeloError.processError(
@@ -776,7 +779,7 @@ public final class TapManager {
 
                 // Try to find the formula in this tap
                 if let formula = try findFormulaInTap(name: name, formulaFile: formulaFile, tapPath: formulaPath, parser: parser) {
-                    logInfo("Successfully parsed \(name) from \(tapInfo.name) tap")
+                    OSLogger.shared.verbose("Successfully parsed \(name) from \(tapInfo.name) tap", category: OSLogger.shared.parser)
                     return formula
                 }
             }
@@ -821,7 +824,8 @@ public final class TapManager {
 
                     return formula
                 } catch {
-                    logWarning("Failed to parse \(name) from \(formulaPath.path): \(error)")
+                    // Formula parsing failures are critical - always show
+                    OSLogger.shared.parserWarning("Failed to parse \(name) from \(formulaPath.path): \(error)")
                 }
             }
         }
@@ -857,10 +861,11 @@ public final class TapManager {
             // Cache the parsed formula for future use
             try cache.set(formula)
 
-            logInfo("Successfully parsed \(name) from test fixtures")
+            OSLogger.shared.verbose("Successfully parsed \(name) from test fixtures", category: OSLogger.shared.parser)
             return formula
         } catch {
-            logWarning("Failed to parse \(name) from test fixtures: \(error)")
+            // Formula parsing failures are critical - always show
+            OSLogger.shared.parserWarning("Failed to parse \(name) from test fixtures: \(error)")
             return nil
         }
     }

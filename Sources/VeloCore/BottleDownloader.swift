@@ -289,7 +289,7 @@ public final class BottleDownloader {
         do {
             tokenResponse = try JSONDecoder().decode(TokenResponse.self, from: tokenData)
         } catch {
-            logWarning("Failed to parse GHCR token response, attempting direct download...")
+            OSLogger.shared.downloadWarning("Failed to parse GHCR token response, attempting direct download")
             try await simpleDownload(url: url, destination: destination, expectedSHA256: expectedSHA256, progress: progress)
             return
         }
@@ -298,8 +298,8 @@ public final class BottleDownloader {
         if let errors = tokenResponse.errors, !errors.isEmpty {
             // Log the GHCR access issue but don't fail hard - some bottles may not be accessible
             let errorMessages = errors.map { "\($0.code): \($0.message)" }.joined(separator: ", ")
-            logWarning("GHCR access denied for \(url.absoluteString): \(errorMessages)")
-            logWarning("Some bottles may not be publicly accessible via GHCR. This is a known limitation.")
+            OSLogger.shared.downloadWarning("GHCR access denied for \(url.absoluteString): \(errorMessages)")
+            OSLogger.shared.downloadWarning("Some bottles may not be publicly accessible via GHCR. This is a known limitation.")
 
             // Throw a more informative error that can be handled gracefully by the caller
             throw VeloError.bottleNotAccessible(
@@ -309,7 +309,7 @@ public final class BottleDownloader {
         }
 
         guard let authToken = tokenResponse.validToken else {
-            logWarning("No valid token received from GHCR, attempting direct download...")
+            OSLogger.shared.downloadWarning("No valid token received from GHCR, attempting direct download")
             try await simpleDownload(url: url, destination: destination, expectedSHA256: expectedSHA256, progress: progress)
             return
         }

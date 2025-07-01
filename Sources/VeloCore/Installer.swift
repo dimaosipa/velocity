@@ -342,7 +342,7 @@ public final class Installer {
             return // Skip if no placeholders found
         }
 
-        logInfo("🔧 Rewriting library paths for \(binaryPath.lastPathComponent)")
+        OSLogger.shared.verbose("🔧 Rewriting library paths for \(binaryPath.lastPathComponent)", category: OSLogger.shared.installer)
 
         // Prepare binary for modification
         try prepareForModification(binaryPath: binaryPath)
@@ -394,7 +394,7 @@ public final class Installer {
                 
                 if isInstallName && binaryPath.pathExtension == "dylib" {
                     // Fix the library's own install name (identity)
-                    logInfo("  Rewriting install name: \(oldPath) -> \(newPath)")
+                    OSLogger.shared.debug("  Rewriting install name: \(oldPath) -> \(newPath)", category: OSLogger.shared.installer)
                     
                     let installNameProcess = Process()
                     installNameProcess.executableURL = URL(fileURLWithPath: "/usr/bin/install_name_tool")
@@ -410,14 +410,14 @@ public final class Installer {
                     if installNameProcess.terminationStatus != 0 {
                         let errorOutput = installNamePipe.fileHandleForReading.readDataToEndOfFile()
                         let errorString = String(data: errorOutput, encoding: .utf8) ?? "Unknown error"
-                        logWarning("install_name_tool -id failed for \(binaryPath.lastPathComponent): \(errorString)")
+                        OSLogger.shared.installerWarning("install_name_tool -id failed for \(binaryPath.lastPathComponent): \(errorString)")
                     } else {
                         rewriteCount += 1
                         installNameFixed = true
                     }
                 } else {
                     // Fix dependency reference
-                    logInfo("  Rewriting dependency: \(oldPath) -> \(newPath)")
+                    OSLogger.shared.debug("  Rewriting dependency: \(oldPath) -> \(newPath)", category: OSLogger.shared.installer)
 
                     let installNameProcess = Process()
                     installNameProcess.executableURL = URL(fileURLWithPath: "/usr/bin/install_name_tool")
@@ -433,7 +433,7 @@ public final class Installer {
                     if installNameProcess.terminationStatus != 0 {
                         let errorOutput = installNamePipe.fileHandleForReading.readDataToEndOfFile()
                         let errorString = String(data: errorOutput, encoding: .utf8) ?? "Unknown error"
-                        logWarning("install_name_tool -change failed for \(binaryPath.lastPathComponent): \(errorString)")
+                        OSLogger.shared.installerWarning("install_name_tool -change failed for \(binaryPath.lastPathComponent): \(errorString)")
                         throw VeloError.libraryPathRewriteFailed(
                             binary: binaryPath.lastPathComponent,
                             reason: "install_name_tool failed: \(errorString)"
@@ -446,12 +446,12 @@ public final class Installer {
         }
 
         if rewriteCount > 0 {
-            logInfo("  ✓ Rewrote \(rewriteCount) library paths")
+            OSLogger.shared.installerInfo("  ✓ Rewrote \(rewriteCount) library paths")
             
             // Verify the rewriting worked
             let verifySuccess = try await verifyPlaceholderReplacement(binaryPath: binaryPath)
             if !verifySuccess {
-                logWarning("  ⚠️ Some placeholders remain unreplaced in \(binaryPath.lastPathComponent)")
+                OSLogger.shared.installerWarning("  ⚠️ Some placeholders remain unreplaced in \(binaryPath.lastPathComponent)")
             }
         }
 

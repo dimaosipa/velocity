@@ -45,7 +45,7 @@ public final class PerformanceOptimizer {
                 }
             }
         } catch {
-            logVerbose("Failed to clean temporary files: \(error)")
+            OSLogger.shared.debug("Failed to clean temporary files: \(error)", category: OSLogger.shared.general)
         }
     }
 
@@ -68,7 +68,7 @@ public final class PerformanceOptimizer {
                 }
             }
         } catch {
-            logVerbose("Failed to compact cache files: \(error)")
+            OSLogger.shared.debug("Failed to compact cache files: \(error)", category: OSLogger.shared.general)
         }
     }
 
@@ -119,7 +119,7 @@ public final class PerformanceOptimizer {
             try FileManager.default.removeItem(at: tmpFile)
         } catch {
             // If preallocation fails, continue normally
-            logVerbose("Space preallocation failed: \(error)")
+            OSLogger.shared.debug("Space preallocation failed: \(error)", category: OSLogger.shared.general)
         }
     }
 
@@ -167,7 +167,7 @@ public final class PerformanceOptimizer {
         let processorCount = ProcessInfo.processInfo.processorCount
         let optimalThreads = min(processorCount, maxConcurrentDownloads)
 
-        logVerbose("Optimizing for \(processorCount) processors, using \(optimalThreads) threads")
+        OSLogger.shared.debug("Optimizing for \(processorCount) processors, using \(optimalThreads) threads", category: OSLogger.shared.general)
 
         // Configure queues for optimal performance
         configureOperationQueues(maxConcurrent: optimalThreads)
@@ -176,7 +176,7 @@ public final class PerformanceOptimizer {
     private func configureOperationQueues(maxConcurrent: Int) {
         // This would configure any operation queues we use
         // For now, we rely on GCD's automatic management
-        logVerbose("Configured for \(maxConcurrent) concurrent operations")
+        OSLogger.shared.debug("Configured for \(maxConcurrent) concurrent operations", category: OSLogger.shared.general)
     }
 
     // MARK: - Battery Optimization
@@ -196,7 +196,7 @@ public final class PerformanceOptimizer {
 
     private func enableBatteryOptimizations() {
         // Reduce aggressive caching and background operations
-        logVerbose("Enabling battery optimizations")
+        OSLogger.shared.debug("Enabling battery optimizations", category: OSLogger.shared.general)
 
         // Use lower QoS for background operations
         setThreadQOSClass(.background)
@@ -215,14 +215,14 @@ public final class PerformanceOptimizer {
     private func trackUsagePatterns() {
         // Track which packages are installed/searched most frequently
         // This data could be used to optimize cache priorities
-        logVerbose("Tracking usage patterns for optimization")
+        OSLogger.shared.debug("Tracking usage patterns for optimization", category: OSLogger.shared.general)
     }
 
     private func prefetchPopularFormulae() {
         // In the background, prefetch metadata for popular packages
         DispatchQueue.global(qos: .background).async {
             // This would prefetch popular formulae in the background
-            logVerbose("Prefetching popular formulae")
+            OSLogger.shared.debug("Prefetching popular formulae", category: OSLogger.shared.general)
         }
     }
 
@@ -236,7 +236,7 @@ public final class PerformanceOptimizer {
         let result = try block()
         let duration = CFAbsoluteTimeGetCurrent() - startTime
 
-        logVerbose("\(operation) completed in \(String(format: "%.3f", duration))s")
+        OSLogger.shared.debug("\(operation) completed in \(String(format: "%.3f", duration))s", category: OSLogger.shared.general)
 
         return result
     }
@@ -249,7 +249,7 @@ public final class PerformanceOptimizer {
         let result = try await block()
         let duration = CFAbsoluteTimeGetCurrent() - startTime
 
-        logVerbose("\(operation) completed in \(String(format: "%.3f", duration))s")
+        OSLogger.shared.debug("\(operation) completed in \(String(format: "%.3f", duration))s", category: OSLogger.shared.general)
 
         return result
     }

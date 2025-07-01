@@ -55,7 +55,7 @@ public class ParallelDownloadManager {
             return [:]
         }
         
-        logInfo("⬇️  Downloading \(packages.count) packages in parallel...")
+        OSLogger.shared.info("⬇️  Downloading \(packages.count) packages in parallel")
         
         let totalSize = estimateTotalSize(packages: packages)
         progress?.downloadDidStart(totalPackages: packages.count, totalSize: totalSize)
@@ -103,7 +103,7 @@ public class ParallelDownloadManager {
             )
         }
         
-        logInfo("⬇️  Successfully downloaded \(successful) packages")
+        OSLogger.shared.info("⬇️  Successfully downloaded \(successful) packages")
         return results
     }
     

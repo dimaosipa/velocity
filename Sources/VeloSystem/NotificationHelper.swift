@@ -23,8 +23,8 @@ public struct NotificationHelper {
         do {
             try process.run()
         } catch {
-            // Silently fail if sound can't be played
-            Logger.shared.verbose("Failed to play notification sound: \(error)")
+            // Silently fail if sound can't be played - this is not critical
+            // Remove logging for non-critical audio failures
         }
     }
 
@@ -32,7 +32,7 @@ public struct NotificationHelper {
         if playSound {
             self.playSound()
         }
-        Logger.shared.success(message)
+        OSLogger.shared.success(message)
     }
 
     public static func notifyCompletion(_ taskName: String) {

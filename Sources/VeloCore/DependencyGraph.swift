@@ -33,7 +33,7 @@ public class DependencyGraph {
     
     /// Build complete dependency graph starting from a root package
     public func buildGraph(for rootPackage: String, tapManager: TapManager) async throws {
-        logInfo("📊 Building dependency graph for \(rootPackage)...")
+        OSLogger.shared.verbose("📊 Building dependency graph for \(rootPackage)", category: OSLogger.shared.installer)
         
         var visited = Set<String>()
         var visiting = Set<String>()  // For cycle detection
@@ -45,7 +45,7 @@ public class DependencyGraph {
             visiting: &visiting
         )
         
-        logInfo("📊 Dependency graph built: \(nodes.count) total packages")
+        OSLogger.shared.info("📊 Dependency graph built: \(nodes.count) total packages")
     }
     
     private func buildGraphRecursive(
@@ -199,14 +199,14 @@ public class DependencyGraph {
     
     /// Print dependency graph for debugging
     public func printGraph() {
-        logInfo("Dependency Graph:")
+        OSLogger.shared.verbose("Dependency Graph:", category: OSLogger.shared.installer)
         for (package, dependencies) in edges.sorted(by: { $0.key < $1.key }) {
             let isInstalled = nodes[package]?.isInstalled ?? false
             let status = isInstalled ? "✅" : "📦"
             if dependencies.isEmpty {
-                logInfo("  \(status) \(package) (no dependencies)")
+                OSLogger.shared.debug("  \(status) \(package) (no dependencies)", category: OSLogger.shared.installer)
             } else {
-                logInfo("  \(status) \(package) -> \(Array(dependencies).sorted().joined(separator: ", "))")
+                OSLogger.shared.debug("  \(status) \(package) -> \(Array(dependencies).sorted().joined(separator: ", "))", category: OSLogger.shared.installer)
             }
         }
     }
@@ -231,22 +231,22 @@ public struct InstallPlan {
     
     /// Display install plan to user
     public func display() {
-        logInfo("📦 Install plan for \(rootPackage):")
-        logInfo("   New packages: \(newPackages.count)")
-        logInfo("   Already installed: \(alreadyInstalled.count)")
-        logInfo("   Total packages: \(newPackages.count + alreadyInstalled.count)")
+        OSLogger.shared.info("📦 Install plan for \(rootPackage):")
+        OSLogger.shared.info("   New packages: \(newPackages.count)")
+        OSLogger.shared.info("   Already installed: \(alreadyInstalled.count)")
+        OSLogger.shared.info("   Total packages: \(newPackages.count + alreadyInstalled.count)")
         
         if !newPackages.isEmpty {
-            logInfo("   Packages to install:")
+            OSLogger.shared.verbose("   Packages to install:", category: OSLogger.shared.installer)
             for package in newPackages.prefix(10) {  // Show first 10
-                logInfo("     • \(package.name) \(package.formula.version)")
+                OSLogger.shared.debug("     • \(package.name) \(package.formula.version)", category: OSLogger.shared.installer)
             }
             if newPackages.count > 10 {
-                logInfo("     ... and \(newPackages.count - 10) more")
+                OSLogger.shared.verbose("     ... and \(newPackages.count - 10) more", category: OSLogger.shared.installer)
             }
         }
         
         let sizeInMB = estimatedSize / 1_000_000
-        logInfo("   Estimated download: ~\(sizeInMB) MB")
+        OSLogger.shared.info("   Estimated download: ~\(sizeInMB) MB")
     }
 }

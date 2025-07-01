@@ -55,7 +55,7 @@ public class TapCacheManager {
         cache[tapName] = metadata
         saveCacheMetadata()
         
-        logInfo("Updated cache metadata for \(tapName)")
+        OSLogger.shared.verbose("Updated cache metadata for \(tapName)", category: OSLogger.shared.parser)
     }
     
     public func getCacheStatus(for tapName: String) -> String {
@@ -77,7 +77,7 @@ public class TapCacheManager {
     public func clearCache() {
         cache.removeAll()
         saveCacheMetadata()
-        logInfo("Cleared tap cache metadata")
+        OSLogger.shared.verbose("Cleared tap cache metadata", category: OSLogger.shared.parser)
     }
     
     // MARK: - Search Index Cache Management
@@ -111,7 +111,7 @@ public class TapCacheManager {
         cache[tapName] = metadata
         saveCacheMetadata()
         
-        logInfo("Updated search index timestamp for \(tapName)")
+        OSLogger.shared.verbose("Updated search index timestamp for \(tapName)", category: OSLogger.shared.parser)
     }
     
     // MARK: - Private Methods
@@ -129,7 +129,7 @@ public class TapCacheManager {
             decoder.dateDecodingStrategy = .iso8601
             cache = try decoder.decode([String: TapCacheMetadata].self, from: data)
         } catch {
-            logWarning("Failed to load tap cache metadata: \(error)")
+            OSLogger.shared.warning("Failed to load tap cache metadata: \(error)")
             // Clear corrupted cache file and start fresh
             try? FileManager.default.removeItem(at: metadataFile)
             cache = [:]
@@ -150,7 +150,7 @@ public class TapCacheManager {
             let data = try encoder.encode(cache)
             try data.write(to: metadataFile)
         } catch {
-            logWarning("Failed to save tap cache metadata: \(error)")
+            OSLogger.shared.warning("Failed to save tap cache metadata: \(error)")
         }
     }
 }
