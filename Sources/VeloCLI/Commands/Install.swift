@@ -672,8 +672,10 @@ extension Velo {
             let dependencyNames = runtimeDependencies.map { $0.name }
             print("  Found \(dependencyNames.count) direct dependencies...")
             let graph = DependencyGraph(pathHelper: pathHelper)
+            print("  Building dependency graph...")
             try await graph.buildCompleteGraph(for: dependencyNames, tapManager: tapManager)
             print("  Resolved \(graph.allPackages.count) total packages")
+            print("  Analyzing package states...")
             multiStep.completeCurrentStep()
 
             // Version conflicts are handled at the equivalence level
@@ -684,6 +686,8 @@ extension Velo {
             let newPackages = graph.newPackages
             let installablePackages = graph.installablePackages
             let uninstallablePackages = graph.uninstallablePackages
+            
+            print("  Analysis: \(newPackages.count) new, \(installablePackages.count) installable, \(uninstallablePackages.count) uninstallable")
             
             if newPackages.isEmpty {
                 print("✓ All dependencies already installed")

@@ -222,19 +222,45 @@ public class DependencyGraph {
     
     // MARK: - Graph Analysis
     
+    // Cached package analysis results
+    private var _packageAnalysis: (new: [DependencyNode], installable: [DependencyNode], uninstallable: [DependencyNode])?
+    
+    /// Compute package analysis once and cache results
+    private func computePackageAnalysis() -> (new: [DependencyNode], installable: [DependencyNode], uninstallable: [DependencyNode]) {
+        if let cached = _packageAnalysis {
+            return cached
+        }
+        
+        let new = nodes.values.filter { !$0.isInstalled }
+        var installable: [DependencyNode] = []
+        var uninstallable: [DependencyNode] = []
+        
+        for package in new {
+            if package.formula.hasCompatibleBottle {
+                installable.append(package)
+            } else {
+                uninstallable.append(package)
+            }
+        }
+        
+        let result = (new: new, installable: installable, uninstallable: uninstallable)
+        _packageAnalysis = result
+        return result
+    }
+    
     /// Get packages that need to be installed (not already installed)
     public var newPackages: [DependencyNode] {
-        return nodes.values.filter { !$0.isInstalled }
+        return computePackageAnalysis().new
     }
     
     /// Get packages that can be installed (have compatible bottles)
     public var installablePackages: [DependencyNode] {
-        return newPackages.filter { $0.formula.hasCompatibleBottle }
+        return computePackageAnalysis().installable
     }
     
     /// Get packages that cannot be installed (no compatible bottles)
     public var uninstallablePackages: [DependencyNode] {
-        return newPackages.filter { !$0.formula.hasCompatibleBottle }
+        return computePackageAnalysis().uninstallable
     }
     
     /// Get packages that are already installed
