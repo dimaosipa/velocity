@@ -595,8 +595,11 @@ extension Velo {
                 )
             }
 
-            // Download bottle
+            // Download bottle with progress reporting
             let tempFile = PathHelper.shared.temporaryFile(prefix: "bottle-\(name)", extension: "tar.gz")
+            
+            // Show download progress
+            print("⬇️ Downloading \(formula.name)...")
 
             // Retry download with exponential backoff for transient issues
             let maxRetries = 2
@@ -636,14 +639,19 @@ extension Velo {
                     }
                 }
             }
+            
+            print("✅ Downloaded \(formula.name)")
 
-            // Install
+            // Install with progress reporting
+            print("🔧 Installing \(formula.name)...")
             try await installer.install(
                 formula: formula,
                 from: tempFile,
                 progress: progressHandler,
                 force: force
             )
+            
+            print("✅ Installed \(formula.name)")
 
             // Clean up
             try? FileManager.default.removeItem(at: tempFile)

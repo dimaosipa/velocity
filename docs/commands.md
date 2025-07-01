@@ -33,6 +33,9 @@ velo install --frozen
 
 # Verify before installing
 velo install --check
+
+# Force reinstall even if already installed
+velo install wget --force
 ```
 
 **Options:**
@@ -40,6 +43,7 @@ velo install --check
 - `--version <version>` - Install specific version if available
 - `--frozen` - Install exact versions from lock file
 - `--check` - Verify packages before installing
+- `--force` - Force reinstall even if already installed (useful for fixing broken packages)
 
 ### uninstall
 
@@ -312,6 +316,9 @@ velo repair --force
 - When packages fail with dyld symbol loading errors
 - If binary or library dependencies are broken
 - When `@@HOMEBREW_PREFIX@@` placeholders weren't replaced during installation
+
+**Alternative to repair:**
+For simpler cases, you can also use `velo install --force <package>` to completely reinstall a single broken package.
 
 ### clean
 
