@@ -2,7 +2,7 @@ import Foundation
 
 /// Represents a version constraint for package dependencies
 public struct VersionConstraint: Codable, Equatable {
-    public let operator: VersionOperator
+    public let `operator`: VersionOperator
     public let version: String
     
     public enum VersionOperator: String, Codable, CaseIterable {
@@ -20,7 +20,7 @@ public struct VersionConstraint: Codable, Equatable {
     }
     
     public init(operator: VersionOperator, version: String) {
-        self.operator = `operator`
+        self.`operator` = `operator`
         self.version = version
     }
     
@@ -48,7 +48,7 @@ public struct VersionConstraint: Codable, Equatable {
     
     /// Check if a version satisfies this constraint
     public func isSatisfied(by version: String) -> Bool {
-        switch operator {
+        switch `operator` {
         case .equal:
             return compareVersions(version, self.version) == 0
         case .greaterThan:
@@ -68,8 +68,8 @@ public struct VersionConstraint: Codable, Equatable {
     
     /// Compare two versions semantically
     private func compareVersions(_ v1: String, _ v2: String) -> Int {
-        let version1 = SemanticVersion.parse(v1)
-        let version2 = SemanticVersion.parse(v2)
+        let version1 = ConstraintSemanticVersion.parse(v1)
+        let version2 = ConstraintSemanticVersion.parse(v2)
         
         if version1.major != version2.major {
             return version1.major < version2.major ? -1 : 1
@@ -89,8 +89,8 @@ public struct VersionConstraint: Codable, Equatable {
     /// Check if version is compatible using ~> operator rules
     /// ~> 2.1.0 means >= 2.1.0 and < 2.2.0
     private func isCompatibleVersion(_ candidate: String, with base: String) -> Bool {
-        let candidateVersion = SemanticVersion.parse(candidate)
-        let baseVersion = SemanticVersion.parse(base)
+        let candidateVersion = ConstraintSemanticVersion.parse(candidate)
+        let baseVersion = ConstraintSemanticVersion.parse(base)
         
         // Must be same major and minor version
         guard candidateVersion.major == baseVersion.major,
@@ -105,8 +105,8 @@ public struct VersionConstraint: Codable, Equatable {
     /// Check if version is caret compatible using ^ operator rules
     /// ^1.2.3 means >= 1.2.3 and < 2.0.0
     private func isCaretCompatible(_ candidate: String, with base: String) -> Bool {
-        let candidateVersion = SemanticVersion.parse(candidate)
-        let baseVersion = SemanticVersion.parse(base)
+        let candidateVersion = ConstraintSemanticVersion.parse(candidate)
+        let baseVersion = ConstraintSemanticVersion.parse(base)
         
         // Must be same major version
         guard candidateVersion.major == baseVersion.major else {
@@ -164,12 +164,12 @@ public struct VersionConstraintSet: Codable, Equatable {
             return "any version"
         }
         
-        return constraints.map { "\($0.operator.rawValue) \($0.version)" }.joined(separator: ", ")
+        return constraints.map { "\($0.`operator`.rawValue) \($0.version)" }.joined(separator: ", ")
     }
 }
 
-/// Helper for parsing semantic versions
-public struct SemanticVersion: Equatable {
+/// Helper for parsing semantic versions (internal to VersionConstraint)
+internal struct ConstraintSemanticVersion: Equatable {
     public let major: Int
     public let minor: Int
     public let patch: Int
@@ -228,8 +228,8 @@ public class VersionConstraintResolver {
             
             // Choose the latest version that satisfies constraints
             let sorted = satisfying.sorted { version1, version2 in
-                let v1 = SemanticVersion.parse(version1)
-                let v2 = SemanticVersion.parse(version2)
+                let v1 = ConstraintSemanticVersion.parse(version1)
+                let v2 = ConstraintSemanticVersion.parse(version2)
                 
                 if v1.major != v2.major {
                     return v1.major > v2.major

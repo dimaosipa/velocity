@@ -31,7 +31,7 @@ public class PackageEquivalence {
     /// Get all equivalent package names for a given package
     public func getEquivalentPackages(for packageName: String) -> Set<String> {
         // Check if this package is in any equivalency group
-        for (canonical, equivalents) in packageEquivalencies {
+        for (_, equivalents) in packageEquivalencies {
             if equivalents.contains(packageName) {
                 return equivalents
             }

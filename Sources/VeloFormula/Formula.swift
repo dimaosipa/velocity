@@ -34,19 +34,45 @@ public struct Formula: Codable, Equatable {
         public let platform: Platform
 
         public enum Platform: String, Codable {
+            // Apple Silicon (arm64) platforms
             case arm64_monterey
             case arm64_ventura
             case arm64_sonoma
             case arm64_sequoia
+            
+            // Intel (x86_64) platforms - for Rosetta compatibility
+            case monterey
+            case ventura 
+            case sonoma
+            case sequoia
+            case big_sur
+            case catalina
+            case mojave
+            
+            // Universal platforms
             case all
 
             var osVersion: String {
                 switch self {
-                case .arm64_monterey: return "12"
-                case .arm64_ventura: return "13"
-                case .arm64_sonoma: return "14"
-                case .arm64_sequoia: return "15"
+                case .arm64_monterey, .monterey: return "12"
+                case .arm64_ventura, .ventura: return "13"
+                case .arm64_sonoma, .sonoma: return "14"
+                case .arm64_sequoia, .sequoia: return "15"
+                case .big_sur: return "11"
+                case .catalina: return "10.15"
+                case .mojave: return "10.14"
                 case .all: return "all"
+                }
+            }
+            
+            var architecture: String {
+                switch self {
+                case .arm64_monterey, .arm64_ventura, .arm64_sonoma, .arm64_sequoia:
+                    return "arm64"
+                case .monterey, .ventura, .sonoma, .sequoia, .big_sur, .catalina, .mojave:
+                    return "x86_64"
+                case .all:
+                    return "universal"
                 }
             }
 
@@ -58,8 +84,58 @@ public struct Formula: Codable, Equatable {
                 
                 // Check if current macOS version is compatible
                 let currentVersion = ProcessInfo.processInfo.operatingSystemVersion
-                let requiredMajor = Int(osVersion) ?? 12
-                return currentVersion.majorVersion >= requiredMajor
+                let requiredMajor = Int(osVersion.split(separator: ".").first.map(String.init) ?? "12") ?? 12
+                
+                // macOS version compatibility
+                let isVersionCompatible = currentVersion.majorVersion >= requiredMajor
+                
+                // Architecture compatibility
+                #if arch(arm64)
+                // Apple Silicon can run both arm64 and x86_64 (via Rosetta)
+                return isVersionCompatible
+                #elseif arch(x86_64)
+                // Intel Macs can only run x86_64
+                return isVersionCompatible && (architecture == "x86_64" || architecture == "universal")
+                #else
+                // Fallback for other architectures
+                return isVersionCompatible && architecture == "universal"
+                #endif
+            }
+            
+            /// Priority for bottle selection (higher is better)
+            public var priority: Int {
+                #if arch(arm64)
+                // On Apple Silicon, prefer native arm64, then universal, then x86_64 (Rosetta)
+                switch self {
+                case .arm64_sequoia: return 100
+                case .arm64_sonoma: return 99
+                case .arm64_ventura: return 98
+                case .arm64_monterey: return 97
+                case .all: return 50
+                case .sequoia: return 30
+                case .sonoma: return 29
+                case .ventura: return 28
+                case .monterey: return 27
+                case .big_sur: return 26
+                default: return 10
+                }
+                #elseif arch(x86_64)
+                // On Intel, prefer native x86_64, then universal
+                switch self {
+                case .sequoia: return 100
+                case .sonoma: return 99
+                case .ventura: return 98
+                case .monterey: return 97
+                case .big_sur: return 96
+                case .catalina: return 95
+                case .mojave: return 94
+                case .all: return 50
+                default: return 10
+                }
+                #else
+                // Fallback
+                return self == .all ? 50 : 10
+                #endif
             }
         }
 
@@ -93,11 +169,35 @@ public struct Formula: Codable, Equatable {
     public var preferredBottle: Bottle? {
         // Filter compatible bottles
         let compatible = bottles.filter { $0.platform.isCompatible }
+        
+        // If no compatible bottles, return nil
+        guard !compatible.isEmpty else {
+            return nil
+        }
 
-        // Sort by OS version (newest first)
+        // Sort by priority (highest first), then by OS version (newest first)
         return compatible.sorted { bottle1, bottle2 in
-            bottle1.platform.osVersion > bottle2.platform.osVersion
+            if bottle1.platform.priority != bottle2.platform.priority {
+                return bottle1.platform.priority > bottle2.platform.priority
+            }
+            return bottle1.platform.osVersion > bottle2.platform.osVersion
         }.first
+    }
+    
+    /// Get the best available bottle (may include Rosetta compatibility)
+    public var bestAvailableBottle: Bottle? {
+        return preferredBottle
+    }
+    
+    /// Check if we can run this package via Rosetta (x86_64 on Apple Silicon)
+    public var hasRosettaCompatibleBottle: Bool {
+        #if arch(arm64)
+        return bottles.contains { bottle in
+            bottle.platform.architecture == "x86_64" && bottle.platform.isCompatible
+        }
+        #else
+        return false
+        #endif
     }
 
     /// Check if formula has any compatible bottles

@@ -115,12 +115,24 @@ public class ParallelDownloadManager {
     ) async -> DownloadResult {
         
         do {
-            // Get preferred bottle
+            // Get preferred bottle with enhanced fallback logic
             guard let bottle = package.formula.preferredBottle else {
-                throw VeloError.installationFailed(
-                    package: package.name,
-                    reason: "No compatible bottle found for Apple Silicon"
-                )
+                let availablePlatforms = package.formula.bottles.map { $0.platform.rawValue }.joined(separator: ", ")
+                
+                var reason = "No compatible bottle found"
+                if !package.formula.bottles.isEmpty {
+                    reason += ". Available: \(availablePlatforms)"
+                    
+                    #if arch(arm64)
+                    if package.formula.hasRosettaCompatibleBottle {
+                        reason += " (x86_64 available via Rosetta)"
+                    }
+                    #endif
+                } else {
+                    reason += ". No bottles available"
+                }
+                
+                throw VeloError.installationFailed(package: package.name, reason: reason)
             }
             
             guard let bottleURL = package.formula.bottleURL(for: bottle) else {

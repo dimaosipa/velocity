@@ -350,18 +350,31 @@ public struct FormulaParser {
 
         let bottleBlock = String(content[bottleBlockRange])
 
-        // Extract sha256 entries for arm64 platforms and "all" platform
+        // Extract sha256 entries for all supported platforms
         // Handle formats:
         // - sha256 cellar: :any, arm64_sonoma: "hash"  
         // - sha256 arm64_sonoma: "hash"
         // - sha256 cellar: :any_skip_relocation, all: "hash"
-        let simpleArm64Pattern = #"sha256\s+(arm64_\w+):\s*["']([a-fA-F0-9]{64})["']"#
-        let complexArm64Pattern = #"sha256\s+[^,]*,\s*(arm64_\w+):\s*["']([a-fA-F0-9]{64})["']"#
-        let allPattern = #"sha256\s+[^,]*,\s*(all):\s*["']([a-fA-F0-9]{64})["']"#
+        // - sha256 sonoma: "hash" (x86_64)
+        
+        let platformPatterns = [
+            // ARM64 platforms
+            #"sha256\s+(arm64_\w+):\s*["']([a-fA-F0-9]{64})["']"#,
+            #"sha256\s+[^,]*,\s*(arm64_\w+):\s*["']([a-fA-F0-9]{64})["']"#,
+            
+            // x86_64 platforms (without arm64_ prefix)
+            #"sha256\s+(monterey|ventura|sonoma|sequoia|big_sur|catalina|mojave):\s*["']([a-fA-F0-9]{64})["']"#,
+            #"sha256\s+[^,]*,\s*(monterey|ventura|sonoma|sequoia|big_sur|catalina|mojave):\s*["']([a-fA-F0-9]{64})["']"#,
+            
+            // Universal/all platforms
+            #"sha256\s+(all):\s*["']([a-fA-F0-9]{64})["']"#,
+            #"sha256\s+[^,]*,\s*(all):\s*["']([a-fA-F0-9]{64})["']"#
+        ]
 
-        var matches = extractAllMatchPairs(pattern: simpleArm64Pattern, from: bottleBlock)
-        matches.append(contentsOf: extractAllMatchPairs(pattern: complexArm64Pattern, from: bottleBlock))
-        matches.append(contentsOf: extractAllMatchPairs(pattern: allPattern, from: bottleBlock))
+        var matches: [(String, String)] = []
+        for pattern in platformPatterns {
+            matches.append(contentsOf: extractAllMatchPairs(pattern: pattern, from: bottleBlock))
+        }
 
         for (platformStr, sha) in matches {
             if let platform = Formula.Bottle.Platform(rawValue: platformStr) {

@@ -217,7 +217,7 @@ public class DependencyGraph {
                 let versions = Set(constraintSet.constraints.map { $0.version })
                 if versions.count > 1 {
                     // Multiple different version requirements
-                    let requirements = constraintSet.constraints.map { "\($0.operator.rawValue) \($0.version)" }
+                    let requirements = constraintSet.constraints.map { "\($0.`operator`.rawValue) \($0.version)" }
                     conflictsByPackage[package] = requirements
                 }
             }
@@ -239,19 +239,22 @@ public class DependencyGraph {
         
         for canonicalPackage in canonicalPackages {
             // Find the best formula to use (prefer exact canonical name)
-            guard let formula = try tapManager.findFormula(canonicalPackage) else {
+            var formula = try tapManager.findFormula(canonicalPackage)
+            
+            if formula == nil {
                 // Try to find any equivalent formula
                 let equivalents = packageEquivalence.getEquivalentPackages(for: canonicalPackage)
-                var foundFormula: Formula?
                 for equivalent in equivalents {
                     if let f = try tapManager.findFormula(equivalent) {
-                        foundFormula = f
+                        formula = f
                         break
                     }
                 }
-                guard let formula = foundFormula else {
+                
+                guard let finalFormula = formula else {
                     throw VeloError.formulaNotFound(name: canonicalPackage)
                 }
+                formula = finalFormula
             }
             
             // Check if already installed (check all equivalent names)
@@ -259,7 +262,7 @@ public class DependencyGraph {
             let isInstalled = equivalents.contains { pathHelper.isPackageInstalled($0) }
             
             // Create dependency requirements
-            let requirements = formula.dependencies
+            let requirements = formula!.dependencies
                 .filter { $0.type == .required }
                 .map { dep in
                     let canonicalDep = equivalencyMap[dep.name] ?? dep.name
@@ -270,7 +273,7 @@ public class DependencyGraph {
             // Create node
             let node = DependencyNode(
                 name: canonicalPackage,
-                formula: formula,
+                formula: formula!,
                 dependencies: requirements,
                 isInstalled: isInstalled,
                 equivalentPackages: equivalents
@@ -286,6 +289,16 @@ public class DependencyGraph {
     /// Get packages that need to be installed (not already installed)
     public var newPackages: [DependencyNode] {
         return nodes.values.filter { !$0.isInstalled }
+    }
+    
+    /// Get packages that can be installed (have compatible bottles)
+    public var installablePackages: [DependencyNode] {
+        return newPackages.filter { $0.formula.hasCompatibleBottle }
+    }
+    
+    /// Get packages that cannot be installed (no compatible bottles)
+    public var uninstallablePackages: [DependencyNode] {
+        return newPackages.filter { !$0.formula.hasCompatibleBottle }
     }
     
     /// Get packages that are already installed

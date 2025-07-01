@@ -528,12 +528,39 @@ extension Velo {
                 )
             }
 
-            // Check for compatible bottle
+            // Check for compatible bottle with enhanced fallback logic
             guard let bottle = formula.preferredBottle else {
-                throw VeloError.installationFailed(
-                    package: name,
-                    reason: "No compatible bottle found for Apple Silicon"
-                )
+                // Enhanced error handling for missing bottles
+                let availablePlatforms = formula.bottles.map { $0.platform.rawValue }.joined(separator: ", ")
+                let currentArch = Self.getCurrentArchitecture()
+                
+                var errorMessage = "No compatible bottle found for \(currentArch)"
+                var suggestions: [String] = []
+                
+                if !formula.bottles.isEmpty {
+                    errorMessage += ". Available platforms: \(availablePlatforms)"
+                    
+                    // Check for Rosetta compatibility
+                    if formula.hasRosettaCompatibleBottle {
+                        suggestions.append("x86_64 bottles are available but may require Rosetta 2")
+                    }
+                } else {
+                    errorMessage += ". No bottles available for any platform"
+                    suggestions.append("This package may need to be built from source")
+                }
+                
+                // Add helpful suggestions
+                if !suggestions.isEmpty {
+                    errorMessage += ". Suggestions: " + suggestions.joined(separator: "; ")
+                }
+                
+                OSLogger.shared.error(errorMessage)
+                OSLogger.shared.info("You can:")
+                OSLogger.shared.info("1. Try installing with 'arch -x86_64' if running on Apple Silicon")
+                OSLogger.shared.info("2. Check if an alternative package exists")
+                OSLogger.shared.info("3. Build from source (future feature)")
+                
+                throw VeloError.installationFailed(package: name, reason: errorMessage)
             }
 
             guard let bottleURL = formula.bottleURL(for: bottle) else {
@@ -635,6 +662,9 @@ extension Velo {
 
             // Get packages that need to be installed (using equivalence detection)
             let newPackages = graph.newPackages
+            let installablePackages = graph.installablePackages
+            let uninstallablePackages = graph.uninstallablePackages
+            
             if newPackages.isEmpty {
                 OSLogger.shared.info("✓ All dependencies already installed")
                 return
@@ -642,14 +672,34 @@ extension Velo {
 
             OSLogger.shared.info("Dependencies to install: \(newPackages.count) packages")
             
+            // Handle uninstallable packages
+            if !uninstallablePackages.isEmpty {
+                OSLogger.shared.warning("⚠️  Found \(uninstallablePackages.count) packages without compatible bottles:")
+                for package in uninstallablePackages {
+                    let availablePlatforms = package.formula.bottles.map { $0.platform.rawValue }.joined(separator: ", ")
+                    if availablePlatforms.isEmpty {
+                        OSLogger.shared.warning("  • \(package.name): No bottles available")
+                    } else {
+                        OSLogger.shared.warning("  • \(package.name): Available for \(availablePlatforms)")
+                    }
+                }
+                OSLogger.shared.info("These packages will be skipped. The installation may not work correctly.")
+                OSLogger.shared.info("Consider building from source or finding alternative packages.")
+            }
+            
+            if installablePackages.isEmpty {
+                OSLogger.shared.error("No packages can be installed - all dependencies lack compatible bottles")
+                return
+            }
+            
             // Show install plan
             let installPlan = try InstallPlan(graph: graph, rootPackage: formula.name)
             installPlan.display()
 
-            // Download all required packages in parallel
-            OSLogger.shared.info("Downloading \(newPackages.count) packages in parallel...")
+            // Download only installable packages in parallel
+            OSLogger.shared.info("Downloading \(installablePackages.count) installable packages in parallel...")
             let downloadManager = ParallelDownloadManager(pathHelper: pathHelper)
-            let downloads = try await downloadManager.downloadAll(packages: newPackages)
+            let downloads = try await downloadManager.downloadAll(packages: installablePackages)
 
             // Install packages in dependency order
             let installOrder = try graph.getInstallOrder()
@@ -705,6 +755,18 @@ extension Velo {
                 // Clean up downloaded file
                 try? FileManager.default.removeItem(at: downloadResult.downloadPath)
             }
+        }
+        
+        // MARK: - Architecture Detection
+        
+        private static func getCurrentArchitecture() -> String {
+            #if arch(arm64)
+            return "Apple Silicon (arm64)"
+            #elseif arch(x86_64)
+            return "Intel (x86_64)"
+            #else
+            return "Unknown architecture"
+            #endif
         }
 
     }
