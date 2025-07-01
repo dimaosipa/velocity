@@ -189,11 +189,11 @@ public final class Installer {
 
                 // Create versioned symlink (e.g., python3.9@3.9.23)
                 let versionedPath = pathHelper.versionedSymlinkPath(for: binary, package: formula.name, version: formula.version)
-                try pathHelper.createSymlink(from: sourcePath, to: versionedPath)
+                try pathHelper.createSymlinkWithConflictDetection(from: sourcePath, to: versionedPath, packageName: formula.name)
 
                 // Create or update default symlink (e.g., python3.9)
                 let defaultPath = pathHelper.symlinkPath(for: binary)
-                try pathHelper.createSymlink(from: sourcePath, to: defaultPath)
+                try pathHelper.createSymlinkWithConflictDetection(from: sourcePath, to: defaultPath, packageName: formula.name)
 
                 linkedBinaries += 1
                 progress?.linkingDidUpdate(binariesLinked: linkedBinaries, totalBinaries: totalBinaries)
@@ -225,11 +225,11 @@ public final class Installer {
 
                 // Create versioned symlink for unversioned command (e.g., python@3.9.23_3)
                 let versionedPath = pathHelper.versionedSymlinkPath(for: binary, package: formula.name, version: formula.version)
-                try pathHelper.createSymlink(from: linkTarget, to: versionedPath)
+                try pathHelper.createSymlinkWithConflictDetection(from: linkTarget, to: versionedPath, packageName: formula.name)
 
                 // Create or update default symlink for unversioned command (e.g., python)
                 let defaultPath = pathHelper.symlinkPath(for: binary)
-                try pathHelper.createSymlink(from: linkTarget, to: defaultPath)
+                try pathHelper.createSymlinkWithConflictDetection(from: linkTarget, to: defaultPath, packageName: formula.name)
 
                 linkedBinaries += 1
                 progress?.linkingDidUpdate(binariesLinked: linkedBinaries, totalBinaries: totalBinaries)
