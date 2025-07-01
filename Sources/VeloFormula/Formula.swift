@@ -13,7 +13,6 @@ public struct Formula: Codable, Equatable {
     public struct Dependency: Codable, Equatable {
         public let name: String
         public let type: DependencyType
-        public let versionConstraints: [String]?  // Optional for backward compatibility
 
         public enum DependencyType: String, Codable {
             case required
@@ -22,25 +21,9 @@ public struct Formula: Codable, Equatable {
             case build
         }
 
-        public init(name: String, type: DependencyType = .required, versionConstraints: [String]? = nil) {
+        public init(name: String, type: DependencyType = .required) {
             self.name = name
             self.type = type
-            self.versionConstraints = versionConstraints
-        }
-        
-        // Custom decoding for backward compatibility
-        public init(from decoder: Decoder) throws {
-            let container = try decoder.container(keyedBy: CodingKeys.self)
-            self.name = try container.decode(String.self, forKey: .name)
-            self.type = try container.decode(DependencyType.self, forKey: .type)
-            // Try to decode versionConstraints, but default to empty array if not present
-            self.versionConstraints = try container.decodeIfPresent([String].self, forKey: .versionConstraints)
-        }
-        
-        private enum CodingKeys: String, CodingKey {
-            case name
-            case type
-            case versionConstraints
         }
     }
 

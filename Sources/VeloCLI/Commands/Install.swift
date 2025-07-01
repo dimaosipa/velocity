@@ -659,14 +659,9 @@ extension Velo {
             try await graph.buildCompleteGraph(for: dependencyNames, tapManager: tapManager)
             multiStep.completeCurrentStep()
 
-            // Check for version conflicts
-            if graph.hasConflicts {
-                OSLogger.shared.warning("Version conflicts detected:")
-                for conflict in graph.versionConflicts {
-                    OSLogger.shared.warning("  ⚠️ \(conflict.description)")
-                }
-                OSLogger.shared.info("Proceeding with installation despite conflicts...")
-            }
+            // Version conflicts are handled at the equivalence level
+            // No additional conflict checking needed since Homebrew formulae
+            // generally don't specify version constraints
 
             // Get packages that need to be installed (using equivalence detection)
             let newPackages = graph.newPackages
