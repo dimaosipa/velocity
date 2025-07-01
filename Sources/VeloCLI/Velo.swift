@@ -40,10 +40,4 @@ public struct Velo: ParsableCommand {
     var quiet = false
 
     public init() {}
-
-    private func setupLogging() {
-        // Note: OSLogger uses environment variable VELO_LOG_LEVEL for configuration
-        // CLI flags are maintained for compatibility but OSLogger handles the actual logging
-        // No additional setup needed as OSLogger.shared is configured automatically
-    }
 }
