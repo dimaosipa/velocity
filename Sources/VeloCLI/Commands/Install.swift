@@ -495,8 +495,10 @@ extension Velo {
 
             // Ensure we have the homebrew/core tap (skip for dependencies)
             if !skipTapUpdate {
-                print("📥 Updating package database...")
+                let progressReporter = ProgressReporter.shared
+                progressReporter.startStep("📥 Updating package database")
                 try await tapManager.updateTaps(force: forceTapUpdate)
+                progressReporter.completeStep("📥 Package database updated")
             }
 
             // Parse formula

@@ -633,14 +633,20 @@ public final class TapManager {
         // Wait for process with timeout
         let start = Date()
         var lastProgressTime = start
+        let progressReporter = ProgressReporter.shared
+        
         while process.isRunning {
             let elapsed = Date().timeIntervalSince(start)
             
-            // Show progress every 15 seconds
-            if Date().timeIntervalSince(lastProgressTime) > 15 {
-                OSLogger.shared.progress("Still updating tap... (\(Int(elapsed)) seconds elapsed)")
+            // Update progress every 2 seconds
+            if Date().timeIntervalSince(lastProgressTime) > 2 {
+                let progress = min(elapsed / Double(timeoutSeconds), 0.95) // Cap at 95% until completion
+                progressReporter.updateProgress(progress, message: "📥 Updating package database (\(Int(elapsed))s)")
                 lastProgressTime = Date()
             }
+            
+            // Sleep briefly to avoid busy-waiting
+            try await Task.sleep(nanoseconds: 100_000_000) // 0.1 seconds
             
             if elapsed > TimeInterval(timeoutSeconds) {
                 process.terminate()
