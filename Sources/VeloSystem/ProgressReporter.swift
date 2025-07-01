@@ -21,8 +21,6 @@ public final class ProgressReporter {
             self?.currentStep = step
             self?.currentProgress = 0.0
             self?.isActive = true
-            // Show immediate feedback before progress bar
-            print("⚙️  \(step)...")
             self?.printProgress()
         }
     }
