@@ -84,6 +84,9 @@ extension Velo {
             // Get appropriate PathHelper
             let pathHelper = context.getPathHelper(preferLocal: useLocal)
 
+            // Show immediate feedback
+            print("🚀 Starting installation of \(resolvedName)...")
+            
             do {
                 try await installPackage(
                     name: resolvedName,
@@ -487,12 +490,12 @@ extension Velo {
             let tapManager = TapManager(pathHelper: pathHelper)
             let progressHandler = CLIProgress()
 
-            if verbose {
-                OSLogger.shared.info("Installing \(name)...")
-            }
+            // Show immediate feedback
+            print("🔍 Installing \(name)...")
 
             // Ensure we have the homebrew/core tap (skip for dependencies)
             if !skipTapUpdate {
+                print("📥 Updating package database...")
                 try await tapManager.updateTaps(force: forceTapUpdate)
             }
 
@@ -651,6 +654,9 @@ extension Velo {
                 return
             }
 
+            // Show immediate feedback for dependency resolution
+            print("🔍 Resolving dependencies for \(formula.name)...")
+            
             // Create multi-step progress tracker
             let progressSteps = [
                 "Resolving dependencies",
@@ -662,8 +668,10 @@ extension Velo {
             // Step 1: Build dependency graph
             multiStep.startNextStep()
             let dependencyNames = runtimeDependencies.map { $0.name }
+            print("  Found \(dependencyNames.count) direct dependencies...")
             let graph = DependencyGraph(pathHelper: pathHelper)
             try await graph.buildCompleteGraph(for: dependencyNames, tapManager: tapManager)
+            print("  Resolved \(graph.allPackages.count) total packages")
             multiStep.completeCurrentStep()
 
             // Version conflicts are handled at the equivalence level
