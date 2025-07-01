@@ -23,15 +23,16 @@ public final class Installer {
     public func install(
         formula: Formula,
         from bottleFile: URL,
-        progress: InstallationProgress? = nil
+        progress: InstallationProgress? = nil,
+        force: Bool = false
     ) async throws {
         progress?.installationDidStart(package: formula.name, version: formula.version)
 
         // Ensure Velo directories exist
         try pathHelper.ensureVeloDirectories()
 
-        // Check if this specific version is already installed
-        if pathHelper.isSpecificVersionInstalled(formula.name, version: formula.version) {
+        // Check if this specific version is already installed (unless force is used)
+        if !force && pathHelper.isSpecificVersionInstalled(formula.name, version: formula.version) {
             throw VeloError.alreadyInstalled(package: "\(formula.name) v\(formula.version)")
         }
 

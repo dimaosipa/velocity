@@ -84,8 +84,37 @@ extension Velo {
             // Get appropriate PathHelper
             let pathHelper = context.getPathHelper(preferLocal: useLocal)
 
-            // Show immediate feedback
-            print("🚀 Starting installation of \(resolvedName)...")
+            // Check if already installed before showing installation messages (unless force is used)
+            if !force {
+                if pathHelper.isEquivalentPackageInstalled(resolvedName) {
+                    if let installedEquivalent = pathHelper.findInstalledEquivalentPackage(for: resolvedName) {
+                        if installedEquivalent == resolvedName {
+                            print("✅ \(resolvedName) is already installed")
+                        } else {
+                            print("✅ \(resolvedName) is already installed (via \(installedEquivalent))")
+                        }
+                        return
+                    }
+                }
+                
+                // Also check via formula if we can get it quickly
+                let tapManager = TapManager(pathHelper: pathHelper)
+                if let formula = try? tapManager.findFormula(resolvedName) {
+                    let installer = Installer(pathHelper: pathHelper)
+                    let status = try? installer.verifyInstallation(formula: formula)
+                    if status?.isInstalled == true {
+                        print("✅ \(formula.name) \(formula.version) is already installed")
+                        return
+                    }
+                }
+            }
+
+            // Show installation feedback only if not already installed
+            if force {
+                print("🔄 Starting reinstallation of \(resolvedName)...")
+            } else {
+                print("🚀 Starting installation of \(resolvedName)...")
+            }
             
             do {
                 try await installPackage(
@@ -96,7 +125,8 @@ extension Velo {
                     skipDeps: skipDependencies,
                     verbose: true,
                     skipTapUpdate: false,
-                    forceTapUpdate: updateTaps
+                    forceTapUpdate: updateTaps,
+                    force: force
                 )
             } catch VeloError.formulaNotFound(let name) {
                 // Provide helpful search-based alternatives
@@ -483,7 +513,8 @@ extension Velo {
             skipDeps: Bool,
             verbose: Bool,
             skipTapUpdate: Bool = false,
-            forceTapUpdate: Bool = false
+            forceTapUpdate: Bool = false,
+            force: Bool = false
         ) async throws {
             let downloader = BottleDownloader()
             let installer = Installer(pathHelper: pathHelper)
@@ -491,7 +522,11 @@ extension Velo {
             let progressHandler = CLIProgress()
 
             // Show immediate feedback
-            print("🔍 Installing \(name)...")
+            if force {
+                print("🔍 Reinstalling \(name)...")
+            } else {
+                print("🔍 Installing \(name)...")
+            }
 
             // Ensure we have the homebrew/core tap (skip for dependencies)
             if !skipTapUpdate {
@@ -506,37 +541,15 @@ extension Velo {
                 throw VeloError.formulaNotFound(name: name)
             }
 
-            // Check if already installed (including equivalent packages)
-            if !force {
-                if pathHelper.isEquivalentPackageInstalled(name) {
-                    if let installedEquivalent = pathHelper.findInstalledEquivalentPackage(for: name) {
-                        if verbose {
-                            if installedEquivalent == name {
-                                OSLogger.shared.info("\(formula.name) \(formula.version) is already installed")
-                            } else {
-                                OSLogger.shared.info("Equivalent package \(installedEquivalent) is already installed for \(name)")
-                            }
-                        }
-                        return
-                    }
-                }
-                
-                // Fallback to original verification
-                let status = try installer.verifyInstallation(formula: formula)
-                if status.isInstalled {
-                    if verbose {
-                        OSLogger.shared.info("\(formula.name) \(formula.version) is already installed")
-                    }
-                    return
-                }
-            }
+            // Note: Already installed check is now done in the main run() function
 
             // Install dependencies using dependency graph approach
             if !skipDeps {
                 try await installDependenciesWithGraph(
                     for: formula,
                     tapManager: tapManager,
-                    pathHelper: pathHelper
+                    pathHelper: pathHelper,
+                    force: force
                 )
             }
 
@@ -628,13 +641,18 @@ extension Velo {
             try await installer.install(
                 formula: formula,
                 from: tempFile,
-                progress: progressHandler
+                progress: progressHandler,
+                force: force
             )
 
             // Clean up
             try? FileManager.default.removeItem(at: tempFile)
 
-            OSLogger.shared.success("\(formula.name) \(formula.version) installed successfully!")
+            if force {
+                OSLogger.shared.success("\(formula.name) \(formula.version) reinstalled successfully!")
+            } else {
+                OSLogger.shared.success("\(formula.name) \(formula.version) installed successfully!")
+            }
 
             // Show next steps
             if verbose && !PathHelper.shared.isInPath() {
@@ -648,7 +666,8 @@ extension Velo {
         private func installDependenciesWithGraph(
             for formula: Formula,
             tapManager: TapManager,
-            pathHelper: PathHelper
+            pathHelper: PathHelper,
+            force: Bool = false
         ) async throws {
             let runtimeDependencies = formula.dependencies.filter { $0.type == .required }
 
@@ -744,7 +763,8 @@ extension Velo {
                 downloads: downloads,
                 graph: graph,
                 pathHelper: pathHelper,
-                installTracker: installTracker
+                installTracker: installTracker,
+                force: force
             )
             multiStep.completeCurrentStep()
             
@@ -757,7 +777,8 @@ extension Velo {
             downloads: [String: DownloadResult],
             graph: DependencyGraph,
             pathHelper: PathHelper,
-            installTracker: InstallationProgressTracker
+            installTracker: InstallationProgressTracker,
+            force: Bool = false
         ) async throws {
             let installer = Installer(pathHelper: pathHelper)
             installTracker.startInstallation()
@@ -792,7 +813,8 @@ extension Velo {
                 try await installer.install(
                     formula: node.formula,
                     from: downloadResult.downloadPath,
-                    progress: visualProgress
+                    progress: visualProgress,
+                    force: force
                 )
                 
                 installTracker.completePackageInstallation(packageName)
