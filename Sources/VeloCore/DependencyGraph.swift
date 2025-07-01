@@ -313,6 +313,7 @@ public class DependencyGraph {
             }
         }
         OSLogger.shared.debug("Found \(queue.count) root packages in \(Date().timeIntervalSince(startTime))s", category: OSLogger.shared.installer)
+        print("  Starting topological sort with \(queue.count) root packages...")
         
         // Process queue with progress tracking
         var processed = 0
@@ -326,6 +327,7 @@ public class DependencyGraph {
             // Log progress every 20 packages
             if processed % 20 == 0 {
                 OSLogger.shared.debug("Processed \(processed)/\(totalPackages) packages", category: OSLogger.shared.installer)
+                print("  Processed \(processed)/\(totalPackages) packages...")
             }
             
             // Reduce in-degree for all dependencies of the current package
@@ -359,6 +361,7 @@ public class DependencyGraph {
         }
         
         OSLogger.shared.verbose("Topological sort completed: \(result.joined(separator: " -> "))", category: OSLogger.shared.installer)
+        print("  Topological sort completed in \(Date().timeIntervalSince(startTime))s")
         return result
     }
     

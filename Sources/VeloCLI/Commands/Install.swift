@@ -719,7 +719,9 @@ extension Velo {
             ProgressReporter.shared.startStep("🔍 Creating install plan")
             let installPlan = try InstallPlan(graph: graph, rootPackage: formula.name)
             ProgressReporter.shared.completeStep("✅ Install plan created")
+            print("  Displaying install plan...")
             installPlan.display()
+            print("  Install plan displayed, proceeding to downloads...")
 
             // Step 2: Download packages
             multiStep.startNextStep()
@@ -731,7 +733,8 @@ extension Velo {
 
             // Step 3: Install packages
             multiStep.startNextStep()
-            let installOrder = try graph.getInstallOrder()
+            // Use the install order from the plan instead of recomputing it
+            let installOrder = installPlan.installOrder
             let installableOrder = installOrder.filter { packageName in
                 installablePackages.contains { $0.name == packageName }
             }
