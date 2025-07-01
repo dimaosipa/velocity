@@ -31,7 +31,7 @@ extension Velo {
             let result = resolver.which(command, context: context)
 
             if result.matches.isEmpty {
-                logError("\(command): not found")
+                OSLogger.shared.error("\(command): not found")
                 throw ExitCode.failure
             }
 

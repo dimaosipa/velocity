@@ -218,13 +218,13 @@ extension Velo.Tap {
 
             // Check if tap already exists
             if FileManager.default.fileExists(atPath: tapPath.path) && !force {
-                logError("Tap '\(tapName)' already exists. Use --force to reinstall.")
+                OSLogger.shared.error("Tap '\(tapName)' already exists. Use --force to reinstall.")
                 throw ExitCode.failure
             }
 
             let scopeInfo = useLocal ? "locally to .velo/taps/" : "globally to ~/.velo/taps/"
-            logInfo("Adding tap \(tapName) \(scopeInfo)")
-            logInfo("Repository: \(url)")
+            OSLogger.shared.info("Adding tap \(tapName) \(scopeInfo)")
+            OSLogger.shared.info("Repository: \(url)")
 
             // Remove existing if force flag is used
             if FileManager.default.fileExists(atPath: tapPath.path) && force {
@@ -250,12 +250,12 @@ extension Velo.Tap {
             if FileManager.default.fileExists(atPath: formulaPath.path) {
                 let count = getFormulaCount(in: tapPath)
                 if let count = count, count > 0 {
-                    Logger.shared.success("Successfully added tap '\(tapName)' with \(count) formulae")
+                    OSLogger.shared.success("Successfully added tap '\(tapName)' with \(count) formulae")
                 } else {
-                    Logger.shared.success("Successfully added tap '\(tapName)'")
+                    OSLogger.shared.success("Successfully added tap '\(tapName)'")
                 }
             } else {
-                logWarning("Tap added but no Formula directory found. This may not be a valid Homebrew tap.")
+                OSLogger.shared.warning("Tap added but no Formula directory found. This may not be a valid Homebrew tap.")
             }
         }
 
@@ -414,13 +414,13 @@ extension Velo.Tap {
 
             // Check if tap exists
             guard FileManager.default.fileExists(atPath: tapPath.path) else {
-                logError("Tap '\(normalizedTapName)' is not installed")
+                OSLogger.shared.error("Tap '\(normalizedTapName)' is not installed")
                 throw ExitCode.failure
             }
 
             // Prevent removal of core tap
             if normalizedTapName == "homebrew/core" {
-                logError("Cannot remove homebrew/core tap - it's required for Velo to function")
+                OSLogger.shared.error("Cannot remove homebrew/core tap - it's required for Velo to function")
                 throw ExitCode.failure
             }
 
@@ -438,7 +438,7 @@ extension Velo.Tap {
                 }
             }
 
-            logInfo("Removing tap \(normalizedTapName)...")
+            OSLogger.shared.info("Removing tap \(normalizedTapName)...")
 
             // Remove the tap directory
             try FileManager.default.removeItem(at: tapPath)
@@ -455,7 +455,7 @@ extension Velo.Tap {
                 try await updateManifestWithTap(normalizedTapName, context: context, action: .remove)
             }
 
-            Logger.shared.success("Tap '\(normalizedTapName)' removed successfully")
+            OSLogger.shared.success("Tap '\(normalizedTapName)' removed successfully")
 
             print("")
             print("Note: Packages installed from this tap remain installed but won't receive updates.")
@@ -522,11 +522,11 @@ extension Velo.Tap {
             let tapPath = tapsPath.appendingPathComponent(normalizedTapName)
 
             guard FileManager.default.fileExists(atPath: tapPath.path) else {
-                logError("Tap '\(normalizedTapName)' is not installed")
+                OSLogger.shared.error("Tap '\(normalizedTapName)' is not installed")
                 throw ExitCode.failure
             }
 
-            logInfo("Updating tap \(normalizedTapName)...")
+            OSLogger.shared.info("Updating tap \(normalizedTapName)...")
             try await updateTap(at: tapPath, name: normalizedTapName)
         }
 
@@ -552,21 +552,21 @@ extension Velo.Tap {
                     let tapPath = orgPath.appendingPathComponent(repo)
 
                     do {
-                        logInfo("Updating tap \(tapName)...")
+                        OSLogger.shared.info("Updating tap \(tapName)...")
                         try await updateTap(at: tapPath, name: tapName)
                         updatedTaps.append(tapName)
                     } catch {
-                        logWarning("Failed to update \(tapName): \(error)")
+                        OSLogger.shared.warning("Failed to update \(tapName): \(error)")
                         failedTaps.append(tapName)
                     }
                 }
             }
 
             print("")
-            Logger.shared.success("Updated \(updatedTaps.count) taps")
+            OSLogger.shared.success("Updated \(updatedTaps.count) taps")
 
             if !failedTaps.isEmpty {
-                logWarning("Failed to update \(failedTaps.count) taps: \(failedTaps.joined(separator: ", "))")
+                OSLogger.shared.warning("Failed to update \(failedTaps.count) taps: \(failedTaps.joined(separator: ", "))")
             }
         }
 
@@ -577,7 +577,7 @@ extension Velo.Tap {
             process.currentDirectoryURL = path
 
             try await runProcess(process, description: "Updating \(name)")
-            logInfo("✓ \(name) updated")
+            OSLogger.shared.info("✓ \(name) updated")
         }
 
         private func runProcess(_ process: Process, description: String) async throws {
@@ -645,9 +645,9 @@ private func updateManifestWithTap(_ tapName: String, context: ProjectContext, a
     switch action {
     case .add:
         try manifestManager.addTap(tapName, to: manifestPath)
-        logInfo("Added \(tapName) to velo.json taps")
+        OSLogger.shared.info("Added \(tapName) to velo.json taps")
     case .remove:
         try manifestManager.removeTap(tapName, from: manifestPath)
-        logInfo("Removed \(tapName) from velo.json taps")
+        OSLogger.shared.info("Removed \(tapName) from velo.json taps")
     }
 }

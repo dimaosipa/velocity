@@ -40,24 +40,24 @@ extension Velo {
 
         private func repairPackage(_ packageName: String, pathHelper: PathHelper) async throws {
             guard pathHelper.isPackageInstalled(packageName) else {
-                logError("Package '\(packageName)' is not installed")
+                OSLogger.shared.error("Package '\(packageName)' is not installed")
                 throw ExitCode.failure
             }
 
             let versions = pathHelper.installedVersions(for: packageName)
-            logInfo("Repairing \(packageName) (\(versions.count) version(s))...")
+            OSLogger.shared.info("Repairing \(packageName) (\(versions.count) version(s))...")
 
             for version in versions {
                 try await repairPackageVersion(packageName, version: version, pathHelper: pathHelper)
             }
 
-            Logger.shared.success("\(packageName) repair completed!")
+            OSLogger.shared.success("\(packageName) repair completed!")
         }
 
         private func repairAllPackages(pathHelper: PathHelper) async throws {
             let cellarPath = pathHelper.cellarPath
             guard FileManager.default.fileExists(atPath: cellarPath.path) else {
-                logInfo("No packages installed to repair")
+                OSLogger.shared.info("No packages installed to repair")
                 return
             }
 
@@ -66,11 +66,11 @@ extension Velo {
                 .sorted()
 
             if packages.isEmpty {
-                logInfo("No packages installed to repair")
+                OSLogger.shared.info("No packages installed to repair")
                 return
             }
 
-            logInfo("Scanning \(packages.count) packages for repair issues...")
+            OSLogger.shared.info("Scanning \(packages.count) packages for repair issues...")
 
             var repairedCount = 0
             var issuesFound = 0
@@ -95,12 +95,12 @@ extension Velo {
             }
 
             if issuesFound == 0 {
-                Logger.shared.success("✅ All packages are healthy - no repairs needed!")
+                OSLogger.shared.success("✅ All packages are healthy - no repairs needed!")
             } else {
                 if dryRun {
-                    logInfo("Found \(issuesFound) packages with issues that could be repaired")
+                    OSLogger.shared.info("Found \(issuesFound) packages with issues that could be repaired")
                 } else {
-                    Logger.shared.success("✅ Repair completed: \(repairedCount)/\(issuesFound) packages fixed")
+                    OSLogger.shared.success("✅ Repair completed: \(repairedCount)/\(issuesFound) packages fixed")
                 }
             }
         }
@@ -119,17 +119,17 @@ extension Velo {
 
             if filesToRepair.isEmpty {
                 if force {
-                    logInfo("  \(packageDisplayName): No issues found (forced repair skipped)")
+                    OSLogger.shared.info("  \(packageDisplayName): No issues found (forced repair skipped)")
                 }
                 return (hasIssues: false, fixed: false)
             }
 
-            logInfo("  \(packageDisplayName): Found \(filesToRepair.count) files with unreplaced placeholders")
+            OSLogger.shared.info("  \(packageDisplayName): Found \(filesToRepair.count) files with unreplaced placeholders")
 
             if dryRun {
                 for file in filesToRepair {
                     let relativePath = file.path.replacingOccurrences(of: packageDir.path + "/", with: "")
-                    logInfo("    - \(relativePath)")
+                    OSLogger.shared.info("    - \(relativePath)")
                 }
                 return (hasIssues: true, fixed: false)
             }
@@ -141,20 +141,20 @@ extension Velo {
             for file in filesToRepair {
                 do {
                     let relativePath = file.path.replacingOccurrences(of: packageDir.path + "/", with: "")
-                    logInfo("    Repairing \(relativePath)...")
+                    OSLogger.shared.info("    Repairing \(relativePath)...")
                     
                     try await installer.repairBinaryLibraryPaths(binaryPath: file)
                     fixedCount += 1
                 } catch {
-                    logWarning("    Failed to repair \(file.lastPathComponent): \(error.localizedDescription)")
+                    OSLogger.shared.warning("    Failed to repair \(file.lastPathComponent): \(error.localizedDescription)")
                 }
             }
 
             if fixedCount == filesToRepair.count {
-                logInfo("  ✅ \(packageDisplayName): All \(fixedCount) files repaired successfully")
+                OSLogger.shared.info("  ✅ \(packageDisplayName): All \(fixedCount) files repaired successfully")
                 return (hasIssues: true, fixed: true)
             } else {
-                logWarning("  ⚠️ \(packageDisplayName): \(fixedCount)/\(filesToRepair.count) files repaired")
+                OSLogger.shared.warning("  ⚠️ \(packageDisplayName): \(fixedCount)/\(filesToRepair.count) files repaired")
                 return (hasIssues: true, fixed: false)
             }
         }

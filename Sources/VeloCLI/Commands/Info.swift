@@ -36,13 +36,13 @@ extension Velo {
                 // Parse package specification (supports package@version syntax)
                 let packageSpec = PackageSpecification.parse(package)
                 guard packageSpec.isValid else {
-                    logError("Invalid package specification: \(package)")
+                    OSLogger.shared.error("Invalid package specification: \(package)")
                     throw ExitCode.failure
                 }
 
                 // Find formula (note: version is ignored for info, we show available version)
                 guard let formula = try await findFormula(packageSpec.name) else {
-                    logError("Formula not found: \(packageSpec.name)")
+                    OSLogger.shared.error("Formula not found: \(packageSpec.name)")
                     throw ExitCode.failure
                 }
 
@@ -131,7 +131,7 @@ extension Velo {
                 }
 
             } catch {
-                logError("Failed to get package info: \(error.localizedDescription)")
+                OSLogger.shared.error("Failed to get package info: \(error.localizedDescription)")
                 throw ExitCode.failure
             }
         }

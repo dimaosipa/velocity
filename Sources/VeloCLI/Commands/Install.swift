@@ -106,7 +106,7 @@ extension Velo {
 
         private func installFromManifest(context: ProjectContext) async throws {
             guard context.isProjectContext else {
-                logError("No velo.json found. Run 'velo init' to create one or specify a package name.")
+                OSLogger.shared.error("No velo.json found. Run 'velo init' to create one or specify a package name.")
                 throw ExitCode.failure
             }
 
@@ -114,7 +114,7 @@ extension Velo {
                 throw VeloError.notInProjectContext
             }
 
-            logInfo("Installing packages from velo.json...")
+            OSLogger.shared.info("Installing packages from velo.json...")
 
             let manifestManager = VeloManifestManager()
             let manifest = try manifestManager.read(from: manifestPath)
@@ -142,7 +142,7 @@ extension Velo {
                 return
             }
 
-            logInfo("Installing \(allDeps.count) packages...")
+            OSLogger.shared.info("Installing \(allDeps.count) packages...")
 
             var installedPackages: [(formula: Formula, bottleURL: String, tap: String, resolvedDependencies: [String: String])] = []
 
@@ -168,7 +168,7 @@ extension Velo {
                 try updateLockFile(installedPackages: installedPackages, lockFilePath: lockFilePath)
             }
 
-            Logger.shared.success("All packages installed successfully!")
+            OSLogger.shared.success("All packages installed successfully!")
         }
 
         private func installPackageWithTracking(
@@ -240,17 +240,17 @@ extension Velo {
         ) throws {
             let lockFileManager = VeloLockFileManager()
             try lockFileManager.updateLockFile(at: lockFilePath, with: installedPackages)
-            logInfo("Updated velo.lock with \(installedPackages.count) packages")
+            OSLogger.shared.info("Updated velo.lock with \(installedPackages.count) packages")
         }
 
         private func handleLockFileFlags(context: ProjectContext, pathHelper: PathHelper) async throws {
             guard let lockFilePath = context.lockFilePath else {
-                logError("No velo.lock file found. Cannot use --frozen or --check flags.")
+                OSLogger.shared.error("No velo.lock file found. Cannot use --frozen or --check flags.")
                 throw ExitCode.failure
             }
 
             guard FileManager.default.fileExists(atPath: lockFilePath.path) else {
-                logError("velo.lock file does not exist. Run 'velo install' first to create it.")
+                OSLogger.shared.error("velo.lock file does not exist. Run 'velo install' first to create it.")
                 throw ExitCode.failure
             }
 
@@ -258,12 +258,12 @@ extension Velo {
             let lockFile = try lockFileManager.read(from: lockFilePath)
 
             if check {
-                logInfo("Checking lock file integrity...")
+                OSLogger.shared.info("Checking lock file integrity...")
                 let installedPackages = try getInstalledPackagesForVerification(pathHelper: pathHelper)
                 let mismatches = lockFileManager.verifyInstallations(lockFile: lockFile, installedPackages: installedPackages)
 
                 if !mismatches.isEmpty {
-                    logWarning("Lock file mismatches detected:")
+                    OSLogger.shared.warning("Lock file mismatches detected:")
                     for mismatch in mismatches {
                         print("  • \(mismatch)")
                     }
@@ -272,7 +272,7 @@ extension Velo {
             }
 
             if frozen {
-                logInfo("Installing exactly from velo.lock (frozen mode)...")
+                OSLogger.shared.info("Installing exactly from velo.lock (frozen mode)...")
                 try await installFromLockFile(lockFile: lockFile, pathHelper: pathHelper)
             }
         }
@@ -305,11 +305,11 @@ extension Velo {
                 // Check if already installed with correct version
                 let installedVersions = pathHelper.installedVersions(for: packageName)
                 if installedVersions.contains(lockEntry.version) {
-                    logInfo("✓ \(packageName) \(lockEntry.version) already installed")
+                    OSLogger.shared.info("✓ \(packageName) \(lockEntry.version) already installed")
                     continue
                 }
 
-                logInfo("Installing \(packageName) \(lockEntry.version) from lock file...")
+                OSLogger.shared.info("Installing \(packageName) \(lockEntry.version) from lock file...")
 
                 // For frozen installs, we need to install the exact version specified
                 // This is a simplified implementation - in practice, we'd need to:
@@ -343,11 +343,11 @@ extension Velo {
                 )
             }
 
-            Logger.shared.success("All packages installed from velo.lock successfully!")
+            OSLogger.shared.success("All packages installed from velo.lock successfully!")
         }
 
         private func ensureRequiredTaps(_ requiredTaps: [String], pathHelper: PathHelper) async throws {
-            logInfo("Ensuring required taps are available...")
+            OSLogger.shared.info("Ensuring required taps are available...")
 
             let tapsPath = pathHelper.tapsPath
             var missingTaps: [String] = []
@@ -361,19 +361,19 @@ extension Velo {
             }
 
             if missingTaps.isEmpty {
-                logInfo("All required taps are available")
+                OSLogger.shared.info("All required taps are available")
                 return
             }
 
-            logInfo("Adding missing taps: \(missingTaps.joined(separator: ", "))")
+            OSLogger.shared.info("Adding missing taps: \(missingTaps.joined(separator: ", "))")
 
             // Add missing taps
             for tapName in missingTaps {
                 do {
                     try await addTap(tapName, to: tapsPath)
-                    logInfo("✓ Added tap \(tapName)")
+                    OSLogger.shared.info("✓ Added tap \(tapName)")
                 } catch {
-                    logError("Failed to add required tap \(tapName): \(error)")
+                    OSLogger.shared.error("Failed to add required tap \(tapName): \(error)")
                     throw VeloError.installationFailed(
                         package: "velo.json dependencies",
                         reason: "Required tap '\(tapName)' could not be added: \(error.localizedDescription)"
@@ -462,7 +462,7 @@ extension Velo {
                 to: manifestPath
             )
 
-            logInfo("Added \(package)@\(versionToSave) to dependencies")
+            OSLogger.shared.info("Added \(package)@\(versionToSave) to dependencies")
         }
 
         private func installPackage(
@@ -481,7 +481,7 @@ extension Velo {
             let progressHandler = CLIProgress()
 
             if verbose {
-                logInfo("Installing \(name)...")
+                OSLogger.shared.info("Installing \(name)...")
             }
 
             // Ensure we have the homebrew/core tap (skip for dependencies)
@@ -499,7 +499,7 @@ extension Velo {
                 let status = try installer.verifyInstallation(formula: formula)
                 if status.isInstalled {
                     if verbose {
-                        logInfo("\(formula.name) \(formula.version) is already installed")
+                        OSLogger.shared.info("\(formula.name) \(formula.version) is already installed")
                     }
                     return
                 }
@@ -538,7 +538,7 @@ extension Velo {
             for attempt in 0..<maxRetries {
                 do {
                     if attempt > 0 {
-                        logInfo("Retrying download (attempt \(attempt + 1)/\(maxRetries))...")
+                        OSLogger.shared.info("Retrying download (attempt \(attempt + 1)/\(maxRetries))...")
                         // Exponential backoff: 1s, 2s
                         try await Task.sleep(nanoseconds: UInt64(pow(2.0, Double(attempt))) * 1_000_000_000)
                     }
@@ -554,15 +554,15 @@ extension Velo {
 
                 } catch VeloError.bottleNotAccessible(let url, let reason) {
                     // Don't retry for access denied errors
-                    logWarning("Bottle not accessible for \(name): \(reason)")
-                    logWarning("Skipping \(name) installation due to bottle access restrictions.")
-                    logInfo("This may be due to GHCR access limitations or rate limiting.")
-                    logInfo("You can try installing \(name) again later or use an alternative installation method.")
+                    OSLogger.shared.warning("Bottle not accessible for \(name): \(reason)")
+                    OSLogger.shared.warning("Skipping \(name) installation due to bottle access restrictions.")
+                    OSLogger.shared.info("This may be due to GHCR access limitations or rate limiting.")
+                    OSLogger.shared.info("You can try installing \(name) again later or use an alternative installation method.")
 
                     throw VeloError.bottleNotAccessible(url: url, reason: reason)
 
                 } catch {
-                    logWarning("Download failed (attempt \(attempt + 1)/\(maxRetries)): \(error.localizedDescription)")
+                    OSLogger.shared.warning("Download failed (attempt \(attempt + 1)/\(maxRetries)): \(error.localizedDescription)")
 
                     if attempt == maxRetries - 1 {
                         // Last attempt failed, throw the error
@@ -581,11 +581,11 @@ extension Velo {
             // Clean up
             try? FileManager.default.removeItem(at: tempFile)
 
-            Logger.shared.success("\(formula.name) \(formula.version) installed successfully!")
+            OSLogger.shared.success("\(formula.name) \(formula.version) installed successfully!")
 
             // Show next steps
             if verbose && !PathHelper.shared.isInPath() {
-                logWarning("Add ~/.velo/bin to your PATH to use installed packages:")
+                OSLogger.shared.warning("Add ~/.velo/bin to your PATH to use installed packages:")
                 print("  echo 'export PATH=\"$HOME/.velo/bin:$PATH\"' >> ~/.zshrc")
             }
         }
@@ -607,11 +607,11 @@ extension Velo {
             for dependency in runtimeDependencies {
                 // Skip if already installed
                 if pathHelper.isPackageInstalled(dependency.name) {
-                    logInfo("✓ \(dependency.name) (already installed)")
+                    OSLogger.shared.info("✓ \(dependency.name) (already installed)")
                     continue
                 }
 
-                logInfo("Installing dependency: \(dependency.name)...")
+                OSLogger.shared.info("Installing dependency: \(dependency.name)...")
 
                 // Build dependency graph for this dependency
                 let graph = DependencyGraph(pathHelper: pathHelper)
@@ -620,7 +620,7 @@ extension Velo {
                 // Get packages that need to be installed
                 let newPackages = graph.newPackages
                 if newPackages.isEmpty {
-                    logInfo("✓ \(dependency.name) (no new packages needed)")
+                    OSLogger.shared.info("✓ \(dependency.name) (no new packages needed)")
                     continue
                 }
 
@@ -637,7 +637,7 @@ extension Velo {
                     pathHelper: pathHelper
                 )
 
-                logInfo("✓ \(dependency.name) and its dependencies installed successfully")
+                OSLogger.shared.info("✓ \(dependency.name) and its dependencies installed successfully")
             }
         }
 
@@ -696,9 +696,9 @@ private class CLIProgress: DownloadProgress, InstallationProgress {
 
     func downloadDidStart(url: String, totalSize: Int64?) {
         if let size = totalSize {
-            logInfo("Downloading \(formatBytes(size))...")
+            OSLogger.shared.info("Downloading \(formatBytes(size))...")
         } else {
-            logInfo("Downloading...")
+            OSLogger.shared.info("Downloading...")
         }
     }
 
@@ -709,30 +709,30 @@ private class CLIProgress: DownloadProgress, InstallationProgress {
 
         if let total = totalBytes {
             let percentage = Int((Double(bytesDownloaded) / Double(total)) * 100)
-            Logger.shared.progress("Downloading: \(percentage)% (\(formatBytes(bytesDownloaded))/\(formatBytes(total)))")
+            OSLogger.shared.progress("Downloading: \(percentage)% (\(formatBytes(bytesDownloaded))/\(formatBytes(total)))")
         } else {
-            Logger.shared.progress("Downloaded: \(formatBytes(bytesDownloaded))")
+            OSLogger.shared.progress("Downloaded: \(formatBytes(bytesDownloaded))")
         }
     }
 
     func downloadDidComplete(url: String) {
         print("\n")
-        logInfo("Download complete")
+        OSLogger.shared.info("Download complete")
     }
 
     func downloadDidFail(url: String, error: Error) {
         print("\n")
-        logError("Download failed: \(error.localizedDescription)")
+        OSLogger.shared.error("Download failed: \(error.localizedDescription)")
     }
 
     // MARK: - InstallationProgress
 
     func installationDidStart(package: String, version: String) {
-        logInfo("Installing \(package) \(version)...")
+        OSLogger.shared.info("Installing \(package) \(version)...")
     }
 
     func extractionDidStart(totalFiles: Int?) {
-        logInfo("Extracting package...")
+        OSLogger.shared.info("Extracting package...")
     }
 
     func extractionDidUpdate(filesExtracted: Int, totalFiles: Int?) {
@@ -741,7 +741,7 @@ private class CLIProgress: DownloadProgress, InstallationProgress {
 
     func linkingDidStart(binariesCount: Int) {
         if binariesCount > 0 {
-            logInfo("Creating \(binariesCount) symlink(s)...")
+            OSLogger.shared.info("Creating \(binariesCount) symlink(s)...")
         }
     }
 
@@ -754,7 +754,7 @@ private class CLIProgress: DownloadProgress, InstallationProgress {
     }
 
     func installationDidFail(package: String, error: Error) {
-        logError("Installation of \(package) failed: \(error.localizedDescription)")
+        OSLogger.shared.error("Installation of \(package) failed: \(error.localizedDescription)")
     }
 
     // MARK: - Helpers

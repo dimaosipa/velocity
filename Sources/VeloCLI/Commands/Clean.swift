@@ -33,7 +33,7 @@ extension Velo {
 
             // Validate flags
             if !packages && !cache && !all {
-                logError("Please specify what to clean: --packages, --cache, or --all")
+                OSLogger.shared.error("Please specify what to clean: --packages, --cache, or --all")
                 print("")
                 print("Usage:")
                 print("  velo clean --packages     # Remove all installed packages")
@@ -64,7 +64,7 @@ extension Velo {
                 cleanedItems.append("cache")
             }
 
-            Logger.shared.success("Cleaned \(cleanedItems.joined(separator: " and ")) successfully!")
+            OSLogger.shared.success("Cleaned \(cleanedItems.joined(separator: " and ")) successfully!")
 
             if shouldCleanPackages {
                 print("")
@@ -127,7 +127,7 @@ extension Velo {
         }
 
         private func cleanPackages(pathHelper: PathHelper, fileManager: FileManager) throws {
-            logInfo("Removing all packages...")
+            OSLogger.shared.info("Removing all packages...")
 
             // Remove Cellar directory (installed packages)
             if fileManager.fileExists(atPath: pathHelper.cellarPath.path) {
@@ -156,11 +156,11 @@ extension Velo {
             // Recreate essential directories
             try pathHelper.ensureVeloDirectories()
 
-            logInfo("All packages removed")
+            OSLogger.shared.info("All packages removed")
         }
 
         private func cleanCache(pathHelper: PathHelper, fileManager: FileManager) throws {
-            logInfo("Clearing download cache...")
+            OSLogger.shared.info("Clearing download cache...")
 
             if fileManager.fileExists(atPath: pathHelper.cachePath.path) {
                 let contents = try fileManager.contentsOfDirectory(at: pathHelper.cachePath, includingPropertiesForKeys: nil)
@@ -184,7 +184,7 @@ extension Velo {
                 }
             }
 
-            logInfo("Cache cleared")
+            OSLogger.shared.info("Cache cleared")
         }
     }
 }

@@ -28,7 +28,7 @@ extension Velo {
             // Ensure velo directories exist
             try PathHelper.shared.ensureVeloDirectories()
 
-            logInfo("Updating Velo...")
+            OSLogger.shared.info("Updating Velo...")
 
             if !repositoryOnly {
                 if dryRun {
@@ -42,7 +42,7 @@ extension Velo {
         }
 
         private func updateRepositories() async throws {
-            logInfo("Updating formula repositories...")
+            OSLogger.shared.info("Updating formula repositories...")
 
             let tapManager = TapManager()
             try await tapManager.updateTaps()
@@ -51,11 +51,11 @@ extension Velo {
             let cache = FormulaCache()
             try cache.clear()
 
-            Logger.shared.success("Formula repositories updated!")
+            OSLogger.shared.success("Formula repositories updated!")
         }
 
         private func showUpdates() async throws {
-            logInfo("Checking for package updates...")
+            OSLogger.shared.info("Checking for package updates...")
 
             // Update repositories first
             try await updateRepositories()
@@ -93,7 +93,7 @@ extension Velo {
 
             if !hasUpdates {
                 print()
-                Logger.shared.success("All packages are up to date!")
+                OSLogger.shared.success("All packages are up to date!")
             } else {
                 print()
                 print("Run 'velo update' without --dry-run to upgrade packages")
@@ -101,7 +101,7 @@ extension Velo {
         }
 
         private func performUpdates() async throws {
-            logInfo("Upgrading packages...")
+            OSLogger.shared.info("Upgrading packages...")
 
             // Update repositories first
             try await updateRepositories()
@@ -118,7 +118,7 @@ extension Velo {
 
             if packagesToUpdate.isEmpty {
                 if !packages.isEmpty {
-                    logError("None of the specified packages are installed")
+                    OSLogger.shared.error("None of the specified packages are installed")
                     throw ExitCode.failure
                 }
                 return
@@ -145,7 +145,7 @@ extension Velo {
                         continue
                     }
 
-                    logInfo("Upgrading \(package): \(currentVersion) -> \(formula.version)")
+                    OSLogger.shared.info("Upgrading \(package): \(currentVersion) -> \(formula.version)")
 
                     // Check for compatible bottle
                     guard let bottle = formula.preferredBottle else {
@@ -181,18 +181,18 @@ extension Velo {
                     // Clean up
                     try? FileManager.default.removeItem(at: tempFile)
 
-                    Logger.shared.success("\(package) upgraded to \(formula.version)")
+                    OSLogger.shared.success("\(package) upgraded to \(formula.version)")
                     upgradeCount += 1
 
                 } catch {
-                    logError("Failed to upgrade \(package): \(error.localizedDescription)")
+                    OSLogger.shared.error("Failed to upgrade \(package): \(error.localizedDescription)")
                 }
             }
 
             if upgradeCount == 0 {
-                Logger.shared.success("All packages are up to date!")
+                OSLogger.shared.success("All packages are up to date!")
             } else {
-                Logger.shared.success("Upgraded \(upgradeCount) package(s)")
+                OSLogger.shared.success("Upgraded \(upgradeCount) package(s)")
             }
         }
 

@@ -50,7 +50,7 @@ extension Velo {
                 context: context,
                 scope: scope
             ) else {
-                logError("Command '\(command)' not found")
+                OSLogger.shared.error("Command '\(command)' not found")
 
                 // Show helpful information
                 let whichResult = resolver.which(command, context: context)
@@ -104,7 +104,7 @@ extension Velo {
                     throw ExitCode(process.terminationStatus)
                 }
             } catch {
-                logError("Failed to execute '\(command)': \(error.localizedDescription)")
+                OSLogger.shared.error("Failed to execute '\(command)': \(error.localizedDescription)")
                 throw ExitCode.failure
             }
         }

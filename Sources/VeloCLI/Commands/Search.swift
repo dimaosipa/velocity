@@ -29,7 +29,7 @@ extension Velo {
             // Ensure velo directories exist
             try PathHelper.shared.ensureVeloDirectories()
 
-            logInfo("Searching for '\(term)'...")
+            OSLogger.shared.info("Searching for '\(term)'...")
 
             do {
                 let results = try await searchPackages(term: term, includeDescriptions: descriptions)
@@ -65,7 +65,7 @@ extension Velo {
                 print("\(results.count) package(s) found")
 
             } catch {
-                logError("Search failed: \(error.localizedDescription)")
+                OSLogger.shared.error("Search failed: \(error.localizedDescription)")
                 throw ExitCode.failure
             }
         }
@@ -90,7 +90,7 @@ extension Velo {
                         results.append(formula)
                     }
                 } catch {
-                    logVerbose("Failed to load formula \(name): \(error)")
+                    OSLogger.shared.verbose("Failed to load formula \(name): \(error)")
                 }
             }
 

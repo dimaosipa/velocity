@@ -74,12 +74,12 @@ extension Velo {
 
             do {
                 // Check for updates
-                logInfo("Fetching latest release information from GitHub...")
+                OSLogger.shared.info("Fetching latest release information from GitHub...")
                 let result = try await updater.checkForUpdates(config: config)
 
                 switch result {
                 case .upToDate(let current):
-                    Logger.shared.success("✅ Velo is up to date! (v\(current.description))")
+                    OSLogger.shared.success("✅ Velo is up to date! (v\(current.description))")
 
                 case .updateAvailable(let current, let latest):
                     guard let latestVersion = latest.version else {
@@ -136,7 +136,7 @@ extension Velo {
                 }
 
             } catch {
-                logError("Failed to check for updates: \(error.localizedDescription)")
+                OSLogger.shared.error("Failed to check for updates: \(error.localizedDescription)")
                 print("")
                 print("Troubleshooting:")
                 print("• Check your internet connection")
@@ -169,7 +169,7 @@ extension Velo {
                 }
 
                 print("")
-                Logger.shared.success("🎉 Velo has been updated to v\(latestVersion.description)!")
+                OSLogger.shared.success("🎉 Velo has been updated to v\(latestVersion.description)!")
                 print("")
                 print("The update is complete. You can now use the new version of Velo.")
 
@@ -180,7 +180,7 @@ extension Velo {
                 }
 
             } catch {
-                logError("Update failed: \(error.localizedDescription)")
+                OSLogger.shared.error("Update failed: \(error.localizedDescription)")
                 throw ExitCode.failure
             }
         }

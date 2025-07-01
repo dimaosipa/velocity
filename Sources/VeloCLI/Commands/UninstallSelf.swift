@@ -28,7 +28,7 @@ extension Velo {
 
             // Check if velo is installed
             guard fileManager.fileExists(atPath: veloBinaryPath.path) else {
-                logError("Velo is not installed in ~/.velo/bin/")
+                OSLogger.shared.error("Velo is not installed in ~/.velo/bin/")
                 throw ExitCode.failure
             }
 
@@ -36,7 +36,7 @@ extension Velo {
             let removeAll: Bool
 
             if binaryOnly && purge {
-                logError("Cannot specify both --binary-only and --purge")
+                OSLogger.shared.error("Cannot specify both --binary-only and --purge")
                 throw ExitCode.failure
             } else if binaryOnly {
                 removeAll = false
@@ -105,7 +105,7 @@ extension Velo {
         private func removeBinaryOnly(veloBinaryPath: URL, pathHelper: PathHelper) throws {
             let fileManager = FileManager.default
 
-            logInfo("Removing velo binary...")
+            OSLogger.shared.info("Removing velo binary...")
 
             // Remove the binary
             try fileManager.removeItem(at: veloBinaryPath)
@@ -113,7 +113,7 @@ extension Velo {
             // Clean PATH from shell profiles
             try cleanPathFromShellProfiles(pathHelper: pathHelper)
 
-            Logger.shared.success("Velo binary removed successfully!")
+            OSLogger.shared.success("Velo binary removed successfully!")
             print("")
             print("Your packages and data in ~/.velo/ have been preserved.")
             print("To reinstall velo, run the installation script again.")
@@ -123,7 +123,7 @@ extension Velo {
             let fileManager = FileManager.default
             let veloHome = pathHelper.veloHome
 
-            logInfo("Removing entire ~/.velo directory...")
+            OSLogger.shared.info("Removing entire ~/.velo directory...")
 
             // Remove the entire velo directory
             if fileManager.fileExists(atPath: veloHome.path) {
@@ -133,7 +133,7 @@ extension Velo {
             // Clean PATH from shell profiles
             try cleanPathFromShellProfiles(pathHelper: pathHelper)
 
-            Logger.shared.success("Velo completely removed!")
+            OSLogger.shared.success("Velo completely removed!")
             print("")
             print("All packages, cache, and configuration have been deleted.")
             print("To reinstall velo, run the installation script again.")
@@ -192,7 +192,7 @@ extension Velo {
             }
 
             if !profilesCleaned.isEmpty {
-                logInfo("Cleaned PATH from: \(profilesCleaned.joined(separator: ", "))")
+                OSLogger.shared.info("Cleaned PATH from: \(profilesCleaned.joined(separator: ", "))")
                 print("You may need to restart your terminal for PATH changes to take effect.")
             }
         }

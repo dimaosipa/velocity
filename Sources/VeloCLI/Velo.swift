@@ -42,21 +42,8 @@ public struct Velo: ParsableCommand {
     public init() {}
 
     private func setupLogging() {
-        let logger = Logger.shared
-
-        if quiet {
-            logger.logLevel = .error
-        } else if verbose {
-            logger.logLevel = .verbose
-        } else {
-            logger.logLevel = .info
-        }
-
-        logger.enableColors = !noColor
-        logger.enableTimestamps = verbose
-
-        // Set up log file
-        let logPath = PathHelper.shared.logsPath.appendingPathComponent("velo.log").path
-        try? logger.setLogFile(logPath)
+        // Note: OSLogger uses environment variable VELO_LOG_LEVEL for configuration
+        // CLI flags are maintained for compatibility but OSLogger handles the actual logging
+        // No additional setup needed as OSLogger.shared is configured automatically
     }
 }

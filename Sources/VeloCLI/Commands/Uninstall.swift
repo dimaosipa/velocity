@@ -33,11 +33,11 @@ extension Velo {
 
             if let specificVersion = version {
                 // Uninstall specific version
-                logInfo("Uninstalling \(package) v\(specificVersion)...")
+                OSLogger.shared.info("Uninstalling \(package) v\(specificVersion)...")
 
                 // Check if this specific version is installed
                 guard pathHelper.isSpecificVersionInstalled(package, version: specificVersion) else {
-                    logError("Package '\(package)' version '\(specificVersion)' is not installed")
+                    OSLogger.shared.error("Package '\(package)' version '\(specificVersion)' is not installed")
                     throw ExitCode.failure
                 }
 
@@ -47,27 +47,27 @@ extension Velo {
                     let input = readLine()?.lowercased()
 
                     if input != "y" && input != "yes" {
-                        logInfo("Uninstall cancelled")
+                        OSLogger.shared.info("Uninstall cancelled")
                         return
                     }
                 }
 
                 do {
                     try installer.uninstallVersion(package: package, version: specificVersion)
-                    Logger.shared.success("\(package) v\(specificVersion) uninstalled successfully!")
+                    OSLogger.shared.success("\(package) v\(specificVersion) uninstalled successfully!")
 
                 } catch {
-                    logError("Uninstallation failed: \(error.localizedDescription)")
+                    OSLogger.shared.error("Uninstallation failed: \(error.localizedDescription)")
                     throw ExitCode.failure
                 }
 
             } else {
                 // Uninstall all versions
-                logInfo("Uninstalling \(package)...")
+                OSLogger.shared.info("Uninstalling \(package)...")
 
                 // Check if package is installed
                 guard pathHelper.isPackageInstalled(package) else {
-                    logError("Package '\(package)' is not installed")
+                    OSLogger.shared.error("Package '\(package)' is not installed")
                     throw ExitCode.failure
                 }
 
@@ -85,23 +85,23 @@ extension Velo {
                     let input = readLine()?.lowercased()
 
                     if input != "y" && input != "yes" {
-                        logInfo("Uninstall cancelled")
+                        OSLogger.shared.info("Uninstall cancelled")
                         return
                     }
                 }
 
                 do {
                     try installer.uninstall(package: package)
-                    Logger.shared.success("\(package) uninstalled successfully!")
+                    OSLogger.shared.success("\(package) uninstalled successfully!")
 
                 } catch {
-                    logError("Uninstallation failed: \(error.localizedDescription)")
+                    OSLogger.shared.error("Uninstallation failed: \(error.localizedDescription)")
                     throw ExitCode.failure
                 }
             }
 
             // Show cleanup info
-            logInfo("Run 'velo doctor' to check for any orphaned dependencies")
+            OSLogger.shared.info("Run 'velo doctor' to check for any orphaned dependencies")
         }
     }
 }

@@ -26,17 +26,17 @@ extension Velo {
 
             // Check if we're in a project context
             guard context.isProjectContext else {
-                logError("Not in a project context. Run this command in a directory with velo.json")
+                OSLogger.shared.error("Not in a project context. Run this command in a directory with velo.json")
                 throw ExitCode.failure
             }
 
             guard let lockFilePath = context.lockFilePath else {
-                logError("No velo.lock file found")
+                OSLogger.shared.error("No velo.lock file found")
                 throw ExitCode.failure
             }
 
             guard FileManager.default.fileExists(atPath: lockFilePath.path) else {
-                logError("velo.lock file does not exist. Run 'velo install' to create it.")
+                OSLogger.shared.error("velo.lock file does not exist. Run 'velo install' to create it.")
                 throw ExitCode.failure
             }
 
@@ -151,10 +151,10 @@ extension Velo {
 
             // Summary
             if !hasIssues {
-                Logger.shared.success("All packages match velo.lock! (\(lockFile.dependencies.count) packages)")
+                OSLogger.shared.success("All packages match velo.lock! (\(lockFile.dependencies.count) packages)")
             } else {
                 let issueCount = mismatches.count + extraPackages.count
-                logError("Found \(issueCount) issue(s). Run 'velo install' to fix mismatches.")
+                OSLogger.shared.error("Found \(issueCount) issue(s). Run 'velo install' to fix mismatches.")
                 throw ExitCode.failure
             }
         }

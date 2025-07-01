@@ -57,13 +57,13 @@ extension Velo {
 
                     if isSameVersion {
                         let installType = symlink ? "symlinked" : "installed"
-                        logInfo("Velo is already \(installType) at \(targetPath.path)")
+                        OSLogger.shared.info("Velo is already \(installType) at \(targetPath.path)")
 
                         if !skipPath {
                             try updateShellProfiles()
                         }
 
-                        Logger.shared.success("Velo installation verified!")
+                        OSLogger.shared.success("Velo installation verified!")
                         showNextSteps()
                         return
                     }
@@ -71,12 +71,12 @@ extension Velo {
 
                 let oldType = isCurrentlySymlink ? "symlink" : "copy"
                 let newType = symlink ? "symlink" : "copy"
-                logInfo("Updating velo installation (\(oldType) → \(newType))...")
+                OSLogger.shared.info("Updating velo installation (\(oldType) → \(newType))...")
             }
 
             // Install binary (copy or symlink)
             let installType = symlink ? "Symlinking" : "Installing"
-            logInfo("\(installType) velo to \(targetPath.path)...")
+            OSLogger.shared.info("\(installType) velo to \(targetPath.path)...")
 
             // Remove existing if present
             if fileManager.fileExists(atPath: targetPath.path) {
@@ -86,7 +86,7 @@ extension Velo {
             if symlink {
                 // Create symlink
                 try fileManager.createSymbolicLink(at: targetPath, withDestinationURL: currentBinaryPath)
-                Logger.shared.success("Velo binary symlinked successfully!")
+                OSLogger.shared.success("Velo binary symlinked successfully!")
             } else {
                 // Copy binary
                 try fileManager.copyItem(at: currentBinaryPath, to: targetPath)
@@ -95,7 +95,7 @@ extension Velo {
                 let attributes = [FileAttributeKey.posixPermissions: 0o755]
                 try fileManager.setAttributes(attributes, ofItemAtPath: targetPath.path)
 
-                Logger.shared.success("Velo binary installed successfully!")
+                OSLogger.shared.success("Velo binary installed successfully!")
             }
 
             // Update shell profiles
@@ -179,15 +179,15 @@ extension Velo {
 
             // Report results
             if !profilesUpdated.isEmpty {
-                logInfo("Added ~/.velo/bin to PATH in: \(profilesUpdated.joined(separator: ", "))")
+                OSLogger.shared.info("Added ~/.velo/bin to PATH in: \(profilesUpdated.joined(separator: ", "))")
             }
 
             if !profilesAlreadyConfigured.isEmpty {
-                logInfo("PATH already configured in: \(profilesAlreadyConfigured.joined(separator: ", "))")
+                OSLogger.shared.info("PATH already configured in: \(profilesAlreadyConfigured.joined(separator: ", "))")
             }
 
             if profilesUpdated.isEmpty && profilesAlreadyConfigured.isEmpty {
-                logWarning("No shell profile files found. You may need to manually add to PATH:")
+                OSLogger.shared.warning("No shell profile files found. You may need to manually add to PATH:")
                 print("  echo '\(exportLine)' >> ~/.zshrc")
             }
         }

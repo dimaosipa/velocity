@@ -24,11 +24,11 @@ extension Velo {
         private func runAsync() async throws {
             let pathHelper = PathHelper.shared
 
-            logInfo("Switching \(package) default version to \(version)...")
+            OSLogger.shared.info("Switching \(package) default version to \(version)...")
 
             // Check if the specified version is installed
             guard pathHelper.isSpecificVersionInstalled(package, version: version) else {
-                logError("Package '\(package)' version '\(version)' is not installed")
+                OSLogger.shared.error("Package '\(package)' version '\(version)' is not installed")
                 print("\nAvailable versions:")
                 let availableVersions = pathHelper.installedVersions(for: package)
                 if availableVersions.isEmpty {
@@ -43,7 +43,7 @@ extension Velo {
 
             do {
                 try pathHelper.setDefaultVersion(for: package, version: version)
-                Logger.shared.success("Default version for \(package) switched to \(version)")
+                OSLogger.shared.success("Default version for \(package) switched to \(version)")
 
                 // Show which binaries are now available
                 let packageDir = pathHelper.packagePath(for: package, version: version)
@@ -62,7 +62,7 @@ extension Velo {
                 }
 
             } catch {
-                logError("Failed to switch version: \(error.localizedDescription)")
+                OSLogger.shared.error("Failed to switch version: \(error.localizedDescription)")
                 throw ExitCode.failure
             }
         }

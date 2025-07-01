@@ -126,7 +126,7 @@ extension Velo {
                 }
 
             } catch {
-                logError("Failed to list packages: \(error.localizedDescription)")
+                OSLogger.shared.error("Failed to list packages: \(error.localizedDescription)")
                 throw ExitCode.failure
             }
         }

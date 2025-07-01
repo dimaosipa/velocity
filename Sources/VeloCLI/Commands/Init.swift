@@ -25,7 +25,7 @@ extension Velo {
 
             // Check if velo.json already exists
             if fileManager.fileExists(atPath: manifestPath.path) {
-                logError("velo.json already exists in the current directory")
+                OSLogger.shared.error("velo.json already exists in the current directory")
 
                 if !yes {
                     print("Overwrite? [y/N]: ", terminator: "")
@@ -43,7 +43,7 @@ extension Velo {
                 let manifest = VeloManifest(dependencies: [:])
 
                 try manifestManager.write(manifest, to: manifestPath)
-                Logger.shared.success("Created velo.json with default values")
+                OSLogger.shared.success("Created velo.json with default values")
             } else {
                 // Interactive mode
                 try manifestManager.createInteractive(at: manifestPath)
@@ -52,10 +52,10 @@ extension Velo {
             // Create .velo directory
             let localVeloPath = currentDir.appendingPathComponent(".velo")
             if !fileManager.fileExists(atPath: localVeloPath.path) {
-                logInfo("Creating .velo directory...")
+                OSLogger.shared.info("Creating .velo directory...")
                 let localPathHelper = PathHelper(customHome: localVeloPath)
                 try localPathHelper.ensureVeloDirectories()
-                Logger.shared.success("Created .velo directory structure")
+                OSLogger.shared.success("Created .velo directory structure")
             }
 
             // Add .velo to .gitignore if it exists
@@ -70,7 +70,7 @@ extension Velo {
                     gitignoreContent += "\n# Velo local packages\n.velo/\n"
 
                     try gitignoreContent.write(to: gitignorePath, atomically: true, encoding: .utf8)
-                    logInfo("Added .velo to .gitignore")
+                    OSLogger.shared.info("Added .velo to .gitignore")
                 }
             }
 
