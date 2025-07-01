@@ -268,13 +268,20 @@ public struct PathHelper {
         try fileManager.createSymbolicLink(at: destination, withDestinationURL: source)
     }
     
+    /// Result of symlink creation attempt
+    public enum SymlinkResult {
+        case created
+        case skipped(reason: String)
+        case failed(error: Error)
+    }
+    
     /// Create symlink with conflict detection and resolution
     public func createSymlinkWithConflictDetection(
         from source: URL, 
         to destination: URL, 
         packageName: String,
         force: Bool = false
-    ) throws {
+    ) -> SymlinkResult {
         let destinationPath = destination.path
         
         if force {
@@ -287,7 +294,7 @@ public struct PathHelper {
                 // Force mode - always replace, no questions asked
                 OSLogger.shared.info("🔗 Force replacing existing file/symlink: \(destination.lastPathComponent)")
             } else {
-                // Non-force mode - check package equivalence
+                // Non-force mode - check package equivalence and skip conflicts (Homebrew-style)
                 if let existingTarget = try? fileManager.destinationOfSymbolicLink(atPath: destinationPath) {
                     let existingPackage = extractPackageFromPath(existingTarget)
                     
@@ -295,11 +302,8 @@ public struct PathHelper {
                         // Check if packages are equivalent
                         let equivalents = getEquivalentPackageNames(for: packageName)
                         if !equivalents.contains(existing) {
-                            // Different packages - throw error
-                            throw VeloError.symlinkFailed(
-                                from: source.path,
-                                to: destination.path + " (already exists from package: \(existing), use --force to override)"
-                            )
+                            // Different packages - skip symlink creation (Homebrew behavior)
+                            return .skipped(reason: "conflicts with existing symlink from \(existing)")
                         }
                         // Equivalent packages - allow replacement
                         OSLogger.shared.info("🔗 Replacing symlink for equivalent package: \(existing) -> \(packageName)")
@@ -307,11 +311,8 @@ public struct PathHelper {
                         OSLogger.shared.warning("🔗 Replacing symlink from unknown package")
                     }
                 } else {
-                    // File exists but is not a symlink
-                    throw VeloError.symlinkFailed(
-                        from: source.path,
-                        to: destination.path + " (file already exists, use --force to override)"
-                    )
+                    // File exists but is not a symlink - skip creation (Homebrew behavior)
+                    return .skipped(reason: "file already exists")
                 }
             }
             
@@ -340,16 +341,16 @@ public struct PathHelper {
                         try aggressiveFileRemoval(at: destination)
                         OSLogger.shared.info("✅ Successfully removed stubborn file with aggressive removal")
                     } catch {
-                        throw VeloError.symlinkFailed(
+                        return .failed(error: VeloError.symlinkFailed(
                             from: source.path,
                             to: destination.path + " (failed to remove existing file even with force: \(error.localizedDescription))"
-                        )
+                        ))
                     }
                 } else {
-                    throw VeloError.symlinkFailed(
+                    return .failed(error: VeloError.symlinkFailed(
                         from: source.path,
                         to: destination.path + " (failed to remove existing file: \(error.localizedDescription))"
-                    )
+                    ))
                 }
             }
         }
@@ -357,15 +358,16 @@ public struct PathHelper {
         do {
             try fileManager.createSymbolicLink(at: destination, withDestinationURL: source)
             OSLogger.shared.debug("✅ Created symlink: \(destination.lastPathComponent) -> \(source.path)", category: OSLogger.shared.general)
+            return .created
         } catch {
             // Double-check if the file still exists after our removal attempt
             let fileStillExists = fileManager.fileExists(atPath: destination.path)
             OSLogger.shared.warning("❌ Symlink creation failed. File still exists: \(fileStillExists)")
             
-            throw VeloError.symlinkFailed(
+            return .failed(error: VeloError.symlinkFailed(
                 from: source.path,
                 to: destination.path + " (\(error.localizedDescription))"
-            )
+            ))
         }
     }
     
@@ -467,7 +469,17 @@ public struct PathHelper {
             let defaultSymlinkPath = symlinkPath(for: binary)
 
             // Update the default symlink to point to this version
-            try createSymlink(from: sourcePath, to: defaultSymlinkPath)
+            let result = createSymlinkWithConflictDetection(from: sourcePath, to: defaultSymlinkPath, packageName: package, force: false)
+            
+            switch result {
+            case .created:
+                OSLogger.shared.debug("✅ Updated default symlink for \(binary) -> \(package) \(version)", category: OSLogger.shared.general)
+            case .skipped(let reason):
+                OSLogger.shared.info("⚠️ Skipped updating default symlink for \(binary): \(reason)", category: OSLogger.shared.general)
+            case .failed(let error):
+                OSLogger.shared.warning("❌ Failed to update default symlink for \(binary): \(error.localizedDescription)", category: OSLogger.shared.general)
+                throw error // In this context, we should still fail if we can't update the default
+            }
         }
     }
 

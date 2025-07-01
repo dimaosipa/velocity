@@ -202,6 +202,11 @@ public final class Installer {
 
         progress?.linkingDidStart(binariesCount: totalBinaries)
 
+        // Track symlink creation statistics
+        var createdSymlinks = 0
+        var skippedSymlinks: [String] = []
+        var failedSymlinks: [String] = []
+        
         // Process all bin directories
         for directory in binDirectories {
             let isFrameworkBin = directory.path.contains("Framework")
@@ -213,16 +218,54 @@ public final class Installer {
 
                 // Create versioned symlink
                 let versionedPath = pathHelper.versionedSymlinkPath(for: binary, package: formula.name, version: formula.version)
-                try pathHelper.createSymlinkWithConflictDetection(from: sourcePath, to: versionedPath, packageName: formula.name, force: force)
+                let versionedResult = pathHelper.createSymlinkWithConflictDetection(from: sourcePath, to: versionedPath, packageName: formula.name, force: force)
+                
+                switch versionedResult {
+                case .created:
+                    createdSymlinks += 1
+                case .skipped(let reason):
+                    skippedSymlinks.append("\(binary)@\(formula.version) (\(reason))")
+                case .failed(let error):
+                    if force {
+                        throw error // In force mode, failures should still throw
+                    } else {
+                        failedSymlinks.append("\(binary)@\(formula.version)")
+                    }
+                }
 
                 // Create or update default symlink
                 let defaultPath = pathHelper.symlinkPath(for: binary)
-                try pathHelper.createSymlinkWithConflictDetection(from: sourcePath, to: defaultPath, packageName: formula.name, force: force)
+                let defaultResult = pathHelper.createSymlinkWithConflictDetection(from: sourcePath, to: defaultPath, packageName: formula.name, force: force)
+                
+                switch defaultResult {
+                case .created:
+                    createdSymlinks += 1
+                case .skipped(let reason):
+                    skippedSymlinks.append("\(binary) (\(reason))")
+                case .failed(let error):
+                    if force {
+                        throw error // In force mode, failures should still throw
+                    } else {
+                        failedSymlinks.append(binary)
+                    }
+                }
 
                 linkedBinaries += 1
                 progress?.linkingDidUpdate(binariesLinked: linkedBinaries, totalBinaries: totalBinaries)
             }
         }
+        
+        // Log symlink creation summary
+        if !skippedSymlinks.isEmpty {
+            OSLogger.shared.info("⚠️ Skipped \(skippedSymlinks.count) symlinks due to conflicts: \(skippedSymlinks.joined(separator: ", "))", category: OSLogger.shared.installer)
+            OSLogger.shared.info("💡 Use versioned symlinks or --force to override conflicts", category: OSLogger.shared.installer)
+        }
+        
+        if !failedSymlinks.isEmpty {
+            OSLogger.shared.warning("❌ Failed to create \(failedSymlinks.count) symlinks: \(failedSymlinks.joined(separator: ", "))", category: OSLogger.shared.installer)
+        }
+        
+        OSLogger.shared.info("✅ Created \(createdSymlinks) symlinks for \(formula.name)", category: OSLogger.shared.installer)
 
 
         if totalBinaries == 0 {
@@ -296,7 +339,16 @@ public final class Installer {
         // Only create default symlink if this binary exists in the latest version
         if fileManager.fileExists(atPath: latestBinaryPath.path) {
             let defaultSymlinkPath = pathHelper.symlinkPath(for: binary)
-            try pathHelper.createSymlink(from: latestBinaryPath, to: defaultSymlinkPath)
+            let result = pathHelper.createSymlinkWithConflictDetection(from: latestBinaryPath, to: defaultSymlinkPath, packageName: package, force: false)
+            
+            switch result {
+            case .created:
+                OSLogger.shared.debug("✅ Updated default symlink for \(binary) -> \(package) \(latestVersion)", category: OSLogger.shared.installer)
+            case .skipped(let reason):
+                OSLogger.shared.info("⚠️ Skipped updating default symlink for \(binary): \(reason)", category: OSLogger.shared.installer)
+            case .failed(let error):
+                OSLogger.shared.warning("❌ Failed to update default symlink for \(binary): \(error.localizedDescription)", category: OSLogger.shared.installer)
+            }
         }
     }
 
