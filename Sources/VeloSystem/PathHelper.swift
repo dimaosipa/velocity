@@ -97,7 +97,37 @@ public struct PathHelper {
 
     public func isPackageInstalled(_ package: String) -> Bool {
         let packageDir = cellarPath.appendingPathComponent(package)
-        return fileManager.fileExists(atPath: packageDir.path)
+        
+        // Check if directory exists
+        guard fileManager.fileExists(atPath: packageDir.path) else {
+            return false
+        }
+        
+        // Check if directory has version subdirectories and they are not empty
+        do {
+            let versionDirs = try fileManager.contentsOfDirectory(atPath: packageDir.path)
+                .filter { !$0.hasPrefix(".") }
+            
+            // If no version directories, this is not a valid installation
+            guard !versionDirs.isEmpty else {
+                return false
+            }
+            
+            // Check if at least one version directory is properly installed
+            for versionDir in versionDirs {
+                let versionPath = packageDir.appendingPathComponent(versionDir)
+                
+                // Check if version directory has content
+                let versionContents = try fileManager.contentsOfDirectory(atPath: versionPath.path)
+                if !versionContents.isEmpty {
+                    return true
+                }
+            }
+            
+            return false
+        } catch {
+            return false
+        }
     }
     
     /// Check if any equivalent package is installed
