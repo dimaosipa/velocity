@@ -538,19 +538,18 @@ extension Velo {
 
             // Note: Already installed check is now done in the main run() function
 
-            // Install dependencies using dependency graph approach
+            // Resolve dependencies (but don't install yet - that happens during installation step)
             if !skipDeps {
                 ProgressReporter.shared.startLiveStep("[\(stepCount)/\(totalSteps)] 🔍 Resolving dependencies")
-                let depCount = try await installDependenciesWithGraph(
+                let depCount = try await resolveDependencies(
                     for: formula,
                     tapManager: tapManager,
-                    pathHelper: pathHelper,
-                    force: force
+                    pathHelper: pathHelper
                 )
                 if depCount > 0 {
-                    ProgressReporter.shared.completeLiveStep("Resolved \(depCount) dependencies")
+                    ProgressReporter.shared.completeLiveStep("[\(stepCount)/\(totalSteps)] ✓ Resolved \(depCount) dependencies")
                 } else {
-                    ProgressReporter.shared.completeLiveStep("No dependencies required")
+                    ProgressReporter.shared.completeLiveStep("[\(stepCount)/\(totalSteps)] ✓ No dependencies required")
                 }
                 stepCount += 1
             }
@@ -643,9 +642,25 @@ extension Velo {
             
             ProgressReporter.shared.completeLiveStep("Downloaded \(formula.name)")
 
-            // Install main package
+            // Install main package  
             stepCount += 1
             ProgressReporter.shared.startLiveStep("[\(stepCount)/\(totalSteps)] 🔧 Installing \(formula.name)")
+            
+            // Install dependencies first if any (with progress)
+            let depCount = try await installDependenciesWithProgress(
+                for: formula,
+                tapManager: tapManager,
+                pathHelper: pathHelper,
+                force: force,
+                stepCount: stepCount,
+                totalSteps: totalSteps
+            )
+            
+            // Now install the main package
+            if depCount > 0 {
+                ProgressReporter.shared.updateLiveProgress("[\(stepCount)/\(totalSteps)] 🔧 Installing \(formula.name) (main package)")
+            }
+            
             try await installer.install(
                 formula: formula,
                 from: tempFile,
@@ -653,7 +668,11 @@ extension Velo {
                 force: force
             )
             
-            ProgressReporter.shared.completeLiveStep("Installed \(formula.name)")
+            if depCount > 0 {
+                ProgressReporter.shared.completeLiveStep("[\(stepCount)/\(totalSteps)] ✓ Installed \(formula.name) and \(depCount) dependencies")
+            } else {
+                ProgressReporter.shared.completeLiveStep("[\(stepCount)/\(totalSteps)] ✓ Installed \(formula.name)")
+            }
 
             // Clean up
             try? FileManager.default.removeItem(at: tempFile)
@@ -671,6 +690,88 @@ extension Velo {
         }
 
         // MARK: - Dependency Resolution with Complete Graph
+
+        /// Resolve dependencies without installing them
+        private func resolveDependencies(
+            for formula: Formula,
+            tapManager: TapManager,
+            pathHelper: PathHelper
+        ) async throws -> Int {
+            let runtimeDependencies = formula.dependencies.filter { $0.type == .required }
+
+            if runtimeDependencies.isEmpty {
+                return 0
+            }
+
+            // Build dependency graph quietly
+            let dependencyNames = runtimeDependencies.map { $0.name }
+            let graph = DependencyGraph(pathHelper: pathHelper)
+            
+            // Update progress with package count discovery
+            ProgressReporter.shared.updateLiveProgress("Resolving dependencies... (\(dependencyNames.count) direct)")
+            
+            try await graph.buildCompleteGraph(for: dependencyNames, tapManager: tapManager)
+            
+            // Update with total resolved count
+            ProgressReporter.shared.updateLiveProgress("Resolving dependencies... (\(graph.allPackages.count) total)")
+
+            // Version conflicts are handled at the equivalence level
+            // No additional conflict checking needed since Homebrew formulae
+            // are designed to work together
+            
+            return graph.installablePackages.count
+        }
+
+        /// Install dependencies with detailed progress reporting
+        private func installDependenciesWithProgress(
+            for formula: Formula,
+            tapManager: TapManager,
+            pathHelper: PathHelper,
+            force: Bool = false,
+            stepCount: Int,
+            totalSteps: Int
+        ) async throws -> Int {
+            let runtimeDependencies = formula.dependencies.filter { $0.type == .required }
+
+            if runtimeDependencies.isEmpty {
+                return 0
+            }
+
+            // Build dependency graph
+            let dependencyNames = runtimeDependencies.map { $0.name }
+            let graph = DependencyGraph(pathHelper: pathHelper)
+            try await graph.buildCompleteGraph(for: dependencyNames, tapManager: tapManager)
+            
+            let installablePackages = graph.installablePackages
+            
+            if installablePackages.isEmpty {
+                return 0
+            }
+            
+            // Create install plan and execute installation with progress
+            let installPlan = try InstallPlan(graph: graph, rootPackage: formula.name)
+            
+            // Download all dependencies
+            let downloadManager = ParallelDownloadManager(pathHelper: pathHelper)
+            let downloads = try await downloadManager.downloadAll(packages: installablePackages, progress: nil)
+            
+            let installOrder = installPlan.installOrder
+            
+            // Install with detailed progress
+            try await installPackagesInOrder(
+                installOrder: installOrder,
+                downloads: downloads,
+                graph: graph,
+                pathHelper: pathHelper,
+                installTracker: nil,
+                force: force,
+                showProgress: true,
+                stepCount: stepCount,
+                totalSteps: totalSteps
+            )
+            
+            return installablePackages.count
+        }
 
         private func installDependenciesWithGraph(
             for formula: Formula,
@@ -737,13 +838,26 @@ extension Velo {
             let downloads = try await downloadManager.downloadAll(packages: installablePackages, progress: nil)
             
             let installOrder = installPlan.installOrder
+            // Show progress during dependency installation if there are dependencies
+            if !installOrder.isEmpty {
+                let hasUninstalled = installOrder.contains { packageName in
+                    guard let node = graph.getNode(for: packageName) else { return false }
+                    return !node.isInstalled
+                }
+                
+                if hasUninstalled {
+                    ProgressReporter.shared.updateLiveProgress("Installing dependencies...")
+                }
+            }
+            
             try await installPackagesInOrder(
                 installOrder: installOrder,
                 downloads: downloads,
                 graph: graph,
                 pathHelper: pathHelper,
                 installTracker: nil,
-                force: force
+                force: force,
+                showProgress: false  // Keep quiet for dependencies to avoid noise
             )
             
             return installablePackages.count
@@ -756,10 +870,19 @@ extension Velo {
             graph: DependencyGraph,
             pathHelper: PathHelper,
             installTracker: InstallationProgressTracker?,
-            force: Bool = false
+            force: Bool = false,
+            showProgress: Bool = false,
+            stepCount: Int = 0,
+            totalSteps: Int = 0
         ) async throws {
             let installer = Installer(pathHelper: pathHelper)
             installTracker?.startInstallation()
+            
+            var currentIndex = 0
+            let totalPackages = installOrder.filter { packageName in
+                guard let node = graph.getNode(for: packageName) else { return false }
+                return !node.isInstalled
+            }.count
             
             for packageName in installOrder {
                 guard let node = graph.getNode(for: packageName) else { continue }
@@ -767,6 +890,13 @@ extension Velo {
                 // Skip if already installed
                 if node.isInstalled {
                     continue
+                }
+                
+                currentIndex += 1
+                
+                // Show progress if requested
+                if showProgress {
+                    ProgressReporter.shared.updateLiveProgress("[\(stepCount)/\(totalSteps)] 🔧 Installing dependencies (\(currentIndex)/\(totalPackages)): \(packageName)")
                 }
                 
                 guard let downloadResult = downloads[packageName] else {

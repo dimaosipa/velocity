@@ -361,7 +361,6 @@ public class DependencyGraph {
         }
         
         OSLogger.shared.verbose("Topological sort completed: \(result.joined(separator: " -> "))", category: OSLogger.shared.installer)
-        print("  Topological sort completed in \(Date().timeIntervalSince(startTime))s")
         return result
     }
     
