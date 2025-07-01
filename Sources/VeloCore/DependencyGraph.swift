@@ -290,10 +290,13 @@ public class DependencyGraph {
         var queue: [String] = []
         var result: [String] = []
         
+        let startTime = Date()
+        
         // Initialize in-degree count for all nodes
         for (package, _) in nodes {
             inDegree[package] = 0
         }
+        OSLogger.shared.debug("Initialized in-degrees in \(Date().timeIntervalSince(startTime))s", category: OSLogger.shared.installer)
         
         // Count incoming edges (packages that depend on each package)
         for (_, dependencies) in edges {
@@ -301,12 +304,7 @@ public class DependencyGraph {
                 inDegree[dependency, default: 0] += 1
             }
         }
-        
-        // Log in-degrees for debugging
-        OSLogger.shared.verbose("Initial in-degrees:", category: OSLogger.shared.installer)
-        for (package, degree) in inDegree.sorted(by: { $0.key < $1.key }) {
-            OSLogger.shared.verbose("  \(package): \(degree)", category: OSLogger.shared.installer)
-        }
+        OSLogger.shared.debug("Counted edges in \(Date().timeIntervalSince(startTime))s", category: OSLogger.shared.installer)
         
         // Find packages with no dependencies (in-degree = 0)
         for (package, degree) in inDegree {
@@ -314,11 +312,21 @@ public class DependencyGraph {
                 queue.append(package)
             }
         }
+        OSLogger.shared.debug("Found \(queue.count) root packages in \(Date().timeIntervalSince(startTime))s", category: OSLogger.shared.installer)
         
-        // Process queue
+        // Process queue with progress tracking
+        var processed = 0
+        let totalPackages = nodes.count
+        
         while !queue.isEmpty {
             let current = queue.removeFirst()
             result.append(current)
+            processed += 1
+            
+            // Log progress every 20 packages
+            if processed % 20 == 0 {
+                OSLogger.shared.debug("Processed \(processed)/\(totalPackages) packages", category: OSLogger.shared.installer)
+            }
             
             // Reduce in-degree for all dependencies of the current package
             if let dependencies = edges[current] {
@@ -403,11 +411,25 @@ public struct InstallPlan {
     public let estimatedSize: Int64
     
     public init(graph: DependencyGraph, rootPackage: String) throws {
+        OSLogger.shared.debug("Creating InstallPlan for \(rootPackage)", category: OSLogger.shared.installer)
+        
         self.rootPackage = rootPackage
+        
+        OSLogger.shared.debug("Getting new packages...", category: OSLogger.shared.installer)
         self.newPackages = graph.newPackages
+        OSLogger.shared.debug("Found \(self.newPackages.count) new packages", category: OSLogger.shared.installer)
+        
+        OSLogger.shared.debug("Getting installed packages...", category: OSLogger.shared.installer)
         self.alreadyInstalled = graph.installedPackages
+        OSLogger.shared.debug("Found \(self.alreadyInstalled.count) installed packages", category: OSLogger.shared.installer)
+        
+        OSLogger.shared.debug("Computing install order...", category: OSLogger.shared.installer)
         self.installOrder = try graph.getInstallOrder()
+        OSLogger.shared.debug("Install order computed with \(self.installOrder.count) packages", category: OSLogger.shared.installer)
+        
+        OSLogger.shared.debug("Estimating download size...", category: OSLogger.shared.installer)
         self.estimatedSize = try graph.estimatedDownloadSize()
+        OSLogger.shared.debug("InstallPlan created successfully", category: OSLogger.shared.installer)
     }
     
     /// Display install plan to user

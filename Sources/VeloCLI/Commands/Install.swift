@@ -715,7 +715,10 @@ extension Velo {
             }
             
             // Show install plan
+            print("  Creating install plan...")
+            ProgressReporter.shared.startStep("🔍 Creating install plan")
             let installPlan = try InstallPlan(graph: graph, rootPackage: formula.name)
+            ProgressReporter.shared.completeStep("✅ Install plan created")
             installPlan.display()
 
             // Step 2: Download packages
