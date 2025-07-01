@@ -38,6 +38,18 @@ public final class Installer {
 
         // Create package directory
         let packageDir = pathHelper.packagePath(for: formula.name, version: formula.version)
+        
+        // If force is used and package directory exists, remove it first for clean reinstall
+        if force && fileManager.fileExists(atPath: packageDir.path) {
+            OSLogger.shared.info("🔧 Force mode: removing existing package directory for clean reinstall", category: OSLogger.shared.installer)
+            
+            // First remove any existing symlinks for this package/version
+            try removeSymlinks(for: formula.name, version: formula.version, packageDir: packageDir)
+            
+            // Then remove the package directory
+            try fileManager.removeItem(at: packageDir)
+        }
+        
         try pathHelper.ensureDirectoryExists(at: packageDir)
 
         do {
@@ -48,7 +60,7 @@ public final class Installer {
             try await rewriteLibraryPaths(for: formula, packageDir: packageDir)
 
             // Create symlinks
-            try await createSymlinks(for: formula, packageDir: packageDir, progress: progress)
+            try await createSymlinks(for: formula, packageDir: packageDir, progress: progress, force: force)
 
             // Create opt symlink for Homebrew compatibility
             try pathHelper.createOptSymlink(for: formula.name, version: formula.version)
@@ -154,13 +166,14 @@ public final class Installer {
     private func createSymlinks(
         for formula: Formula,
         packageDir: URL,
-        progress: InstallationProgress?
+        progress: InstallationProgress?,
+        force: Bool = false
     ) async throws {
         let binDir = packageDir.appendingPathComponent("bin")
         var totalBinaries = 0
         var linkedBinaries = 0
 
-        // Count total binaries from both bin/ and libexec/bin/
+        // Count total binaries from bin/, libexec/bin/, and Framework bins
         var binDirectories: [URL] = []
         
         if fileManager.fileExists(atPath: binDir.path) {
@@ -177,65 +190,40 @@ public final class Installer {
                 .filter { !$0.hasPrefix(".") && !$0.hasSuffix(".pyc") }
             totalBinaries += libexecBinaries.count
         }
+        
+        // Also check for Framework binaries (for Python, etc.)
+        let frameworkBinDirs = try findFrameworkBinDirectories(in: packageDir)
+        for frameworkBinDir in frameworkBinDirs {
+            binDirectories.append(frameworkBinDir)
+            let frameworkBinaries = try fileManager.contentsOfDirectory(atPath: frameworkBinDir.path)
+                .filter { !$0.hasPrefix(".") && !$0.hasSuffix(".pyc") }
+            totalBinaries += frameworkBinaries.count
+        }
 
         progress?.linkingDidStart(binariesCount: totalBinaries)
 
-        // Process main bin directory first
-        if fileManager.fileExists(atPath: binDir.path) {
-            let binaries = try fileManager.contentsOfDirectory(atPath: binDir.path)
-                .filter { !$0.hasPrefix(".") }
-
-            for binary in binaries {
-                let sourcePath = binDir.appendingPathComponent(binary)
-
-                // Create versioned symlink (e.g., python3.9@3.9.23)
-                let versionedPath = pathHelper.versionedSymlinkPath(for: binary, package: formula.name, version: formula.version)
-                try pathHelper.createSymlinkWithConflictDetection(from: sourcePath, to: versionedPath, packageName: formula.name)
-
-                // Create or update default symlink (e.g., python3.9)
-                let defaultPath = pathHelper.symlinkPath(for: binary)
-                try pathHelper.createSymlinkWithConflictDetection(from: sourcePath, to: defaultPath, packageName: formula.name)
-
-                linkedBinaries += 1
-                progress?.linkingDidUpdate(binariesLinked: linkedBinaries, totalBinaries: totalBinaries)
-            }
-        }
-
-        // Process libexec/bin directory for unversioned command aliases
-        if fileManager.fileExists(atPath: libexecBinDir.path) {
-            let libexecBinaries = try fileManager.contentsOfDirectory(atPath: libexecBinDir.path)
+        // Process all bin directories
+        for directory in binDirectories {
+            let isFrameworkBin = directory.path.contains("Framework")
+            let binaries = try fileManager.contentsOfDirectory(atPath: directory.path)
                 .filter { !$0.hasPrefix(".") && !$0.hasSuffix(".pyc") }
 
-            for binary in libexecBinaries {
-                let sourcePath = libexecBinDir.appendingPathComponent(binary)
-                
-                // For libexec/bin entries, check if they are symlinks to bin/ directory
-                let linkTarget: URL
-                if fileManager.fileExists(atPath: sourcePath.path) {
-                    do {
-                        // Try to resolve the symlink target
-                        let targetPath = try fileManager.destinationOfSymbolicLink(atPath: sourcePath.path)
-                        linkTarget = URL(fileURLWithPath: targetPath, relativeTo: sourcePath.deletingLastPathComponent())
-                    } catch {
-                        // If not a symlink, use the file directly
-                        linkTarget = sourcePath
-                    }
-                } else {
-                    linkTarget = sourcePath
-                }
+            for binary in binaries {
+                let sourcePath = directory.appendingPathComponent(binary)
 
-                // Create versioned symlink for unversioned command (e.g., python@3.9.23_3)
+                // Create versioned symlink
                 let versionedPath = pathHelper.versionedSymlinkPath(for: binary, package: formula.name, version: formula.version)
-                try pathHelper.createSymlinkWithConflictDetection(from: linkTarget, to: versionedPath, packageName: formula.name)
+                try pathHelper.createSymlinkWithConflictDetection(from: sourcePath, to: versionedPath, packageName: formula.name, force: force)
 
-                // Create or update default symlink for unversioned command (e.g., python)
+                // Create or update default symlink
                 let defaultPath = pathHelper.symlinkPath(for: binary)
-                try pathHelper.createSymlinkWithConflictDetection(from: linkTarget, to: defaultPath, packageName: formula.name)
+                try pathHelper.createSymlinkWithConflictDetection(from: sourcePath, to: defaultPath, packageName: formula.name, force: force)
 
                 linkedBinaries += 1
                 progress?.linkingDidUpdate(binariesLinked: linkedBinaries, totalBinaries: totalBinaries)
             }
         }
+
 
         if totalBinaries == 0 {
             progress?.linkingDidStart(binariesCount: 0)
@@ -654,6 +642,45 @@ public final class Installer {
                 return false
             }
         }
+    }
+    
+    // MARK: - Framework Support
+    
+    private func findFrameworkBinDirectories(in packageDir: URL) throws -> [URL] {
+        var frameworkBinDirs: [URL] = []
+        
+        // Look for Framework directories
+        let frameworksDir = packageDir.appendingPathComponent("Frameworks")
+        if fileManager.fileExists(atPath: frameworksDir.path) {
+            let frameworks = try fileManager.contentsOfDirectory(atPath: frameworksDir.path)
+                .filter { $0.hasSuffix(".framework") }
+            
+            for framework in frameworks {
+                let frameworkDir = frameworksDir.appendingPathComponent(framework)
+                
+                // Look for Versions/*/bin directories in the framework
+                let versionsDir = frameworkDir.appendingPathComponent("Versions")
+                if fileManager.fileExists(atPath: versionsDir.path) {
+                    let versions = try fileManager.contentsOfDirectory(atPath: versionsDir.path)
+                        .filter { !$0.hasPrefix(".") }
+                    
+                    for version in versions {
+                        let versionBinDir = versionsDir.appendingPathComponent(version).appendingPathComponent("bin")
+                        if fileManager.fileExists(atPath: versionBinDir.path) {
+                            frameworkBinDirs.append(versionBinDir)
+                        }
+                    }
+                }
+                
+                // Also check for direct bin directory in framework
+                let frameworkBinDir = frameworkDir.appendingPathComponent("bin")
+                if fileManager.fileExists(atPath: frameworkBinDir.path) {
+                    frameworkBinDirs.append(frameworkBinDir)
+                }
+            }
+        }
+        
+        return frameworkBinDirs
     }
 }
 

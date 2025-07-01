@@ -159,6 +159,60 @@ public struct PathHelper {
         
         return [package]
     }
+    
+    // MARK: - File Removal Helpers
+    
+    private func isSymlink(at url: URL) -> Bool {
+        do {
+            let resourceValues = try url.resourceValues(forKeys: [.isSymbolicLinkKey])
+            return resourceValues.isSymbolicLink ?? false
+        } catch {
+            return false
+        }
+    }
+    
+    private func clearExtendedAttributes(at url: URL) throws {
+        let xattrProcess = Process()
+        xattrProcess.executableURL = URL(fileURLWithPath: "/usr/bin/xattr")
+        xattrProcess.arguments = ["-c", url.path]
+        
+        // Suppress all output to avoid noise
+        xattrProcess.standardOutput = Pipe()
+        xattrProcess.standardError = Pipe()
+        
+        // Ignore errors - some files may not have extended attributes
+        try? xattrProcess.run()
+        xattrProcess.waitUntilExit()
+    }
+    
+    private func makeFileWritable(at url: URL) throws {
+        var attributes = try fileManager.attributesOfItem(atPath: url.path)
+        if let permissions = attributes[.posixPermissions] as? NSNumber {
+            let newPermissions = permissions.uint16Value | 0o200 // Add write permission for owner
+            attributes[.posixPermissions] = NSNumber(value: newPermissions)
+            try fileManager.setAttributes(attributes, ofItemAtPath: url.path)
+        }
+    }
+    
+    private func aggressiveFileRemoval(at url: URL) throws {
+        // Try using rm command as a last resort
+        let rmProcess = Process()
+        rmProcess.executableURL = URL(fileURLWithPath: "/bin/rm")
+        rmProcess.arguments = ["-f", url.path]
+        
+        let pipe = Pipe()
+        rmProcess.standardOutput = pipe
+        rmProcess.standardError = pipe
+        
+        try rmProcess.run()
+        rmProcess.waitUntilExit()
+        
+        if rmProcess.terminationStatus != 0 {
+            let errorData = pipe.fileHandleForReading.readDataToEndOfFile()
+            let errorOutput = String(data: errorData, encoding: .utf8) ?? "Unknown error"
+            throw VeloError.symlinkFailed(from: url.path, to: "aggressive removal failed: \(errorOutput)")
+        }
+    }
 
     public func isSpecificVersionInstalled(_ package: String, version: String) -> Bool {
         let packageDir = packagePath(for: package, version: version)
@@ -188,36 +242,101 @@ public struct PathHelper {
     public func createSymlinkWithConflictDetection(
         from source: URL, 
         to destination: URL, 
-        packageName: String
+        packageName: String,
+        force: Bool = false
     ) throws {
         let destinationPath = destination.path
         
+        if force {
+            OSLogger.shared.debug("🔧 Creating symlink with force=true: \(destination.lastPathComponent)", category: OSLogger.shared.general)
+        }
+        
         // Check if destination already exists
         if fileManager.fileExists(atPath: destinationPath) {
-            // Try to determine what package owns the existing symlink
-            if let existingTarget = try? fileManager.destinationOfSymbolicLink(atPath: destinationPath) {
-                let existingPackage = extractPackageFromPath(existingTarget)
-                
-                if let existing = existingPackage {
-                    // Check if packages are equivalent
-                    let equivalents = getEquivalentPackageNames(for: packageName)
-                    if equivalents.contains(existing) {
-                        // Equivalent packages - log replacement
+            if force {
+                // Force mode - always replace, no questions asked
+                OSLogger.shared.info("🔗 Force replacing existing file/symlink: \(destination.lastPathComponent)")
+            } else {
+                // Non-force mode - check package equivalence
+                if let existingTarget = try? fileManager.destinationOfSymbolicLink(atPath: destinationPath) {
+                    let existingPackage = extractPackageFromPath(existingTarget)
+                    
+                    if let existing = existingPackage {
+                        // Check if packages are equivalent
+                        let equivalents = getEquivalentPackageNames(for: packageName)
+                        if !equivalents.contains(existing) {
+                            // Different packages - throw error
+                            throw VeloError.symlinkFailed(
+                                from: source.path,
+                                to: destination.path + " (already exists from package: \(existing), use --force to override)"
+                            )
+                        }
+                        // Equivalent packages - allow replacement
                         OSLogger.shared.info("🔗 Replacing symlink for equivalent package: \(existing) -> \(packageName)")
                     } else {
-                        // Different packages - warn about replacement
-                        OSLogger.shared.warning("🔗 Replacing symlink from different package: \(existing) -> \(packageName)")
+                        OSLogger.shared.warning("🔗 Replacing symlink from unknown package")
                     }
                 } else {
-                    OSLogger.shared.warning("🔗 Replacing symlink from unknown package")
+                    // File exists but is not a symlink
+                    throw VeloError.symlinkFailed(
+                        from: source.path,
+                        to: destination.path + " (file already exists, use --force to override)"
+                    )
                 }
             }
             
-            // Remove existing symlink/file
-            try fileManager.removeItem(at: destination)
+            // Remove existing symlink/file with robust cleanup
+            OSLogger.shared.info("🔍 Attempting to remove existing file: \(destination.lastPathComponent)")
+            do {
+                // Clear extended attributes that might prevent removal
+                try clearExtendedAttributes(at: destination)
+                
+                // Make the file writable if it's not a symlink
+                if !isSymlink(at: destination) {
+                    OSLogger.shared.debug("📝 Making file writable: \(destination.lastPathComponent)", category: OSLogger.shared.general)
+                    try makeFileWritable(at: destination)
+                }
+                
+                // Remove the file/symlink
+                try fileManager.removeItem(at: destination)
+                OSLogger.shared.info("🗑️ Successfully removed existing file/symlink: \(destination.lastPathComponent)")
+            } catch {
+                OSLogger.shared.warning("⚠️ Failed to remove existing file: \(destination.lastPathComponent) - \(error.localizedDescription)")
+                
+                // In force mode, try harder to remove the file
+                if force {
+                    OSLogger.shared.info("🔧 Force mode: attempting aggressive file removal")
+                    do {
+                        try aggressiveFileRemoval(at: destination)
+                        OSLogger.shared.info("✅ Successfully removed stubborn file with aggressive removal")
+                    } catch {
+                        throw VeloError.symlinkFailed(
+                            from: source.path,
+                            to: destination.path + " (failed to remove existing file even with force: \(error.localizedDescription))"
+                        )
+                    }
+                } else {
+                    throw VeloError.symlinkFailed(
+                        from: source.path,
+                        to: destination.path + " (failed to remove existing file: \(error.localizedDescription))"
+                    )
+                }
+            }
         }
         
-        try fileManager.createSymbolicLink(at: destination, withDestinationURL: source)
+        do {
+            try fileManager.createSymbolicLink(at: destination, withDestinationURL: source)
+            OSLogger.shared.debug("✅ Created symlink: \(destination.lastPathComponent) -> \(source.path)", category: OSLogger.shared.general)
+        } catch {
+            // Double-check if the file still exists after our removal attempt
+            let fileStillExists = fileManager.fileExists(atPath: destination.path)
+            OSLogger.shared.warning("❌ Symlink creation failed. File still exists: \(fileStillExists)")
+            
+            throw VeloError.symlinkFailed(
+                from: source.path,
+                to: destination.path + " (\(error.localizedDescription))"
+            )
+        }
     }
     
     /// Extract package name from a file path
