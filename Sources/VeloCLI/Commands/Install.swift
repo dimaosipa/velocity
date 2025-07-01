@@ -142,7 +142,7 @@ extension Velo {
                 return
             }
 
-            OSLogger.shared.info("Installing \(allDeps.count) packages...")
+            print("Installing \(allDeps.count) packages...")
 
             var installedPackages: [(formula: Formula, bottleURL: String, tap: String, resolvedDependencies: [String: String])] = []
 
@@ -168,7 +168,7 @@ extension Velo {
                 try updateLockFile(installedPackages: installedPackages, lockFilePath: lockFilePath)
             }
 
-            OSLogger.shared.success("All packages installed successfully!")
+            print("✅ All packages installed successfully!")
         }
 
         private func installPackageWithTracking(
@@ -305,11 +305,11 @@ extension Velo {
                 // Check if already installed with correct version
                 let installedVersions = pathHelper.installedVersions(for: packageName)
                 if installedVersions.contains(lockEntry.version) {
-                    OSLogger.shared.info("✓ \(packageName) \(lockEntry.version) already installed")
+                    print("✓ \(packageName) \(lockEntry.version) already installed")
                     continue
                 }
 
-                OSLogger.shared.info("Installing \(packageName) \(lockEntry.version) from lock file...")
+                print("Installing \(packageName) \(lockEntry.version) from lock file...")
 
                 // For frozen installs, we need to install the exact version specified
                 // This is a simplified implementation - in practice, we'd need to:
@@ -343,7 +343,7 @@ extension Velo {
                 )
             }
 
-            OSLogger.shared.success("All packages installed from velo.lock successfully!")
+            print("✅ All packages installed from velo.lock successfully!")
         }
 
         private func ensureRequiredTaps(_ requiredTaps: [String], pathHelper: PathHelper) async throws {
@@ -644,12 +644,20 @@ extension Velo {
                 return
             }
 
-            OSLogger.shared.info("Building complete dependency graph...")
-
-            // Build complete dependency graph for ALL dependencies at once
+            // Create multi-step progress tracker
+            let progressSteps = [
+                "Resolving dependencies",
+                "Downloading packages", 
+                "Installing packages"
+            ]
+            let multiStep = MultiStepProgress(steps: progressSteps)
+            
+            // Step 1: Build dependency graph
+            multiStep.startNextStep()
             let dependencyNames = runtimeDependencies.map { $0.name }
             let graph = DependencyGraph(pathHelper: pathHelper)
             try await graph.buildCompleteGraph(for: dependencyNames, tapManager: tapManager)
+            multiStep.completeCurrentStep()
 
             // Check for version conflicts
             if graph.hasConflicts {
@@ -666,11 +674,9 @@ extension Velo {
             let uninstallablePackages = graph.uninstallablePackages
             
             if newPackages.isEmpty {
-                OSLogger.shared.info("✓ All dependencies already installed")
+                print("✓ All dependencies already installed")
                 return
             }
-
-            OSLogger.shared.info("Dependencies to install: \(newPackages.count) packages")
             
             // Handle uninstallable packages
             if !uninstallablePackages.isEmpty {
@@ -696,22 +702,31 @@ extension Velo {
             let installPlan = try InstallPlan(graph: graph, rootPackage: formula.name)
             installPlan.display()
 
-            // Download only installable packages in parallel
-            OSLogger.shared.info("Downloading \(installablePackages.count) installable packages in parallel...")
+            // Step 2: Download packages
+            multiStep.startNextStep()
+            let downloadTracker = DownloadProgressTracker(packageCount: installablePackages.count)
             let downloadManager = ParallelDownloadManager(pathHelper: pathHelper)
-            let downloads = try await downloadManager.downloadAll(packages: installablePackages)
+            let progressDownloader = VisualParallelDownloadProgress(tracker: downloadTracker)
+            let downloads = try await downloadManager.downloadAll(packages: installablePackages, progress: progressDownloader)
+            multiStep.completeCurrentStep()
 
-            // Install packages in dependency order
+            // Step 3: Install packages
+            multiStep.startNextStep()
             let installOrder = try graph.getInstallOrder()
-            OSLogger.shared.info("Installing packages in dependency order...")
+            let installableOrder = installOrder.filter { packageName in
+                installablePackages.contains { $0.name == packageName }
+            }
+            let installTracker = InstallationProgressTracker(packageNames: installableOrder)
             try await installPackagesInOrder(
                 installOrder: installOrder,
                 downloads: downloads,
                 graph: graph,
-                pathHelper: pathHelper
+                pathHelper: pathHelper,
+                installTracker: installTracker
             )
-
-            OSLogger.shared.success("All dependencies installed successfully!")
+            multiStep.completeCurrentStep()
+            
+            print("✅ All dependencies installed successfully!")
         }
 
         /// Install packages in the correct dependency order
@@ -719,9 +734,11 @@ extension Velo {
             installOrder: [String],
             downloads: [String: DownloadResult],
             graph: DependencyGraph,
-            pathHelper: PathHelper
+            pathHelper: PathHelper,
+            installTracker: InstallationProgressTracker
         ) async throws {
             let installer = Installer(pathHelper: pathHelper)
+            installTracker.startInstallation()
             
             for packageName in installOrder {
                 guard let node = graph.getNode(for: packageName) else { continue }
@@ -745,16 +762,24 @@ extension Velo {
                     )
                 }
                 
+                // Track installation progress
+                installTracker.startPackageInstallation(packageName)
+                
                 // Install from pre-downloaded bottle
+                let visualProgress = VisualInstallationProgress(tracker: installTracker, packageName: packageName)
                 try await installer.install(
                     formula: node.formula,
                     from: downloadResult.downloadPath,
-                    progress: nil
+                    progress: visualProgress
                 )
+                
+                installTracker.completePackageInstallation(packageName)
                 
                 // Clean up downloaded file
                 try? FileManager.default.removeItem(at: downloadResult.downloadPath)
             }
+            
+            installTracker.completeAllInstallations()
         }
         
         // MARK: - Architecture Detection
@@ -771,7 +796,7 @@ extension Velo {
 
     }
 
-// MARK: - Progress Handler
+// MARK: - Progress Handlers
 
 private class CLIProgress: DownloadProgress, InstallationProgress {
     private var lastProgressUpdate = Date()
@@ -781,9 +806,9 @@ private class CLIProgress: DownloadProgress, InstallationProgress {
 
     func downloadDidStart(url: String, totalSize: Int64?) {
         if let size = totalSize {
-            OSLogger.shared.info("Downloading \(formatBytes(size))...")
+            ProgressReporter.shared.startStep("Downloading \(formatBytes(size))")
         } else {
-            OSLogger.shared.info("Downloading...")
+            ProgressReporter.shared.startStep("Downloading")
         }
     }
 
@@ -793,53 +818,56 @@ private class CLIProgress: DownloadProgress, InstallationProgress {
         lastProgressUpdate = now
 
         if let total = totalBytes {
-            let percentage = Int((Double(bytesDownloaded) / Double(total)) * 100)
-            OSLogger.shared.progress("Downloading: \(percentage)% (\(formatBytes(bytesDownloaded))/\(formatBytes(total)))")
+            let progress = Double(bytesDownloaded) / Double(total)
+            let message = "Downloading \(formatBytes(bytesDownloaded))/\(formatBytes(total))"
+            ProgressReporter.shared.updateProgress(progress, message: message)
         } else {
-            OSLogger.shared.progress("Downloaded: \(formatBytes(bytesDownloaded))")
+            ProgressReporter.shared.updateProgress(0.5, message: "Downloaded \(formatBytes(bytesDownloaded))")
         }
     }
 
     func downloadDidComplete(url: String) {
-        print("\n")
-        OSLogger.shared.info("Download complete")
+        ProgressReporter.shared.completeStep("Download complete")
     }
 
     func downloadDidFail(url: String, error: Error) {
-        print("\n")
-        OSLogger.shared.error("Download failed: \(error.localizedDescription)")
+        ProgressReporter.shared.failStep("Download failed: \(error.localizedDescription)")
     }
 
     // MARK: - InstallationProgress
 
     func installationDidStart(package: String, version: String) {
-        OSLogger.shared.info("Installing \(package) \(version)...")
+        ProgressReporter.shared.startStep("Installing \(package) \(version)")
     }
 
     func extractionDidStart(totalFiles: Int?) {
-        OSLogger.shared.info("Extracting package...")
+        ProgressReporter.shared.updateProgress(0.1, message: "Extracting package")
     }
 
     func extractionDidUpdate(filesExtracted: Int, totalFiles: Int?) {
-        // Don't spam with extraction updates
+        if let total = totalFiles {
+            let progress = 0.1 + (0.7 * Double(filesExtracted) / Double(total))
+            ProgressReporter.shared.updateProgress(progress, message: "Extracting (\(filesExtracted)/\(total))")
+        }
     }
 
     func linkingDidStart(binariesCount: Int) {
         if binariesCount > 0 {
-            OSLogger.shared.info("Creating \(binariesCount) symlink(s)...")
+            ProgressReporter.shared.updateProgress(0.8, message: "Creating \(binariesCount) symlinks")
         }
     }
 
     func linkingDidUpdate(binariesLinked: Int, totalBinaries: Int) {
-        // Progress for linking is usually fast enough to not need updates
+        let progress = 0.8 + (0.2 * Double(binariesLinked) / Double(totalBinaries))
+        ProgressReporter.shared.updateProgress(progress, message: "Linking (\(binariesLinked)/\(totalBinaries))")
     }
 
     func installationDidComplete(package: String) {
-        // Handled by the main command
+        ProgressReporter.shared.completeStep("\(package) installed")
     }
 
     func installationDidFail(package: String, error: Error) {
-        OSLogger.shared.error("Installation of \(package) failed: \(error.localizedDescription)")
+        ProgressReporter.shared.failStep("Installation of \(package) failed: \(error.localizedDescription)")
     }
 
     // MARK: - Helpers
@@ -848,6 +876,76 @@ private class CLIProgress: DownloadProgress, InstallationProgress {
         let formatter = ByteCountFormatter()
         formatter.countStyle = .binary
         return formatter.string(fromByteCount: bytes)
+    }
+}
+
+// MARK: - Visual Progress Adapters
+
+private class VisualParallelDownloadProgress: ParallelDownloadProgress {
+    private let tracker: DownloadProgressTracker
+    
+    init(tracker: DownloadProgressTracker) {
+        self.tracker = tracker
+    }
+    
+    func downloadDidStart(totalPackages: Int, totalSize: Int64?) {
+        tracker.startDownloads()
+    }
+    
+    func packageDownloadDidStart(package: String, size: Int64?) {
+        tracker.startPackageDownload(package, totalSize: size)
+    }
+    
+    func packageDownloadDidUpdate(package: String, bytesDownloaded: Int64, totalBytes: Int64?) {
+        tracker.updatePackageDownload(package, bytesDownloaded: bytesDownloaded, totalBytes: totalBytes)
+    }
+    
+    func packageDownloadDidComplete(package: String, success: Bool, error: Error?) {
+        tracker.completePackageDownload(package, success: success)
+    }
+    
+    func allDownloadsDidComplete(successful: Int, failed: Int) {
+        tracker.completeAllDownloads()
+    }
+}
+
+private class VisualInstallationProgress: InstallationProgress {
+    private let tracker: InstallationProgressTracker
+    private let packageName: String
+    
+    init(tracker: InstallationProgressTracker, packageName: String) {
+        self.tracker = tracker
+        self.packageName = packageName
+    }
+    
+    func installationDidStart(package: String, version: String) {
+        // Already handled by InstallationProgressTracker
+    }
+    
+    func extractionDidStart(totalFiles: Int?) {
+        tracker.updatePhase("Extracting \(packageName)")
+    }
+    
+    func extractionDidUpdate(filesExtracted: Int, totalFiles: Int?) {
+        if let total = totalFiles {
+            tracker.updatePhase("Extracting \(packageName) (\(filesExtracted)/\(total))")
+        }
+    }
+    
+    func linkingDidStart(binariesCount: Int) {
+        tracker.updatePhase("Linking \(packageName) (\(binariesCount) binaries)")
+    }
+    
+    func linkingDidUpdate(binariesLinked: Int, totalBinaries: Int) {
+        tracker.updatePhase("Linking \(packageName) (\(binariesLinked)/\(totalBinaries))")
+    }
+    
+    func installationDidComplete(package: String) {
+        // Handled by InstallationProgressTracker
+    }
+    
+    func installationDidFail(package: String, error: Error) {
+        tracker.updatePhase("Failed to install \(packageName): \(error.localizedDescription)")
     }
 }
 }
