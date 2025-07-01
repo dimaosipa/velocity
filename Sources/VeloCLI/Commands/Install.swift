@@ -109,12 +109,8 @@ extension Velo {
                 }
             }
 
-            // Show installation feedback only if not already installed
-            if force {
-                print("🔄 Starting reinstallation of \(resolvedName)...")
-            } else {
-                print("🚀 Starting installation of \(resolvedName)...")
-            }
+            // Start installation with timing
+            let startTime = Date()
             
             do {
                 try await installPackage(
@@ -126,7 +122,8 @@ extension Velo {
                     verbose: true,
                     skipTapUpdate: false,
                     forceTapUpdate: updateTaps,
-                    force: force
+                    force: force,
+                    startTime: startTime
                 )
             } catch VeloError.formulaNotFound(let name) {
                 // Provide helpful search-based alternatives
@@ -514,26 +511,24 @@ extension Velo {
             verbose: Bool,
             skipTapUpdate: Bool = false,
             forceTapUpdate: Bool = false,
-            force: Bool = false
+            force: Bool = false,
+            startTime: Date = Date()
         ) async throws {
             let downloader = BottleDownloader()
             let installer = Installer(pathHelper: pathHelper)
             let tapManager = TapManager(pathHelper: pathHelper)
             let progressHandler = CLIProgress()
 
-            // Show immediate feedback
-            if force {
-                print("🔍 Reinstalling \(name)...")
-            } else {
-                print("🔍 Installing \(name)...")
-            }
-
-            // Ensure we have the homebrew/core tap (skip for dependencies)
+            // Calculate total steps based on what we'll actually do
+            let totalSteps = (skipTapUpdate ? 0 : 1) + (skipDeps ? 0 : 1) + 2 // +2 for download & install
+            
+            // Update package database if needed
+            var stepCount = 1
             if !skipTapUpdate {
-                let progressReporter = ProgressReporter.shared
-                progressReporter.startStep("📥 Updating package database")
+                ProgressReporter.shared.startLiveStep("[\(stepCount)/\(totalSteps)] 📥 Updating package database")
                 try await tapManager.updateTaps(force: forceTapUpdate)
-                progressReporter.completeStep("📥 Package database updated")
+                ProgressReporter.shared.completeLiveStep("Updated package database")
+                stepCount += 1
             }
 
             // Parse formula
@@ -545,12 +540,19 @@ extension Velo {
 
             // Install dependencies using dependency graph approach
             if !skipDeps {
-                try await installDependenciesWithGraph(
+                ProgressReporter.shared.startLiveStep("[\(stepCount)/\(totalSteps)] 🔍 Resolving dependencies")
+                let depCount = try await installDependenciesWithGraph(
                     for: formula,
                     tapManager: tapManager,
                     pathHelper: pathHelper,
                     force: force
                 )
+                if depCount > 0 {
+                    ProgressReporter.shared.completeLiveStep("Resolved \(depCount) dependencies")
+                } else {
+                    ProgressReporter.shared.completeLiveStep("No dependencies required")
+                }
+                stepCount += 1
             }
 
             // Check for compatible bottle with enhanced fallback logic
@@ -595,11 +597,10 @@ extension Velo {
                 )
             }
 
-            // Download bottle with progress reporting
-            let tempFile = PathHelper.shared.temporaryFile(prefix: "bottle-\(name)", extension: "tar.gz")
+            // Download main package  
+            ProgressReporter.shared.startLiveStep("[\(stepCount)/\(totalSteps)] ⬇️ Downloading \(formula.name)")
             
-            // Show download progress
-            print("⬇️ Downloading \(formula.name)...")
+            let tempFile = PathHelper.shared.temporaryFile(prefix: "bottle-\(name)", extension: "tar.gz")
 
             // Retry download with exponential backoff for transient issues
             let maxRetries = 2
@@ -640,10 +641,11 @@ extension Velo {
                 }
             }
             
-            print("✅ Downloaded \(formula.name)")
+            ProgressReporter.shared.completeLiveStep("Downloaded \(formula.name)")
 
-            // Install with progress reporting
-            print("🔧 Installing \(formula.name)...")
+            // Install main package
+            stepCount += 1
+            ProgressReporter.shared.startLiveStep("[\(stepCount)/\(totalSteps)] 🔧 Installing \(formula.name)")
             try await installer.install(
                 formula: formula,
                 from: tempFile,
@@ -651,16 +653,15 @@ extension Velo {
                 force: force
             )
             
-            print("✅ Installed \(formula.name)")
+            ProgressReporter.shared.completeLiveStep("Installed \(formula.name)")
 
             // Clean up
             try? FileManager.default.removeItem(at: tempFile)
 
-            if force {
-                OSLogger.shared.success("\(formula.name) \(formula.version) reinstalled successfully!")
-            } else {
-                OSLogger.shared.success("\(formula.name) \(formula.version) installed successfully!")
-            }
+            // Show final success message with timing
+            let duration = Date().timeIntervalSince(startTime)
+            let verb = force ? "reinstalled" : "installed"
+            print("✓ \(formula.name)@\(formula.version) \(verb) in \(String(format: "%.1f", duration))s")
 
             // Show next steps
             if verbose && !PathHelper.shared.isInPath() {
@@ -676,34 +677,24 @@ extension Velo {
             tapManager: TapManager,
             pathHelper: PathHelper,
             force: Bool = false
-        ) async throws {
+        ) async throws -> Int {
             let runtimeDependencies = formula.dependencies.filter { $0.type == .required }
 
             if runtimeDependencies.isEmpty {
-                return
+                return 0
             }
 
-            // Show immediate feedback for dependency resolution
-            print("🔍 Resolving dependencies for \(formula.name)...")
-            
-            // Create multi-step progress tracker
-            let progressSteps = [
-                "Resolving dependencies",
-                "Downloading packages", 
-                "Installing packages"
-            ]
-            let multiStep = MultiStepProgress(steps: progressSteps)
-            
-            // Step 1: Build dependency graph
-            multiStep.startNextStep()
+            // Build dependency graph quietly
             let dependencyNames = runtimeDependencies.map { $0.name }
-            print("  Found \(dependencyNames.count) direct dependencies...")
             let graph = DependencyGraph(pathHelper: pathHelper)
-            print("  Building dependency graph...")
+            
+            // Update progress with package count discovery
+            ProgressReporter.shared.updateLiveProgress("Resolving dependencies... (\(dependencyNames.count) direct)")
+            
             try await graph.buildCompleteGraph(for: dependencyNames, tapManager: tapManager)
-            print("  Resolved \(graph.allPackages.count) total packages")
-            print("  Analyzing package states...")
-            multiStep.completeCurrentStep()
+            
+            // Update with total resolved count
+            ProgressReporter.shared.updateLiveProgress("Resolving dependencies... (\(graph.allPackages.count) total)")
 
             // Version conflicts are handled at the equivalence level
             // No additional conflict checking needed since Homebrew formulae
@@ -714,11 +705,8 @@ extension Velo {
             let installablePackages = graph.installablePackages
             let uninstallablePackages = graph.uninstallablePackages
             
-            print("  Analysis: \(newPackages.count) new, \(installablePackages.count) installable, \(uninstallablePackages.count) uninstallable")
-            
             if newPackages.isEmpty {
-                print("✓ All dependencies already installed")
-                return
+                return 0
             }
             
             // Handle uninstallable packages
@@ -738,45 +726,27 @@ extension Velo {
             
             if installablePackages.isEmpty {
                 OSLogger.shared.error("No packages can be installed - all dependencies lack compatible bottles")
-                return
+                return 0
             }
             
-            // Show install plan
-            print("  Creating install plan...")
-            ProgressReporter.shared.startStep("🔍 Creating install plan")
+            // Create install plan and execute installation
             let installPlan = try InstallPlan(graph: graph, rootPackage: formula.name)
-            ProgressReporter.shared.completeStep("✅ Install plan created")
-            print("  Displaying install plan...")
-            installPlan.display()
-            print("  Install plan displayed, proceeding to downloads...")
-
-            // Step 2: Download packages
-            multiStep.startNextStep()
-            let downloadTracker = DownloadProgressTracker(packageCount: installablePackages.count)
+            
+            // Download and install packages quietly (they have their own progress)
             let downloadManager = ParallelDownloadManager(pathHelper: pathHelper)
-            let progressDownloader = VisualParallelDownloadProgress(tracker: downloadTracker)
-            let downloads = try await downloadManager.downloadAll(packages: installablePackages, progress: progressDownloader)
-            multiStep.completeCurrentStep()
-
-            // Step 3: Install packages
-            multiStep.startNextStep()
-            // Use the install order from the plan instead of recomputing it
+            let downloads = try await downloadManager.downloadAll(packages: installablePackages, progress: nil)
+            
             let installOrder = installPlan.installOrder
-            let installableOrder = installOrder.filter { packageName in
-                installablePackages.contains { $0.name == packageName }
-            }
-            let installTracker = InstallationProgressTracker(packageNames: installableOrder)
             try await installPackagesInOrder(
                 installOrder: installOrder,
                 downloads: downloads,
                 graph: graph,
                 pathHelper: pathHelper,
-                installTracker: installTracker,
+                installTracker: nil,
                 force: force
             )
-            multiStep.completeCurrentStep()
             
-            print("✅ All dependencies installed successfully!")
+            return installablePackages.count
         }
 
         /// Install packages in the correct dependency order
@@ -785,11 +755,11 @@ extension Velo {
             downloads: [String: DownloadResult],
             graph: DependencyGraph,
             pathHelper: PathHelper,
-            installTracker: InstallationProgressTracker,
+            installTracker: InstallationProgressTracker?,
             force: Bool = false
         ) async throws {
             let installer = Installer(pathHelper: pathHelper)
-            installTracker.startInstallation()
+            installTracker?.startInstallation()
             
             for packageName in installOrder {
                 guard let node = graph.getNode(for: packageName) else { continue }
@@ -814,10 +784,10 @@ extension Velo {
                 }
                 
                 // Track installation progress
-                installTracker.startPackageInstallation(packageName)
+                installTracker?.startPackageInstallation(packageName)
                 
                 // Install from pre-downloaded bottle
-                let visualProgress = VisualInstallationProgress(tracker: installTracker, packageName: packageName)
+                let visualProgress: InstallationProgress? = installTracker != nil ? VisualInstallationProgress(tracker: installTracker!, packageName: packageName) : nil
                 try await installer.install(
                     formula: node.formula,
                     from: downloadResult.downloadPath,
@@ -825,13 +795,13 @@ extension Velo {
                     force: force
                 )
                 
-                installTracker.completePackageInstallation(packageName)
+                installTracker?.completePackageInstallation(packageName)
                 
                 // Clean up downloaded file
                 try? FileManager.default.removeItem(at: downloadResult.downloadPath)
             }
             
-            installTracker.completeAllInstallations()
+            installTracker?.completeAllInstallations()
         }
         
         // MARK: - Architecture Detection

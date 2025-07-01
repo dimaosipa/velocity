@@ -12,6 +12,9 @@ public final class ProgressReporter {
     private let progressBarWidth: Int = 30
     private let queue = DispatchQueue.main
     
+    // Live progress support
+    private var currentMessage: String = ""
+    
     private init() {}
     
     // MARK: - Step Management
@@ -45,6 +48,51 @@ public final class ProgressReporter {
             print("") // New line after completion
             self?.isActive = false
         }
+    }
+    
+    // MARK: - Live Progress Updates
+    
+    public func startLiveStep(_ step: String) {
+        print("\(getSpinner()) \(step)", terminator: "")
+        fflush(stdout)
+        queue.async { [weak self] in
+            self?.currentStep = step
+            self?.currentMessage = step
+            self?.currentProgress = 0.0
+            self?.isActive = true
+        }
+    }
+    
+    public func updateLiveProgress(_ message: String) {
+        print("\r\u{001B}[K\(getSpinner()) \(message)", terminator: "")
+        fflush(stdout)
+        queue.async { [weak self] in
+            self?.currentMessage = message
+        }
+    }
+    
+    public func updateLiveProgress(progress: Double, message: String) {
+        let percentage = Int(progress * 100)
+        print("\r\u{001B}[K\(getSpinner()) \(message) (\(percentage)%)", terminator: "")
+        fflush(stdout)
+        queue.async { [weak self] in
+            self?.currentProgress = min(max(progress, 0.0), 1.0)
+            self?.currentMessage = message
+        }
+    }
+    
+    public func completeLiveStep(_ message: String) {
+        print("\r\u{001B}[K✓ \(message)")
+        queue.async { [weak self] in
+            self?.isActive = false
+        }
+    }
+    
+    private func getSpinner() -> String {
+        // Simple rotating spinner without timer
+        let frames = ["⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠋", "⠊"]
+        let index = Int(Date().timeIntervalSince1970 * 10) % frames.count
+        return frames[index]
     }
     
     public func failStep(_ message: String) {
