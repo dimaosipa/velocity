@@ -10,40 +10,49 @@ public final class ProgressReporter {
     private var currentProgress: Double = 0.0
     private var isActive: Bool = false
     private let progressBarWidth: Int = 30
+    private let queue = DispatchQueue.main
     
     private init() {}
     
     // MARK: - Step Management
     
     public func startStep(_ step: String) {
-        currentStep = step
-        currentProgress = 0.0
-        isActive = true
-        printProgress()
+        queue.async { [weak self] in
+            self?.currentStep = step
+            self?.currentProgress = 0.0
+            self?.isActive = true
+            self?.printProgress()
+        }
     }
     
     public func updateProgress(_ progress: Double, message: String? = nil) {
-        currentProgress = min(max(progress, 0.0), 1.0)
-        if let msg = message {
-            currentStep = msg
+        queue.async { [weak self] in
+            self?.currentProgress = min(max(progress, 0.0), 1.0)
+            if let msg = message {
+                self?.currentStep = msg
+            }
+            self?.printProgress()
         }
-        printProgress()
     }
     
     public func completeStep(_ message: String? = nil) {
-        currentProgress = 1.0
-        if let msg = message {
-            currentStep = msg
+        queue.async { [weak self] in
+            self?.currentProgress = 1.0
+            if let msg = message {
+                self?.currentStep = msg
+            }
+            self?.printProgress()
+            print("") // New line after completion
+            self?.isActive = false
         }
-        printProgress()
-        print("") // New line after completion
-        isActive = false
     }
     
     public func failStep(_ message: String) {
-        currentStep = message
-        print("\r\u{001B}[K❌ \(message)")
-        isActive = false
+        queue.async { [weak self] in
+            self?.currentStep = message
+            print("\r\u{001B}[K❌ \(message)")
+            self?.isActive = false
+        }
     }
     
     // MARK: - Visual Progress
@@ -110,6 +119,8 @@ public final class MultiStepProgress {
     }
     
     public func updateCurrentStep(progress: Double, message: String? = nil) {
+        guard currentStepIndex < steps.count else { return }
+        
         let stepNumber = currentStepIndex + 1
         let totalSteps = steps.count
         let stepMessage = message ?? steps[currentStepIndex]
@@ -129,6 +140,8 @@ public final class MultiStepProgress {
     }
     
     public func failCurrentStep(_ message: String) {
+        guard currentStepIndex < steps.count else { return }
+        
         let stepNumber = currentStepIndex + 1
         let totalSteps = steps.count
         
@@ -149,9 +162,11 @@ public final class DownloadProgressTracker {
     private var currentBytes: Int64 = 0
     private var totalBytes: Int64 = 0
     private let reporter = ProgressReporter.shared
+    private var lastUpdateTime = Date()
+    private let updateInterval: TimeInterval = 0.5 // 500ms
     
     public init(packageCount: Int) {
-        self.packageCount = packageCount
+        self.packageCount = max(1, packageCount) // Ensure packageCount is at least 1
     }
     
     public func startDownloads() {
@@ -185,8 +200,17 @@ public final class DownloadProgressTracker {
     }
     
     private func updateProgress() {
+        // Throttle updates to prevent memory allocation crashes
+        let now = Date()
+        guard now.timeIntervalSince(lastUpdateTime) >= updateInterval else { return }
+        lastUpdateTime = now
+        
+        // Bounds checking to prevent crashes
+        guard packageCount > 0, completedPackages >= 0, completedPackages <= packageCount else { return }
+        guard !currentPackage.isEmpty else { return }
+        
         let packageProgress = Double(completedPackages) + (totalBytes > 0 ? Double(currentBytes) / Double(totalBytes) : 0.0)
-        let overallProgress = packageProgress / Double(packageCount)
+        let overallProgress = min(1.0, max(0.0, packageProgress / Double(packageCount)))
         
         let sizeInfo = totalBytes > 0 ? " (\(formatBytes(currentBytes))/\(formatBytes(totalBytes)))" : ""
         let message = "Downloading \(currentPackage)\(sizeInfo) (\(completedPackages)/\(packageCount))"
@@ -240,8 +264,11 @@ public final class InstallationProgressTracker {
     }
     
     private func updateProgress(phase: String) {
+        guard packageNames.count > 0, currentPackageIndex >= 0 else { return }
+        
         let progress = Double(currentPackageIndex) / Double(packageNames.count)
         let message = "\(phase) (\(currentPackageIndex)/\(packageNames.count))"
+        
         reporter.updateProgress(progress, message: message)
     }
 }

@@ -920,7 +920,7 @@ extension Velo {
 
 private class CLIProgress: DownloadProgress, InstallationProgress {
     private var lastProgressUpdate = Date()
-    private let updateInterval: TimeInterval = 0.1 // 100ms
+    private let updateInterval: TimeInterval = 0.5 // 500ms
 
     // MARK: - DownloadProgress
 
