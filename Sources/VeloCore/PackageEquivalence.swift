@@ -30,24 +30,134 @@ public class PackageEquivalence {
     
     /// Get all equivalent package names for a given package
     public func getEquivalentPackages(for packageName: String) -> Set<String> {
-        // Check if this package is in any equivalency group
+        // First check explicit equivalency mappings
         for (_, equivalents) in packageEquivalencies {
             if equivalents.contains(packageName) {
                 return equivalents
             }
         }
         
+        // Check for version-based equivalencies (e.g., python@3.12.1 ≡ python@3.12.2)
+        if let versionEquivalents = getVersionBasedEquivalents(for: packageName) {
+            return versionEquivalents
+        }
+        
         // If no equivalents found, return just the original name
         return [packageName]
     }
     
+    /// Get equivalent packages based on version similarity (same major.minor)
+    private func getVersionBasedEquivalents(for packageName: String) -> Set<String>? {
+        guard let (baseName, version) = parsePackageVersion(packageName) else {
+            return nil
+        }
+        
+        let majorMinor = getMajorMinorVersion(version)
+        guard !majorMinor.isEmpty else {
+            return nil
+        }
+        
+        // Define packages that should use version-based equivalency
+        let versionSensitivePackages = [
+            "python", "node", "ruby", "java", "php", "perl", "go", "rust",
+            "mysql", "postgresql", "postgres", "redis", "mongodb",
+            "openssl", "llvm", "gcc", "clang"
+        ]
+        
+        // Check if this is a version-sensitive package
+        guard versionSensitivePackages.contains(baseName) else {
+            return nil
+        }
+        
+        // Generate common equivalent patterns for this major.minor version
+        var equivalents = Set<String>([packageName])
+        
+        // Add @version format (python@3.12)
+        equivalents.insert("\(baseName)@\(majorMinor)")
+        
+        // Add concatenated format (python312)
+        let compactVersion = majorMinor.replacingOccurrences(of: ".", with: "")
+        equivalents.insert("\(baseName)\(compactVersion)")
+        
+        // Add dotted format (python3.12)
+        equivalents.insert("\(baseName)\(majorMinor)")
+        
+        return equivalents
+    }
+    
+    /// Parse package name to extract base name and version
+    private func parsePackageVersion(_ packageName: String) -> (baseName: String, version: String)? {
+        // Handle @version format (python@3.12.1)
+        if let atIndex = packageName.firstIndex(of: "@") {
+            let baseName = String(packageName.prefix(upTo: atIndex))
+            let version = String(packageName.suffix(from: packageName.index(after: atIndex)))
+            return (baseName, version)
+        }
+        
+        // Handle concatenated version format (python312, python3.12)
+        // Look for patterns like python3.12, node18, etc.
+        let patterns = [
+            #"^([a-zA-Z]+)(\d+\.\d+(?:\.\d+)?)$"#,  // python3.12, node18.1
+            #"^([a-zA-Z]+)(\d+)$"#                   // python312, node18
+        ]
+        
+        for pattern in patterns {
+            if let regex = try? NSRegularExpression(pattern: pattern),
+               let match = regex.firstMatch(in: packageName, range: NSRange(packageName.startIndex..., in: packageName)) {
+                
+                let baseNameRange = Range(match.range(at: 1), in: packageName)!
+                let versionRange = Range(match.range(at: 2), in: packageName)!
+                
+                let baseName = String(packageName[baseNameRange])
+                let version = String(packageName[versionRange])
+                
+                return (baseName, version)
+            }
+        }
+        
+        return nil
+    }
+    
+    /// Extract major.minor version from a version string
+    private func getMajorMinorVersion(_ version: String) -> String {
+        let parts = version.split(separator: ".")
+        
+        if parts.count >= 2 {
+            // Standard major.minor format (3.12)
+            return "\(parts[0]).\(parts[1])"
+        } else if parts.count == 1, let major = Int(parts[0]) {
+            // Single number - could be major version only
+            return String(major)
+        }
+        
+        return version
+    }
+    
     /// Get the canonical name for a package (the @-versioned name if it exists)
     public func getCanonicalName(for packageName: String) -> String {
+        // First check explicit equivalency mappings
         for (canonical, equivalents) in packageEquivalencies {
             if equivalents.contains(packageName) {
                 return canonical
             }
         }
+        
+        // For version-based equivalencies, prefer @version format as canonical
+        if let (baseName, version) = parsePackageVersion(packageName) {
+            let majorMinor = getMajorMinorVersion(version)
+            if !majorMinor.isEmpty {
+                let versionSensitivePackages = [
+                    "python", "node", "ruby", "java", "php", "perl", "go", "rust",
+                    "mysql", "postgresql", "postgres", "redis", "mongodb",
+                    "openssl", "llvm", "gcc", "clang"
+                ]
+                
+                if versionSensitivePackages.contains(baseName) {
+                    return "\(baseName)@\(majorMinor)"
+                }
+            }
+        }
+        
         return packageName
     }
     
@@ -55,6 +165,23 @@ public class PackageEquivalence {
     public func areEquivalent(_ package1: String, _ package2: String) -> Bool {
         let equivalents1 = getEquivalentPackages(for: package1)
         return equivalents1.contains(package2)
+    }
+    
+    /// Check if two packages are equivalent based on version similarity (same major.minor)
+    public func areVersionEquivalent(_ package1: String, _ package2: String) -> Bool {
+        // First check explicit equivalencies
+        if areEquivalent(package1, package2) {
+            return true
+        }
+        
+        // Check version-based equivalencies
+        guard let equiv1 = getVersionBasedEquivalents(for: package1),
+              let equiv2 = getVersionBasedEquivalents(for: package2) else {
+            return false
+        }
+        
+        // Check if they share any equivalents (same major.minor version)
+        return !equiv1.intersection(equiv2).isEmpty
     }
     
     // MARK: - Installed Package Detection
