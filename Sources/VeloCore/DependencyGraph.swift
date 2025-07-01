@@ -7,14 +7,28 @@ import VeloSystem
 public struct DependencyNode {
     public let name: String
     public let formula: Formula
-    public let dependencies: [String]  // Names of direct dependencies
+    public let dependencies: [DependencyRequirement]  // Dependency requirements with constraints
     public var isInstalled: Bool
+    public let equivalentPackages: Set<String>  // All equivalent package names
     
-    public init(name: String, formula: Formula, dependencies: [String], isInstalled: Bool = false) {
+    public init(name: String, formula: Formula, dependencies: [DependencyRequirement], isInstalled: Bool = false, equivalentPackages: Set<String> = []) {
         self.name = name
         self.formula = formula
         self.dependencies = dependencies
         self.isInstalled = isInstalled
+        self.equivalentPackages = equivalentPackages.isEmpty ? [name] : equivalentPackages
+    }
+}
+
+public struct DependencyRequirement {
+    public let name: String
+    public let versionConstraints: VersionConstraintSet
+    public let type: Formula.Dependency.DependencyType
+    
+    public init(name: String, versionConstraints: VersionConstraintSet, type: Formula.Dependency.DependencyType) {
+        self.name = name
+        self.versionConstraints = versionConstraints
+        self.type = type
     }
 }
 
@@ -24,36 +38,73 @@ public class DependencyGraph {
     private var nodes: [String: DependencyNode] = [:]
     private var edges: [String: Set<String>] = [:]  // package -> its dependencies
     private let pathHelper: PathHelper
+    private let packageEquivalence: PackageEquivalence
+    private var versionConstraints: [String: VersionConstraintSet] = [:]  // Collected constraints per canonical package
+    private var conflictDetected: [VersionConflict] = []
     
-    public init(pathHelper: PathHelper = PathHelper.shared) {
+    public init(pathHelper: PathHelper = PathHelper.shared, packageEquivalence: PackageEquivalence = PackageEquivalence.shared) {
         self.pathHelper = pathHelper
+        self.packageEquivalence = packageEquivalence
     }
     
     // MARK: - Graph Building
     
-    /// Build complete dependency graph starting from a root package
-    public func buildGraph(for rootPackage: String, tapManager: TapManager) async throws {
-        OSLogger.shared.verbose("📊 Building dependency graph for \(rootPackage)", category: OSLogger.shared.installer)
+    /// Build complete dependency graph starting from a root package with deduplication and conflict detection
+    public func buildCompleteGraph(for rootPackages: [String], tapManager: TapManager) async throws {
+        OSLogger.shared.verbose("📊 Building complete dependency graph for \(rootPackages.joined(separator: ", "))", category: OSLogger.shared.installer)
         
-        var visited = Set<String>()
-        var visiting = Set<String>()  // For cycle detection
+        // Phase 1: Discover all packages and collect requirements
+        var allPackages = Set<String>()
+        var packageRequirements: [String: [DependencyRequirement]] = [:]
         
-        try await buildGraphRecursive(
-            package: rootPackage,
-            tapManager: tapManager,
-            visited: &visited,
-            visiting: &visiting
-        )
+        for rootPackage in rootPackages {
+            try await discoverDependencies(
+                package: rootPackage,
+                tapManager: tapManager,
+                allPackages: &allPackages,
+                packageRequirements: &packageRequirements,
+                visited: Set<String>(),
+                visiting: Set<String>()
+            )
+        }
         
-        OSLogger.shared.info("📊 Dependency graph built: \(nodes.count) total packages")
+        // Phase 2: Resolve package equivalencies and deduplicate
+        let (canonicalPackages, equivalencyMap) = deduplicatePackages(allPackages)
+        
+        // Phase 3: Collect and validate version constraints
+        try collectVersionConstraints(packageRequirements, canonicalPackages, equivalencyMap, tapManager)
+        
+        // Phase 4: Check for version conflicts
+        detectVersionConflicts()
+        
+        // Phase 5: Build final graph with resolved packages
+        try await buildResolvedGraph(canonicalPackages, equivalencyMap, tapManager)
+        
+        OSLogger.shared.info("📊 Complete dependency graph built: \(nodes.count) packages, \(conflictDetected.count) conflicts")
+        
+        // Report conflicts if any
+        if !conflictDetected.isEmpty {
+            for conflict in conflictDetected {
+                OSLogger.shared.warning("Version conflict: \(conflict.description)")
+            }
+        }
     }
     
-    private func buildGraphRecursive(
+    /// Convenience method for single package (maintains backward compatibility)
+    public func buildGraph(for rootPackage: String, tapManager: TapManager) async throws {
+        try await buildCompleteGraph(for: [rootPackage], tapManager: tapManager)
+    }
+    
+    /// Phase 1: Recursively discover all packages in the dependency tree
+    private func discoverDependencies(
         package: String,
         tapManager: TapManager,
-        visited: inout Set<String>,
-        visiting: inout Set<String>
+        allPackages: inout Set<String>,
+        packageRequirements: inout [String: [DependencyRequirement]],
+        visited: Set<String>,
+        visiting: Set<String>
     ) async throws {
+        
         // Cycle detection
         if visiting.contains(package) {
             throw VeloError.installationFailed(
@@ -67,44 +118,167 @@ public class DependencyGraph {
             return
         }
         
-        visiting.insert(package)
+        var newVisiting = visiting
+        newVisiting.insert(package)
+        allPackages.insert(package)
         
         // Get formula for this package
         guard let formula = try tapManager.findFormula(package) else {
             throw VeloError.formulaNotFound(name: package)
         }
         
-        // Get runtime dependencies
-        let runtimeDeps = formula.dependencies
+        // Convert formula dependencies to requirements with version constraints
+        let requirements = formula.dependencies
             .filter { $0.type == .required }
-            .map { $0.name }
+            .map { dep in
+                let constraints = VersionConstraintSet.parse(from: dep.versionConstraints)
+                return DependencyRequirement(name: dep.name, versionConstraints: constraints, type: dep.type)
+            }
         
-        // Check if already installed
-        let isInstalled = pathHelper.isPackageInstalled(package)
+        packageRequirements[package] = requirements
         
-        // Create node
-        let node = DependencyNode(
-            name: package,
-            formula: formula,
-            dependencies: runtimeDeps,
-            isInstalled: isInstalled
-        )
-        
-        nodes[package] = node
-        edges[package] = Set(runtimeDeps)
+        var newVisited = visited
+        newVisited.insert(package)
         
         // Recursively process dependencies
-        for dependency in runtimeDeps {
-            try await buildGraphRecursive(
-                package: dependency,
+        for requirement in requirements {
+            try await discoverDependencies(
+                package: requirement.name,
                 tapManager: tapManager,
-                visited: &visited,
-                visiting: &visiting
+                allPackages: &allPackages,
+                packageRequirements: &packageRequirements,
+                visited: newVisited,
+                visiting: newVisiting
             )
         }
+    }
+    
+    /// Phase 2: Deduplicate equivalent packages
+    private func deduplicatePackages(_ allPackages: Set<String>) -> (canonical: Set<String>, equivalencyMap: [String: String]) {
+        var canonicalPackages = Set<String>()
+        var equivalencyMap: [String: String] = [:]
+        var processedEquivalents = Set<String>()
         
-        visiting.remove(package)
-        visited.insert(package)
+        for package in allPackages {
+            if processedEquivalents.contains(package) {
+                continue
+            }
+            
+            let equivalents = packageEquivalence.getEquivalentPackages(for: package)
+            let canonical = packageEquivalence.getCanonicalName(for: package)
+            
+            canonicalPackages.insert(canonical)
+            
+            for equivalent in equivalents {
+                equivalencyMap[equivalent] = canonical
+                processedEquivalents.insert(equivalent)
+            }
+        }
+        
+        OSLogger.shared.verbose("Deduplication: \(allPackages.count) -> \(canonicalPackages.count) packages", category: OSLogger.shared.installer)
+        return (canonicalPackages, equivalencyMap)
+    }
+    
+    /// Phase 3: Collect version constraints per canonical package
+    private func collectVersionConstraints(
+        _ packageRequirements: [String: [DependencyRequirement]],
+        _ canonicalPackages: Set<String>,
+        _ equivalencyMap: [String: String],
+        _ tapManager: TapManager
+    ) throws {
+        
+        for canonicalPackage in canonicalPackages {
+            var allConstraints: [VersionConstraint] = []
+            
+            // Collect constraints from all equivalent packages
+            for (package, requirements) in packageRequirements {
+                let packageCanonical = equivalencyMap[package] ?? package
+                if packageCanonical == canonicalPackage {
+                    for requirement in requirements {
+                        let reqCanonical = equivalencyMap[requirement.name] ?? requirement.name
+                        if reqCanonical == canonicalPackage {
+                            allConstraints.append(contentsOf: requirement.versionConstraints.constraints)
+                        }
+                    }
+                }
+            }
+            
+            versionConstraints[canonicalPackage] = VersionConstraintSet(constraints: allConstraints)
+        }
+    }
+    
+    /// Phase 4: Detect version conflicts
+    private func detectVersionConflicts() {
+        var conflictsByPackage: [String: [String]] = [:]
+        
+        for (package, constraintSet) in versionConstraints {
+            if constraintSet.constraints.count > 1 {
+                // Check if constraints are mutually compatible
+                let versions = Set(constraintSet.constraints.map { $0.version })
+                if versions.count > 1 {
+                    // Multiple different version requirements
+                    let requirements = constraintSet.constraints.map { "\($0.operator.rawValue) \($0.version)" }
+                    conflictsByPackage[package] = requirements
+                }
+            }
+        }
+        
+        // Convert to VersionConflict objects
+        conflictDetected = conflictsByPackage.map { (package, requirements) in
+            let conflictingReqs = requirements.map { ConflictingRequirement(package: package, version: $0) }
+            return VersionConflict(canonicalPackage: package, conflictingRequirements: conflictingReqs)
+        }
+    }
+    
+    /// Phase 5: Build final resolved graph
+    private func buildResolvedGraph(
+        _ canonicalPackages: Set<String>,
+        _ equivalencyMap: [String: String],
+        _ tapManager: TapManager
+    ) async throws {
+        
+        for canonicalPackage in canonicalPackages {
+            // Find the best formula to use (prefer exact canonical name)
+            guard let formula = try tapManager.findFormula(canonicalPackage) else {
+                // Try to find any equivalent formula
+                let equivalents = packageEquivalence.getEquivalentPackages(for: canonicalPackage)
+                var foundFormula: Formula?
+                for equivalent in equivalents {
+                    if let f = try tapManager.findFormula(equivalent) {
+                        foundFormula = f
+                        break
+                    }
+                }
+                guard let formula = foundFormula else {
+                    throw VeloError.formulaNotFound(name: canonicalPackage)
+                }
+            }
+            
+            // Check if already installed (check all equivalent names)
+            let equivalents = packageEquivalence.getEquivalentPackages(for: canonicalPackage)
+            let isInstalled = equivalents.contains { pathHelper.isPackageInstalled($0) }
+            
+            // Create dependency requirements
+            let requirements = formula.dependencies
+                .filter { $0.type == .required }
+                .map { dep in
+                    let canonicalDep = equivalencyMap[dep.name] ?? dep.name
+                    let constraints = versionConstraints[canonicalDep] ?? VersionConstraintSet(constraints: [])
+                    return DependencyRequirement(name: canonicalDep, versionConstraints: constraints, type: dep.type)
+                }
+            
+            // Create node
+            let node = DependencyNode(
+                name: canonicalPackage,
+                formula: formula,
+                dependencies: requirements,
+                isInstalled: isInstalled,
+                equivalentPackages: equivalents
+            )
+            
+            nodes[canonicalPackage] = node
+            edges[canonicalPackage] = Set(requirements.map { $0.name })
+        }
     }
     
     // MARK: - Graph Analysis
@@ -122,6 +296,16 @@ public class DependencyGraph {
     /// Get all packages in the graph
     public var allPackages: [DependencyNode] {
         return Array(nodes.values)
+    }
+    
+    /// Get detected version conflicts
+    public var versionConflicts: [VersionConflict] {
+        return conflictDetected
+    }
+    
+    /// Check if the graph has any conflicts
+    public var hasConflicts: Bool {
+        return !conflictDetected.isEmpty
     }
     
     /// Get total download size estimate
@@ -197,16 +381,45 @@ public class DependencyGraph {
         return Array(edges[package] ?? [])
     }
     
+    /// Get dependency requirements with constraints
+    public func getDependencyRequirements(of package: String) -> [DependencyRequirement] {
+        return nodes[package]?.dependencies ?? []
+    }
+    
     /// Print dependency graph for debugging
     public func printGraph() {
         OSLogger.shared.verbose("Dependency Graph:", category: OSLogger.shared.installer)
         for (package, dependencies) in edges.sorted(by: { $0.key < $1.key }) {
-            let isInstalled = nodes[package]?.isInstalled ?? false
+            let node = nodes[package]
+            let isInstalled = node?.isInstalled ?? false
             let status = isInstalled ? "✅" : "📦"
+            let equivalents = node?.equivalentPackages ?? []
+            
             if dependencies.isEmpty {
                 OSLogger.shared.debug("  \(status) \(package) (no dependencies)", category: OSLogger.shared.installer)
             } else {
                 OSLogger.shared.debug("  \(status) \(package) -> \(Array(dependencies).sorted().joined(separator: ", "))", category: OSLogger.shared.installer)
+            }
+            
+            // Show equivalents if any
+            if equivalents.count > 1 {
+                let others = equivalents.filter { $0 != package }
+                if !others.isEmpty {
+                    OSLogger.shared.debug("    Equivalents: \(others.sorted().joined(separator: ", "))", category: OSLogger.shared.installer)
+                }
+            }
+            
+            // Show version constraints if any
+            if let constraints = versionConstraints[package], !constraints.constraints.isEmpty {
+                OSLogger.shared.debug("    Constraints: \(constraints.description)", category: OSLogger.shared.installer)
+            }
+        }
+        
+        // Show conflicts
+        if !conflictDetected.isEmpty {
+            OSLogger.shared.verbose("Version Conflicts:", category: OSLogger.shared.installer)
+            for conflict in conflictDetected {
+                OSLogger.shared.debug("  ⚠️ \(conflict.description)", category: OSLogger.shared.installer)
             }
         }
     }

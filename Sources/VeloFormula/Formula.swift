@@ -13,6 +13,7 @@ public struct Formula: Codable, Equatable {
     public struct Dependency: Codable, Equatable {
         public let name: String
         public let type: DependencyType
+        public let versionConstraints: [String]  // Version constraint strings like ">= 1.0", "< 2.0"
 
         public enum DependencyType: String, Codable {
             case required
@@ -21,9 +22,10 @@ public struct Formula: Codable, Equatable {
             case build
         }
 
-        public init(name: String, type: DependencyType = .required) {
+        public init(name: String, type: DependencyType = .required, versionConstraints: [String] = []) {
             self.name = name
             self.type = type
+            self.versionConstraints = versionConstraints
         }
     }
 

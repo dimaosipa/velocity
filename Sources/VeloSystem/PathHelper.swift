@@ -99,6 +99,66 @@ public struct PathHelper {
         let packageDir = cellarPath.appendingPathComponent(package)
         return fileManager.fileExists(atPath: packageDir.path)
     }
+    
+    /// Check if any equivalent package is installed
+    public func isEquivalentPackageInstalled(_ package: String) -> Bool {
+        // First check the package itself
+        if isPackageInstalled(package) {
+            return true
+        }
+        
+        // Import PackageEquivalence here to avoid circular dependencies
+        // This is a simplified check - in production we'd inject this dependency
+        let equivalents = getEquivalentPackageNames(for: package)
+        return equivalents.contains { isPackageInstalled($0) }
+    }
+    
+    /// Find any installed equivalent package
+    public func findInstalledEquivalentPackage(for package: String) -> String? {
+        // First check the package itself
+        if isPackageInstalled(package) {
+            return package
+        }
+        
+        let equivalents = getEquivalentPackageNames(for: package)
+        return equivalents.first { isPackageInstalled($0) }
+    }
+    
+    /// Get equivalent package names (simplified version for PathHelper)
+    private func getEquivalentPackageNames(for package: String) -> [String] {
+        // Simplified equivalence mapping - ideally this would use PackageEquivalence
+        // but we avoid circular dependencies by having a minimal implementation here
+        let commonEquivalencies: [String: [String]] = [
+            "python@3.9": ["python3.9", "python39"],
+            "python@3.10": ["python3.10", "python310"],
+            "python@3.11": ["python3.11", "python311"],
+            "python@3.12": ["python3.12", "python312"],
+            "python@3.13": ["python3.13", "python313"],
+            "python3.9": ["python@3.9", "python39"],
+            "python3.10": ["python@3.10", "python310"],
+            "python3.11": ["python@3.11", "python311"],
+            "python3.12": ["python@3.12", "python312"],
+            "python3.13": ["python@3.13", "python313"],
+            "node@18": ["node18", "nodejs18"],
+            "node@20": ["node20", "nodejs20"],
+            "node@22": ["node22", "nodejs22"],
+            "openssl@3": ["openssl3", "libssl3"],
+            "openssl@1.1": ["openssl1.1", "libssl1.1"]
+        ]
+        
+        if let equivalents = commonEquivalencies[package] {
+            return [package] + equivalents
+        }
+        
+        // Check if package is in any equivalency group
+        for (canonical, equivalents) in commonEquivalencies {
+            if equivalents.contains(package) {
+                return [canonical] + equivalents
+            }
+        }
+        
+        return [package]
+    }
 
     public func isSpecificVersionInstalled(_ package: String, version: String) -> Bool {
         let packageDir = packagePath(for: package, version: version)
@@ -122,6 +182,56 @@ public struct PathHelper {
         }
 
         try fileManager.createSymbolicLink(at: destination, withDestinationURL: source)
+    }
+    
+    /// Create symlink with conflict detection and resolution
+    public func createSymlinkWithConflictDetection(
+        from source: URL, 
+        to destination: URL, 
+        packageName: String
+    ) throws {
+        let destinationPath = destination.path
+        
+        // Check if destination already exists
+        if fileManager.fileExists(atPath: destinationPath) {
+            // Try to determine what package owns the existing symlink
+            if let existingTarget = try? fileManager.destinationOfSymbolicLink(atPath: destinationPath) {
+                let existingPackage = extractPackageFromPath(existingTarget)
+                
+                if let existing = existingPackage {
+                    // Check if packages are equivalent
+                    let equivalents = getEquivalentPackageNames(for: packageName)
+                    if equivalents.contains(existing) {
+                        // Equivalent packages - log replacement
+                        OSLogger.shared.info("🔗 Replacing symlink for equivalent package: \(existing) -> \(packageName)")
+                    } else {
+                        // Different packages - warn about replacement
+                        OSLogger.shared.warning("🔗 Replacing symlink from different package: \(existing) -> \(packageName)")
+                    }
+                } else {
+                    OSLogger.shared.warning("🔗 Replacing symlink from unknown package")
+                }
+            }
+            
+            // Remove existing symlink/file
+            try fileManager.removeItem(at: destination)
+        }
+        
+        try fileManager.createSymbolicLink(at: destination, withDestinationURL: source)
+    }
+    
+    /// Extract package name from a file path
+    private func extractPackageFromPath(_ path: String) -> String? {
+        // Path format: ~/.velo/Cellar/package-name/version/bin/binary
+        let components = path.components(separatedBy: "/")
+        
+        // Find "Cellar" in the path
+        if let cellarIndex = components.firstIndex(of: "Cellar"),
+           cellarIndex + 1 < components.count {
+            return components[cellarIndex + 1]
+        }
+        
+        return nil
     }
 
     public func createOptSymlink(for package: String, version: String) throws {

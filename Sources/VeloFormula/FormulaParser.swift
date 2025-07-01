@@ -239,10 +239,25 @@ public struct FormulaParser {
                 continue
             }
 
-            // Match depends_on with build flag: depends_on "name" => :build
+            // Match depends_on with version constraints and build flag
+            // Format: depends_on "name", ">= 1.0", "< 2.0" => :build
+            let buildDependsWithVersionPattern = #"depends_on\s+["']([^"']+)["'](?:\s*,\s*["']([^"']+)["'])*\s*=>\s*:build"#
+            if let dependency = parseDependencyLine(line, pattern: buildDependsWithVersionPattern, type: .build) {
+                dependencies.append(dependency)
+                continue
+            }
+
+            // Match depends_on with build flag (no version): depends_on "name" => :build
             let buildDependsPattern = #"depends_on\s+["']([^"']+)["']\s*=>\s*:build"#
             if let match = extractFirstMatch(pattern: buildDependsPattern, from: line) {
                 dependencies.append(Formula.Dependency(name: match, type: .build))
+                continue
+            }
+
+            // Match depends_on with version constraints
+            // Format: depends_on "name", ">= 1.0", "< 2.0"
+            if let dependency = parseDependencyWithVersions(line) {
+                dependencies.append(dependency)
                 continue
             }
 
@@ -254,6 +269,52 @@ public struct FormulaParser {
         }
 
         return dependencies
+    }
+
+    /// Parse dependency line with version constraints
+    private func parseDependencyWithVersions(_ line: String) -> Formula.Dependency? {
+        // Pattern to match: depends_on "package", "constraint1", "constraint2", ...
+        let basePattern = #"depends_on\s+["']([^"']+)["']"#
+        
+        guard let packageName = extractFirstMatch(pattern: basePattern, from: line) else {
+            return nil
+        }
+        
+        // Extract all quoted strings after the package name
+        let allQuotedStrings = extractAllMatches(pattern: #"["']([^"']+)["']"#, from: line)
+        
+        // First quoted string is the package name, rest are version constraints
+        if allQuotedStrings.count > 1 {
+            let constraints = Array(allQuotedStrings.dropFirst())
+            // Filter out non-version constraints (like platform specifiers)
+            let versionConstraints = constraints.filter { isVersionConstraint($0) }
+            
+            if !versionConstraints.isEmpty {
+                return Formula.Dependency(name: packageName, type: .required, versionConstraints: versionConstraints)
+            }
+        }
+        
+        return nil
+    }
+    
+    /// Parse dependency line with pattern for specific type
+    private func parseDependencyLine(_ line: String, pattern: String, type: Formula.Dependency.DependencyType) -> Formula.Dependency? {
+        guard let packageName = extractFirstMatch(pattern: pattern, from: line) else {
+            return nil
+        }
+        
+        // Extract version constraints from the line
+        let allQuotedStrings = extractAllMatches(pattern: #"["']([^"']+)["']"#, from: line)
+        let constraints = Array(allQuotedStrings.dropFirst()).filter { isVersionConstraint($0) }
+        
+        return Formula.Dependency(name: packageName, type: type, versionConstraints: constraints)
+    }
+    
+    /// Check if a string looks like a version constraint
+    private func isVersionConstraint(_ string: String) -> Bool {
+        let versionOperators = [">=", "<=", ">", "<", "==", "~>", "^"]
+        return versionOperators.contains { string.hasPrefix($0) } || 
+               string.range(of: #"\d+\.\d+"#, options: .regularExpression) != nil
     }
 
     /// Check if a line contains a platform-specific dependency that should be skipped on macOS

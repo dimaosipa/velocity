@@ -494,8 +494,22 @@ extension Velo {
                 throw VeloError.formulaNotFound(name: name)
             }
 
-            // Check if already installed
+            // Check if already installed (including equivalent packages)
             if !force {
+                if pathHelper.isEquivalentPackageInstalled(name) {
+                    if let installedEquivalent = pathHelper.findInstalledEquivalentPackage(for: name) {
+                        if verbose {
+                            if installedEquivalent == name {
+                                OSLogger.shared.info("\(formula.name) \(formula.version) is already installed")
+                            } else {
+                                OSLogger.shared.info("Equivalent package \(installedEquivalent) is already installed for \(name)")
+                            }
+                        }
+                        return
+                    }
+                }
+                
+                // Fallback to original verification
                 let status = try installer.verifyInstallation(formula: formula)
                 if status.isInstalled {
                     if verbose {
@@ -590,7 +604,7 @@ extension Velo {
             }
         }
 
-        // MARK: - Dependency Resolution with Graph
+        // MARK: - Dependency Resolution with Complete Graph
 
         private func installDependenciesWithGraph(
             for formula: Formula,
@@ -603,42 +617,51 @@ extension Velo {
                 return
             }
 
-            // For each dependency, build a dependency graph and install
-            for dependency in runtimeDependencies {
-                // Skip if already installed
-                if pathHelper.isPackageInstalled(dependency.name) {
-                    OSLogger.shared.info("✓ \(dependency.name) (already installed)")
-                    continue
+            OSLogger.shared.info("Building complete dependency graph...")
+
+            // Build complete dependency graph for ALL dependencies at once
+            let dependencyNames = runtimeDependencies.map { $0.name }
+            let graph = DependencyGraph(pathHelper: pathHelper)
+            try await graph.buildCompleteGraph(for: dependencyNames, tapManager: tapManager)
+
+            // Check for version conflicts
+            if graph.hasConflicts {
+                OSLogger.shared.warning("Version conflicts detected:")
+                for conflict in graph.versionConflicts {
+                    OSLogger.shared.warning("  ⚠️ \(conflict.description)")
                 }
-
-                OSLogger.shared.info("Installing dependency: \(dependency.name)...")
-
-                // Build dependency graph for this dependency
-                let graph = DependencyGraph(pathHelper: pathHelper)
-                try await graph.buildGraph(for: dependency.name, tapManager: tapManager)
-
-                // Get packages that need to be installed
-                let newPackages = graph.newPackages
-                if newPackages.isEmpty {
-                    OSLogger.shared.info("✓ \(dependency.name) (no new packages needed)")
-                    continue
-                }
-
-                // Download all required packages in parallel
-                let downloadManager = ParallelDownloadManager(pathHelper: pathHelper)
-                let downloads = try await downloadManager.downloadAll(packages: newPackages)
-
-                // Install packages in dependency order
-                let installOrder = try graph.getInstallOrder()
-                try await installPackagesInOrder(
-                    installOrder: installOrder,
-                    downloads: downloads,
-                    graph: graph,
-                    pathHelper: pathHelper
-                )
-
-                OSLogger.shared.info("✓ \(dependency.name) and its dependencies installed successfully")
+                OSLogger.shared.info("Proceeding with installation despite conflicts...")
             }
+
+            // Get packages that need to be installed (using equivalence detection)
+            let newPackages = graph.newPackages
+            if newPackages.isEmpty {
+                OSLogger.shared.info("✓ All dependencies already installed")
+                return
+            }
+
+            OSLogger.shared.info("Dependencies to install: \(newPackages.count) packages")
+            
+            // Show install plan
+            let installPlan = try InstallPlan(graph: graph, rootPackage: formula.name)
+            installPlan.display()
+
+            // Download all required packages in parallel
+            OSLogger.shared.info("Downloading \(newPackages.count) packages in parallel...")
+            let downloadManager = ParallelDownloadManager(pathHelper: pathHelper)
+            let downloads = try await downloadManager.downloadAll(packages: newPackages)
+
+            // Install packages in dependency order
+            let installOrder = try graph.getInstallOrder()
+            OSLogger.shared.info("Installing packages in dependency order...")
+            try await installPackagesInOrder(
+                installOrder: installOrder,
+                downloads: downloads,
+                graph: graph,
+                pathHelper: pathHelper
+            )
+
+            OSLogger.shared.success("All dependencies installed successfully!")
         }
 
         /// Install packages in the correct dependency order
