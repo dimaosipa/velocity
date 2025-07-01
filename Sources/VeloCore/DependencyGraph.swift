@@ -131,7 +131,7 @@ public class DependencyGraph {
         let requirements = formula.dependencies
             .filter { $0.type == .required }
             .map { dep in
-                let constraints = VersionConstraintSet.parse(from: dep.versionConstraints)
+                let constraints = VersionConstraintSet.parse(from: dep.versionConstraints ?? [])
                 return DependencyRequirement(name: dep.name, versionConstraints: constraints, type: dep.type)
             }
         
