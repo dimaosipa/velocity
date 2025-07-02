@@ -86,25 +86,39 @@ extension Velo {
 
             // Check if already installed before showing installation messages (unless force is used)
             if !force {
-                if pathHelper.isEquivalentPackageInstalled(resolvedName) {
-                    if let installedEquivalent = pathHelper.findInstalledEquivalentPackage(for: resolvedName) {
-                        if installedEquivalent == resolvedName {
-                            print("✅ \(resolvedName) is already installed")
-                        } else {
-                            print("✅ \(resolvedName) is already installed (via \(installedEquivalent))")
-                        }
-                        return
-                    }
-                }
-                
-                // Also check via formula if we can get it quickly
                 let tapManager = TapManager(pathHelper: pathHelper)
-                if let formula = try? tapManager.findFormula(resolvedName, version: resolvedVersion) {
-                    let installer = Installer(pathHelper: pathHelper)
-                    let status = try? installer.verifyInstallation(formula: formula)
-                    if status?.isInstalled == true {
-                        print("✅ \(formula.name) \(formula.version) is already installed")
-                        return
+                
+                // If version is specified, check for that specific version first
+                if let requestedVersion = resolvedVersion {
+                    if let formula = try? tapManager.findFormula(resolvedName, version: requestedVersion) {
+                        let installer = Installer(pathHelper: pathHelper)
+                        let status = try? installer.verifyInstallation(formula: formula)
+                        if status?.isInstalled == true {
+                            print("✅ \(formula.name) \(formula.version) is already installed")
+                            return
+                        }
+                    }
+                } else {
+                    // No version specified, check if any version is installed
+                    if pathHelper.isEquivalentPackageInstalled(resolvedName) {
+                        if let installedEquivalent = pathHelper.findInstalledEquivalentPackage(for: resolvedName) {
+                            if installedEquivalent == resolvedName {
+                                print("✅ \(resolvedName) is already installed")
+                            } else {
+                                print("✅ \(resolvedName) is already installed (via \(installedEquivalent))")
+                            }
+                            return
+                        }
+                    }
+                    
+                    // Also check via formula if we can get it quickly
+                    if let formula = try? tapManager.findFormula(resolvedName) {
+                        let installer = Installer(pathHelper: pathHelper)
+                        let status = try? installer.verifyInstallation(formula: formula)
+                        if status?.isInstalled == true {
+                            print("✅ \(formula.name) \(formula.version) is already installed")
+                            return
+                        }
                     }
                 }
             }
