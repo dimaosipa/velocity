@@ -1234,14 +1234,19 @@ extension Velo {
             for depName in missingDeps {
                 print("🔧 Installing missing dependency: \(depName)")
                 
-                // Create a sub-command to install the dependency
-                var subInstall = Install()
-                subInstall.package = depName
-                subInstall.skipDependencies = false  // Dependencies might have their own dependencies
-                subInstall.force = false
-                subInstall.global = !context.isProjectContext  // Match parent install context
-                
-                try await subInstall.runAsync()
+                // Install the dependency directly using the existing installation logic
+                try await installPackage(
+                    name: depName,
+                    version: nil,  // Use latest version
+                    context: context,
+                    pathHelper: pathHelper,
+                    skipDeps: false,  // Dependencies might have their own dependencies
+                    verbose: false,   // Reduce noise for dependency installation
+                    skipTapUpdate: true,  // Skip tap update since we likely just updated
+                    forceTapUpdate: false,
+                    force: false,
+                    startTime: Date()
+                )
             }
         }
 
