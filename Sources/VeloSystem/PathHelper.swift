@@ -46,6 +46,10 @@ public struct PathHelper {
         veloHome.appendingPathComponent("opt")
     }
     
+    public var receiptsPath: URL {
+        veloHome.appendingPathComponent("receipts")
+    }
+    
     public var tapMetadataFile: URL {
         cachePath.appendingPathComponent("tap-metadata.json")
     }
@@ -79,6 +83,7 @@ public struct PathHelper {
         try ensureDirectoryExists(at: logsPath)
         try ensureDirectoryExists(at: tmpPath)
         try ensureDirectoryExists(at: optPath)
+        try ensureDirectoryExists(at: receiptsPath)
     }
 
     // MARK: - Package Paths

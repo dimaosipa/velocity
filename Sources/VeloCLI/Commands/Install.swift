@@ -87,6 +87,7 @@ extension Velo {
             // Check if already installed before showing installation messages (unless force is used)
             if !force {
                 let tapManager = TapManager(pathHelper: pathHelper)
+                let receiptManager = ReceiptManager(pathHelper: pathHelper)
                 
                 // If version is specified, check for that specific version first
                 if let requestedVersion = resolvedVersion {
@@ -94,14 +95,59 @@ extension Velo {
                         let installer = Installer(pathHelper: pathHelper)
                         let status = try? installer.verifyInstallation(formula: formula)
                         if status?.isInstalled == true {
-                            print("✅ \(formula.name) \(formula.version) is already installed")
-                            return
+                            // Check if it's installed as a dependency
+                            if let receipt = try? receiptManager.loadReceipt(for: formula.name, version: formula.version),
+                               receipt.installedAs == .dependency {
+                                // Convert from dependency to explicit installation
+                                print("✅ \(formula.name) \(formula.version) is already installed (as dependency of \(receipt.requestedBy.joined(separator: ", "))), creating symlinks...")
+                                
+                                // Create symlinks
+                                let packageDir = pathHelper.packagePath(for: formula.name, version: formula.version)
+                                try await installer.createSymlinksForExistingPackage(formula: formula, packageDir: packageDir)
+                                
+                                // Update receipt
+                                try receiptManager.updateReceipt(for: formula.name, version: formula.version) { receipt in
+                                    receipt.installedAs = .explicit
+                                    receipt.symlinksCreated = true
+                                }
+                                
+                                print("✓ \(formula.name) is now available in PATH")
+                                return
+                            } else {
+                                print("✅ \(formula.name) \(formula.version) is already installed")
+                                return
+                            }
                         }
                     }
                 } else {
                     // No version specified, check if any version is installed
                     if pathHelper.isEquivalentPackageInstalled(resolvedName) {
                         if let installedEquivalent = pathHelper.findInstalledEquivalentPackage(for: resolvedName) {
+                            // Check receipt for the installed version
+                            if let receipt = try? receiptManager.loadReceipt(for: installedEquivalent) {
+                                if receipt.installedAs == .dependency {
+                                    // Get the formula for creating symlinks
+                                    if let formula = try? tapManager.findFormula(installedEquivalent) {
+                                        print("✅ \(resolvedName) is already installed (as dependency of \(receipt.requestedBy.joined(separator: ", "))), creating symlinks...")
+                                        
+                                        // Create symlinks
+                                        let installer = Installer(pathHelper: pathHelper)
+                                        let packageDir = pathHelper.packagePath(for: formula.name, version: formula.version)
+                                        try await installer.createSymlinksForExistingPackage(formula: formula, packageDir: packageDir)
+                                        
+                                        // Update receipt
+                                        try receiptManager.updateReceipt(for: formula.name, version: formula.version) { receipt in
+                                            receipt.installedAs = .explicit
+                                            receipt.symlinksCreated = true
+                                        }
+                                        
+                                        print("✓ \(formula.name) is now available in PATH")
+                                        return
+                                    }
+                                }
+                            }
+                            
+                            // No receipt or already explicit - just report it's installed
                             if installedEquivalent == resolvedName {
                                 print("✅ \(resolvedName) is already installed")
                             } else {
@@ -683,6 +729,17 @@ extension Velo {
                 shouldCreateSymlinks: true  // Main package gets symlinks
             )
             
+            // Create receipt for explicitly installed package
+            let receiptManager = ReceiptManager(pathHelper: pathHelper)
+            let receipt = InstallationReceipt(
+                package: formula.name,
+                version: formula.version,
+                installedAs: .explicit,
+                requestedBy: [],
+                symlinksCreated: true
+            )
+            try receiptManager.saveReceipt(receipt)
+            
             if depCount > 0 {
                 ProgressReporter.shared.completeLiveStep("[\(stepCount)/\(totalSteps)] ✓ Installed \(formula.name) and \(depCount) dependencies")
             } else {
@@ -782,7 +839,8 @@ extension Velo {
                 force: force,
                 showProgress: true,
                 stepCount: stepCount,
-                totalSteps: totalSteps
+                totalSteps: totalSteps,
+                requestedBy: formula.name  // Track parent package
             )
             
             return installablePackages.count
@@ -888,7 +946,8 @@ extension Velo {
             force: Bool = false,
             showProgress: Bool = false,
             stepCount: Int = 0,
-            totalSteps: Int = 0
+            totalSteps: Int = 0,
+            requestedBy: String? = nil  // Track which package requested these dependencies
         ) async throws {
             let installer = Installer(pathHelper: pathHelper)
             installTracker?.startInstallation()
@@ -940,6 +999,23 @@ extension Velo {
                     force: force,
                     shouldCreateSymlinks: false  // Dependencies don't get symlinks
                 )
+                
+                // Create receipt for dependency
+                let receiptManager = ReceiptManager(pathHelper: pathHelper)
+                let receipt = InstallationReceipt(
+                    package: node.formula.name,
+                    version: node.formula.version,
+                    installedAs: .dependency,
+                    requestedBy: requestedBy != nil ? [requestedBy!] : [],
+                    symlinksCreated: false
+                )
+                try receiptManager.saveReceipt(receipt)
+                
+                // Update parent's receipt to add this dependency
+                if requestedBy != nil {
+                    // The parent might not have a receipt yet if we're installing its dependencies first
+                    // So we'll handle this gracefully
+                }
                 
                 installTracker?.completePackageInstallation(packageName)
                 

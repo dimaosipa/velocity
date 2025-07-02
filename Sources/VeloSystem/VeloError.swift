@@ -46,6 +46,9 @@ public enum VeloError: LocalizedError {
 
     // Update errors
     case updateCheckFailed(reason: String)
+    
+    // Receipt errors
+    case receiptNotFound(package: String, version: String)
 
     public var errorDescription: String? {
         switch self {
@@ -101,6 +104,8 @@ public enum VeloError: LocalizedError {
             return "Not in a project context. Run 'velo init' to create a velo.json file."
         case .updateCheckFailed(let reason):
             return "Update check failed: \(reason)"
+        case .receiptNotFound(let package, let version):
+            return "Receipt not found for \(package) v\(version)"
         }
     }
 }

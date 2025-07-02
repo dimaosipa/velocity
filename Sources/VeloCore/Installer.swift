@@ -212,7 +212,6 @@ public final class Installer {
         
         // Process all bin directories
         for directory in binDirectories {
-            let isFrameworkBin = directory.path.contains("Framework")
             let binaries = try fileManager.contentsOfDirectory(atPath: directory.path)
                 .filter { !$0.hasPrefix(".") && !$0.hasSuffix(".pyc") }
 
@@ -420,7 +419,6 @@ public final class Installer {
         // Find lines containing @@HOMEBREW_PREFIX@@ or @@HOMEBREW_CELLAR@@ and rewrite them
         let lines = dependencies.components(separatedBy: .newlines)
         var rewriteCount = 0
-        var installNameFixed = false
 
         for (index, line) in lines.enumerated() {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
@@ -457,7 +455,6 @@ public final class Installer {
                         OSLogger.shared.installerWarning("install_name_tool -id failed for \(binaryPath.lastPathComponent): \(errorString)")
                     } else {
                         rewriteCount += 1
-                        installNameFixed = true
                     }
                 } else {
                     // Fix dependency reference
@@ -770,5 +767,15 @@ extension Installer {
 
         // Remove only the old version (not all versions)
         try uninstallVersion(package: oldFormula.name, version: oldFormula.version)
+    }
+    
+    /// Create symlinks for an already installed package (used when converting dependency to explicit)
+    public func createSymlinksForExistingPackage(formula: Formula, packageDir: URL) async throws {
+        try await createSymlinks(for: formula, packageDir: packageDir, progress: nil, force: false)
+    }
+    
+    /// Remove symlinks for a package without uninstalling it
+    public func removeSymlinksForPackage(package: String, version: String, packageDir: URL) throws {
+        try removeSymlinks(for: package, version: version, packageDir: packageDir)
     }
 }
