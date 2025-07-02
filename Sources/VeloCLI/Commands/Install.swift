@@ -114,8 +114,16 @@ extension Velo {
                                 print("✓ \(formula.name) is now available in PATH")
                                 return
                             } else {
-                                print("✅ \(formula.name) \(formula.version) is already installed")
-                                return
+                                // Check if all dependencies are satisfied
+                                let missingDeps = try await checkMissingDependencies(for: formula, tapManager: tapManager, pathHelper: pathHelper)
+                                if !missingDeps.isEmpty {
+                                    print("⚠️  \(formula.name) \(formula.version) is installed but missing dependencies: \(missingDeps.joined(separator: ", "))")
+                                    print("Installing missing dependencies...")
+                                    // Don't return - let it proceed to reinstall dependencies
+                                } else {
+                                    print("✅ \(formula.name) \(formula.version) is already installed")
+                                    return
+                                }
                             }
                         }
                     }
@@ -147,13 +155,30 @@ extension Velo {
                                 }
                             }
                             
-                            // No receipt or already explicit - just report it's installed
-                            if installedEquivalent == resolvedName {
-                                print("✅ \(resolvedName) is already installed")
+                            // No receipt or already explicit - check dependencies
+                            if let formula = try? tapManager.findFormula(installedEquivalent) {
+                                let missingDeps = try await checkMissingDependencies(for: formula, tapManager: tapManager, pathHelper: pathHelper)
+                                if !missingDeps.isEmpty {
+                                    print("⚠️  \(resolvedName) is installed but missing dependencies: \(missingDeps.joined(separator: ", "))")
+                                    print("Installing missing dependencies...")
+                                    // Don't return - let it proceed to reinstall dependencies
+                                } else {
+                                    if installedEquivalent == resolvedName {
+                                        print("✅ \(resolvedName) is already installed")
+                                    } else {
+                                        print("✅ \(resolvedName) is already installed (via \(installedEquivalent))")
+                                    }
+                                    return
+                                }
                             } else {
-                                print("✅ \(resolvedName) is already installed (via \(installedEquivalent))")
+                                // Can't load formula, just report it's installed
+                                if installedEquivalent == resolvedName {
+                                    print("✅ \(resolvedName) is already installed")
+                                } else {
+                                    print("✅ \(resolvedName) is already installed (via \(installedEquivalent))")
+                                }
+                                return
                             }
-                            return
                         }
                     }
                     
@@ -162,8 +187,16 @@ extension Velo {
                         let installer = Installer(pathHelper: pathHelper)
                         let status = try? installer.verifyInstallation(formula: formula)
                         if status?.isInstalled == true {
-                            print("✅ \(formula.name) \(formula.version) is already installed")
-                            return
+                            // Check if all dependencies are satisfied
+                            let missingDeps = try await checkMissingDependencies(for: formula, tapManager: tapManager, pathHelper: pathHelper)
+                            if !missingDeps.isEmpty {
+                                print("⚠️  \(formula.name) \(formula.version) is installed but missing dependencies: \(missingDeps.joined(separator: ", "))")
+                                print("Installing missing dependencies...")
+                                // Don't return - let it proceed to reinstall dependencies
+                            } else {
+                                print("✅ \(formula.name) \(formula.version) is already installed")
+                                return
+                            }
                         }
                     }
                 }
@@ -1154,6 +1187,30 @@ extension Velo {
             }
             
             return sortedVersions.first ?? results.first
+        }
+        
+        /// Check if any dependencies are missing for the given formula
+        private func checkMissingDependencies(
+            for formula: Formula,
+            tapManager: TapManager,
+            pathHelper: PathHelper
+        ) async throws -> [String] {
+            var missingDeps: [String] = []
+            
+            // Only check runtime dependencies
+            let runtimeDependencies = formula.dependencies.filter { $0.type == .required }
+            
+            for dep in runtimeDependencies {
+                // Check if this dependency is installed
+                if !pathHelper.isPackageInstalled(dep.name) {
+                    // Also check for equivalent packages
+                    if !pathHelper.isEquivalentPackageInstalled(dep.name) {
+                        missingDeps.append(dep.name)
+                    }
+                }
+            }
+            
+            return missingDeps
         }
 
     }
