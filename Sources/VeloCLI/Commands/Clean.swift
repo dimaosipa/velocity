@@ -78,7 +78,7 @@ extension Velo {
             print("")
 
             if cleanPackages {
-                print("📦 All installed packages:")
+                print("📦 All installed packages and their receipts:")
                 let pathHelper = PathHelper.shared
                 if FileManager.default.fileExists(atPath: pathHelper.cellarPath.path) {
                     let packages = try FileManager.default.contentsOfDirectory(atPath: pathHelper.cellarPath.path)
@@ -151,6 +151,11 @@ extension Velo {
             // Remove opt directory (package symlinks)
             if fileManager.fileExists(atPath: pathHelper.optPath.path) {
                 try fileManager.removeItem(at: pathHelper.optPath)
+            }
+
+            // Remove receipts directory (installation metadata)
+            if fileManager.fileExists(atPath: pathHelper.receiptsPath.path) {
+                try fileManager.removeItem(at: pathHelper.receiptsPath)
             }
 
             // Recreate essential directories
