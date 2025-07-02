@@ -641,30 +641,32 @@ public final class Installer {
 
     // MARK: - Verification
 
-    public func verifyInstallation(formula: Formula) throws -> InstallationStatus {
+    public func verifyInstallation(formula: Formula, checkSymlinks: Bool = true) throws -> InstallationStatus {
         let packageDir = pathHelper.packagePath(for: formula.name, version: formula.version)
 
         guard fileManager.fileExists(atPath: packageDir.path) else {
             return .notInstalled
         }
 
-        // Check if binaries are properly linked
-        let binDir = packageDir.appendingPathComponent("bin")
-        if fileManager.fileExists(atPath: binDir.path) {
-            let binaries = try fileManager.contentsOfDirectory(atPath: binDir.path)
-                .filter { !$0.hasPrefix(".") }
+        // Check if binaries are properly linked (only if symlink checking is enabled)
+        if checkSymlinks {
+            let binDir = packageDir.appendingPathComponent("bin")
+            if fileManager.fileExists(atPath: binDir.path) {
+                let binaries = try fileManager.contentsOfDirectory(atPath: binDir.path)
+                    .filter { !$0.hasPrefix(".") }
 
-            for binary in binaries {
-                let symlinkPath = pathHelper.symlinkPath(for: binary)
-                if !fileManager.fileExists(atPath: symlinkPath.path) {
-                    return .corrupted(reason: "Missing symlink for \(binary)")
-                }
+                for binary in binaries {
+                    let symlinkPath = pathHelper.symlinkPath(for: binary)
+                    if !fileManager.fileExists(atPath: symlinkPath.path) {
+                        return .corrupted(reason: "Missing symlink for \(binary)")
+                    }
 
-                // Verify symlink points to correct location
-                let resolvedPath = try fileManager.destinationOfSymbolicLink(atPath: symlinkPath.path)
-                let expectedPath = binDir.appendingPathComponent(binary).path
-                if resolvedPath != expectedPath {
-                    return .corrupted(reason: "Symlink \(binary) points to wrong location")
+                    // Verify symlink points to correct location
+                    let resolvedPath = try fileManager.destinationOfSymbolicLink(atPath: symlinkPath.path)
+                    let expectedPath = binDir.appendingPathComponent(binary).path
+                    if resolvedPath != expectedPath {
+                        return .corrupted(reason: "Symlink \(binary) points to wrong location")
+                    }
                 }
             }
         }

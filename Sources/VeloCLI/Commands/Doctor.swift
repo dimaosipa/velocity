@@ -210,7 +210,9 @@ extension Velo {
                             version: version
                         )
 
-                        let status = try installer.verifyInstallation(formula: formula)
+                        // Determine if this package should have symlinks checked
+                        let shouldCheckSymlinks = !isLikelyDependencyPackage(package)
+                        let status = try installer.verifyInstallation(formula: formula, checkSymlinks: shouldCheckSymlinks)
 
                         switch status {
                         case .installed:
@@ -455,6 +457,90 @@ extension Velo {
             } catch {
                 return nil
             }
+        }
+        
+        /// Determine if a package is likely a dependency rather than an explicitly installed package
+        private func isLikelyDependencyPackage(_ packageName: String) -> Bool {
+            // List of commonly used dependency packages that users rarely install directly
+            let commonDependencies = [
+                // System libraries
+                "openssl", "openssl@3", "zlib", "bzip2", "xz", "lz4", "zstd",
+                
+                // Language runtimes (when used as dependencies)
+                "python@3.11", "python@3.12", "python@3.13", "node@18", "node@20",
+                
+                // Build tools and libraries
+                "cmake", "autoconf", "automake", "libtool", "pkg-config", "pkgconf",
+                "gettext", "readline", "ncurses", "sqlite", "gdbm",
+                
+                // Graphics and media libraries
+                "jpeg-turbo", "libpng", "libtiff", "giflib", "webp", "freetype",
+                "fontconfig", "cairo", "pixman", "fribidi", "harfbuzz", "pango",
+                "glib", "gobject-introspection", "graphite2", "little-cms2",
+                
+                // Compression libraries
+                "brotli", "lzma", "libdeflate", "snappy",
+                
+                // Audio/video libraries  
+                "lame", "mpg123", "speex", "opus", "flac", "ogg", "vorbis",
+                "x264", "x265", "aom", "dav1d", "rav1e", "svt-av1", "libvpx",
+                "libtheora", "libvorbis", "libogg", "libsndfile", "rubberband",
+                
+                // Network and security libraries (excluding commonly installed tools)
+                "gnutls", "nettle", "libtasn1", "p11-kit",
+                "ca-certificates", "libevent", "libnghttp2", "c-ares",
+                "libidn2", "libpsl", "libssh2",
+                
+                // Archive and file format libraries
+                "libarchive", "unrar", "p7zip", "libzip",
+                
+                // Development libraries
+                "pcre", "pcre2", "icu4c", "boost", "protobuf", "yaml-cpp",
+                "json-c", "jansson", "rapidjson",
+                
+                // Image processing
+                "imagemagick", "vips", "opencv", "tesseract", "leptonica",
+                "openjpeg", "jpeg-xl", "libjxl", "openexr", "imath",
+                
+                // Multimedia frameworks
+                "sdl2", "allegro", "sfml", "glfw",
+                
+                // Database libraries
+                "postgresql", "mysql", "sqlite3", "redis", "mongodb",
+                
+                // Encryption and hashing
+                "libgcrypt", "libgpg-error", "argon2", "bcrypt",
+                
+                // XML/HTML processing
+                "libxml2", "libxslt", "pugixml", "tinyxml2",
+                
+                // File system libraries
+                "ossp-uuid", "e2fsprogs", "ntfs-3g",
+                
+                // Compiler components
+                "gcc", "llvm", "clang", "binutils", "nasm", "yasm",
+                
+                // More specific multimedia/graphics dependencies
+                "libbluray", "zeromq", "srt", "librist", "libvmaf", "mbedtls"
+            ]
+            
+            // Check if the package name is in our known dependencies list
+            if commonDependencies.contains(packageName) {
+                return true
+            }
+            
+            // Check for versioned dependency patterns (most @version packages are dependencies)
+            if packageName.contains("@") {
+                // Extract base name and check if it's a common dependency base
+                let baseName = String(packageName.split(separator: "@").first ?? "")
+                let versionedDependencyBases = [
+                    "python", "node", "ruby", "go", "rust", "java", "perl",
+                    "php", "openssl", "mysql", "postgresql", "redis"
+                ]
+                return versionedDependencyBases.contains(baseName)
+            }
+            
+            return false
         }
     }
 }
