@@ -313,7 +313,9 @@ public class DependencyGraph {
             }
         }
         OSLogger.shared.debug("Found \(queue.count) root packages in \(Date().timeIntervalSince(startTime))s", category: OSLogger.shared.installer)
-        print("  Starting topological sort with \(queue.count) root packages...")
+        
+        // Start progress reporting for dependency resolution
+        ProgressReporter.shared.startLiveStep("Resolving dependencies")
         
         // Process queue with progress tracking
         var processed = 0
@@ -324,10 +326,11 @@ public class DependencyGraph {
             result.append(current)
             processed += 1
             
-            // Log progress every 20 packages
-            if processed % 20 == 0 {
+            // Update progress every 10 packages for smoother updates
+            if processed % 10 == 0 || processed == totalPackages {
                 OSLogger.shared.debug("Processed \(processed)/\(totalPackages) packages", category: OSLogger.shared.installer)
-                print("  Processed \(processed)/\(totalPackages) packages...")
+                let progress = Double(processed) / Double(totalPackages)
+                ProgressReporter.shared.updateLiveProgress(progress: progress, message: "Resolving dependencies")
             }
             
             // Reduce in-degree for all dependencies of the current package
@@ -359,6 +362,9 @@ public class DependencyGraph {
                 reason: "Circular dependency detected involving: \(Array(remaining).sorted().joined(separator: ", "))"
             )
         }
+        
+        // Complete the progress reporting
+        ProgressReporter.shared.completeLiveStep("Dependencies resolved")
         
         OSLogger.shared.verbose("Topological sort completed: \(result.joined(separator: " -> "))", category: OSLogger.shared.installer)
         return result
