@@ -119,7 +119,11 @@ extension Velo {
                                 if !missingDeps.isEmpty {
                                     print("⚠️  \(formula.name) \(formula.version) is installed but missing dependencies: \(missingDeps.joined(separator: ", "))")
                                     print("Installing missing dependencies...")
-                                    // Don't return - let it proceed to reinstall dependencies
+                                    
+                                    // Install only the missing dependencies
+                                    try await installMissingDependencies(missingDeps, context: context, pathHelper: pathHelper)
+                                    print("✓ \(formula.name) dependencies restored")
+                                    return
                                 } else {
                                     print("✅ \(formula.name) \(formula.version) is already installed")
                                     return
@@ -161,7 +165,11 @@ extension Velo {
                                 if !missingDeps.isEmpty {
                                     print("⚠️  \(resolvedName) is installed but missing dependencies: \(missingDeps.joined(separator: ", "))")
                                     print("Installing missing dependencies...")
-                                    // Don't return - let it proceed to reinstall dependencies
+                                    
+                                    // Install only the missing dependencies
+                                    try await installMissingDependencies(missingDeps, context: context, pathHelper: pathHelper)
+                                    print("✓ \(resolvedName) dependencies restored")
+                                    return
                                 } else {
                                     if installedEquivalent == resolvedName {
                                         print("✅ \(resolvedName) is already installed")
@@ -192,7 +200,11 @@ extension Velo {
                             if !missingDeps.isEmpty {
                                 print("⚠️  \(formula.name) \(formula.version) is installed but missing dependencies: \(missingDeps.joined(separator: ", "))")
                                 print("Installing missing dependencies...")
-                                // Don't return - let it proceed to reinstall dependencies
+                                
+                                // Install only the missing dependencies
+                                try await installMissingDependencies(missingDeps, context: context, pathHelper: pathHelper)
+                                print("✓ \(formula.name) dependencies restored")
+                                return
                             } else {
                                 print("✅ \(formula.name) \(formula.version) is already installed")
                                 return
@@ -1211,6 +1223,26 @@ extension Velo {
             }
             
             return missingDeps
+        }
+        
+        /// Install only the missing dependencies for a package
+        private func installMissingDependencies(
+            _ missingDeps: [String],
+            context: ProjectContext,
+            pathHelper: PathHelper
+        ) async throws {
+            for depName in missingDeps {
+                print("🔧 Installing missing dependency: \(depName)")
+                
+                // Create a sub-command to install the dependency
+                var subInstall = Install()
+                subInstall.package = depName
+                subInstall.skipDependencies = false  // Dependencies might have their own dependencies
+                subInstall.force = false
+                subInstall.global = !context.isProjectContext  // Match parent install context
+                
+                try await subInstall.runAsync()
+            }
         }
 
     }
