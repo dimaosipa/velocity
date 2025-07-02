@@ -7,11 +7,11 @@ import VeloSystem
 extension Velo {
     struct Install: ParsableCommand {
         static let configuration = CommandConfiguration(
-            abstract: "Install a package"
+            abstract: "Install one or more packages"
         )
 
-        @Argument(help: "The package to install (optional if velo.json exists)")
-        var package: String?
+        @Argument(help: "The packages to install (optional if velo.json exists)")
+        var packages: [String] = []
 
         @Flag(help: "Force reinstall even if already installed")
         var force = false
@@ -46,16 +46,64 @@ extension Velo {
         private func runAsync() async throws {
             let context = ProjectContext()
 
-            // If no package specified, try to install from velo.json
-            if package == nil {
+            // If no packages specified, try to install from velo.json
+            if packages.isEmpty {
                 try await installFromManifest(context: context)
                 return
             }
 
-            guard let packageInput = package else {
-                throw VeloError.formulaNotFound(name: "No package specified")
+            // Remove duplicates while preserving order
+            var uniquePackages: [String] = []
+            var seen = Set<String>()
+            for pkg in packages {
+                if !seen.contains(pkg) {
+                    uniquePackages.append(pkg)
+                    seen.insert(pkg)
+                }
             }
+            
+            if uniquePackages.count != packages.count {
+                let duplicates = packages.count - uniquePackages.count
+                print("ℹ️  Removed \(duplicates) duplicate package(s)")
+            }
+            
+            // Install each package sequentially
+            let totalPackages = uniquePackages.count
+            var successCount = 0
+            var failedPackages: [String] = []
 
+            for (index, packageInput) in uniquePackages.enumerated() {
+                let packageNumber = index + 1
+                if totalPackages > 1 {
+                    print("\n[\(packageNumber)/\(totalPackages)] Installing \(packageInput)...")
+                }
+                
+                do {
+                    try await installSinglePackage(packageInput, context: context)
+                    successCount += 1
+                } catch {
+                    print("❌ Failed to install \(packageInput): \(error.localizedDescription)")
+                    failedPackages.append(packageInput)
+                    // Continue with next package instead of stopping
+                }
+            }
+            
+            // Show final summary (only for multiple packages)
+            if totalPackages > 1 {
+                print("\n" + String(repeating: "=", count: 50))
+                if successCount == totalPackages {
+                    print("✅ Successfully installed all \(totalPackages) package(s)")
+                } else {
+                    print("✅ Successfully installed \(successCount)/\(totalPackages) package(s)")
+                    if !failedPackages.isEmpty {
+                        print("❌ Failed to install: \(failedPackages.joined(separator: ", "))")
+                    }
+                }
+            }
+        }
+        
+        /// Install a single package with all the existing logic
+        private func installSinglePackage(_ packageInput: String, context: ProjectContext) async throws {
             // Parse package specification (supports package@version syntax)
             // Handle versioned formula names (e.g., python@3.9)
             // First check if the full input exists as a formula name
