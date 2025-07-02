@@ -6,11 +6,11 @@ import VeloSystem
 extension Velo {
     struct Uninstall: ParsableCommand {
         static let configuration = CommandConfiguration(
-            abstract: "Uninstall a package"
+            abstract: "Uninstall one or more packages"
         )
 
-        @Argument(help: "The package to uninstall")
-        var package: String
+        @Argument(help: "The packages to uninstall")
+        var packages: [String] = []
 
         @Option(help: "Uninstall specific version only")
         var version: String?
@@ -25,12 +25,76 @@ extension Velo {
         }
 
         private func runAsync() async throws {
+            // Ensure velo directories exist
+            try PathHelper.shared.ensureVeloDirectories()
+
+            // Check if any packages specified
+            guard !packages.isEmpty else {
+                print("❌ No packages specified for uninstall")
+                throw ExitCode.failure
+            }
+            
+            // Remove duplicates while preserving order
+            var uniquePackages: [String] = []
+            var seen = Set<String>()
+            for pkg in packages {
+                if !seen.contains(pkg) {
+                    uniquePackages.append(pkg)
+                    seen.insert(pkg)
+                }
+            }
+            
+            if uniquePackages.count != packages.count {
+                let duplicates = packages.count - uniquePackages.count
+                print("ℹ️  Removed \(duplicates) duplicate package(s)")
+            }
+
+            // Handle version flag validation
+            if let _ = version, uniquePackages.count > 1 {
+                print("❌ Cannot specify --version with multiple packages")
+                throw ExitCode.failure
+            }
+
+            // Uninstall each package sequentially
+            let totalPackages = uniquePackages.count
+            var successCount = 0
+            var failedPackages: [String] = []
+
+            for (index, packageName) in uniquePackages.enumerated() {
+                let packageNumber = index + 1
+                if totalPackages > 1 {
+                    print("\n[\(packageNumber)/\(totalPackages)] Uninstalling \(packageName)...")
+                }
+                
+                do {
+                    try await uninstallSinglePackage(packageName)
+                    successCount += 1
+                } catch {
+                    print("❌ Failed to uninstall \(packageName): \(error.localizedDescription)")
+                    failedPackages.append(packageName)
+                    // Continue with next package instead of stopping
+                }
+            }
+            
+            // Show final summary (only for multiple packages)
+            if totalPackages > 1 {
+                print("\n" + String(repeating: "=", count: 50))
+                if successCount == totalPackages {
+                    print("✅ Successfully uninstalled all \(totalPackages) package(s)")
+                } else {
+                    print("✅ Successfully uninstalled \(successCount)/\(totalPackages) package(s)")
+                    if !failedPackages.isEmpty {
+                        print("❌ Failed to uninstall: \(failedPackages.joined(separator: ", "))")
+                    }
+                }
+            }
+        }
+        
+        /// Uninstall a single package with all the existing logic
+        private func uninstallSinglePackage(_ package: String) async throws {
             let installer = Installer()
             let pathHelper = PathHelper.shared
             let receiptManager = ReceiptManager(pathHelper: pathHelper)
-
-            // Ensure velo directories exist
-            try pathHelper.ensureVeloDirectories()
 
             if let specificVersion = version {
                 // Uninstall specific version
