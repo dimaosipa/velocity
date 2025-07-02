@@ -916,9 +916,13 @@ extension Velo {
             // Create install plan and execute installation with progress
             let installPlan = try InstallPlan(graph: graph, rootPackage: formula.name)
             
-            // Download all dependencies
+            // Download all dependencies with progress
+            ProgressReporter.shared.startLiveStep("Downloading dependencies")
             let downloadManager = ParallelDownloadManager(pathHelper: pathHelper)
-            let downloads = try await downloadManager.downloadAll(packages: installablePackages, progress: nil)
+            let downloadTracker = DownloadProgressTracker(packageCount: installablePackages.count)
+            let downloadProgress = VisualParallelDownloadProgress(tracker: downloadTracker)
+            let downloads = try await downloadManager.downloadAll(packages: installablePackages, progress: downloadProgress)
+            ProgressReporter.shared.completeLiveStep("Downloaded dependencies")
             
             let installOrder = installPlan.installOrder
             
