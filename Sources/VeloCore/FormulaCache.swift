@@ -744,6 +744,38 @@ public final class TapManager {
     }
 
     public func findFormula(_ name: String) throws -> Formula? {
+        return try findFormula(name, version: nil)
+    }
+    
+    public func findFormula(_ name: String, version: String?) throws -> Formula? {
+        // If version is specified, first try to find a version-specific formula (e.g., python@3.11)
+        if let version = version {
+            let versionedName = "\(name)@\(version)"
+            if let formula = try findExactFormula(versionedName) {
+                return formula
+            }
+        }
+        
+        // Try to find the main formula
+        guard let formula = try findExactFormula(name) else {
+            return nil
+        }
+        
+        // If version was specified, validate that it matches
+        if let requestedVersion = version {
+            if !isVersionCompatible(formula.version, with: requestedVersion) {
+                throw VeloError.versionNotAvailable(
+                    package: name,
+                    requestedVersion: requestedVersion,
+                    availableVersion: formula.version
+                )
+            }
+        }
+        
+        return formula
+    }
+    
+    private func findExactFormula(_ name: String) throws -> Formula? {
         // Try exact name first from cache
         if let formula = try cache.get(name) {
             return formula
@@ -758,6 +790,12 @@ public final class TapManager {
 
         // If not in cache, try to parse it directly from the tap
         return try parseFormulaDirectly(name)
+    }
+    
+    private func isVersionCompatible(_ availableVersion: String, with requestedVersion: String) -> Bool {
+        // For now, do exact string matching
+        // This could be enhanced to support semantic versioning logic
+        return availableVersion == requestedVersion
     }
 
     /// Parse a specific formula directly from all available taps without full index

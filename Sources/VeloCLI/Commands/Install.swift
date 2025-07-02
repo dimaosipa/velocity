@@ -99,7 +99,7 @@ extension Velo {
                 
                 // Also check via formula if we can get it quickly
                 let tapManager = TapManager(pathHelper: pathHelper)
-                if let formula = try? tapManager.findFormula(resolvedName) {
+                if let formula = try? tapManager.findFormula(resolvedName, version: resolvedVersion) {
                     let installer = Installer(pathHelper: pathHelper)
                     let status = try? installer.verifyInstallation(formula: formula)
                     if status?.isInstalled == true {
@@ -221,7 +221,7 @@ extension Velo {
             let tapManager = TapManager(pathHelper: pathHelper)
 
             // Find formula and determine source tap
-            guard let formula = try tapManager.findFormula(name) else {
+            guard let formula = try tapManager.findFormula(name, version: version) else {
                 throw VeloError.formulaNotFound(name: name)
             }
 
@@ -355,7 +355,7 @@ extension Velo {
                 // 3. Verify SHA256 matches
 
                 let tapManager = TapManager(pathHelper: pathHelper)
-                guard let formula = try tapManager.findFormula(packageName) else {
+                guard let formula = try tapManager.findFormula(packageName, version: lockEntry.version) else {
                     throw VeloError.formulaNotFound(name: packageName)
                 }
 
@@ -532,7 +532,7 @@ extension Velo {
             }
 
             // Parse formula
-            guard let formula = try tapManager.findFormula(name) else {
+            guard let formula = try tapManager.findFormula(name, version: version) else {
                 throw VeloError.formulaNotFound(name: name)
             }
 

@@ -5,6 +5,7 @@ public enum VeloError: LocalizedError {
     case formulaNotFound(name: String)
     case formulaParseError(formula: String, details: String)
     case invalidFormulaFormat(details: String)
+    case versionNotAvailable(package: String, requestedVersion: String, availableVersion: String)
 
     // Download errors
     case downloadFailed(url: String, error: Error)
@@ -54,6 +55,8 @@ public enum VeloError: LocalizedError {
             return "Failed to parse formula '\(formula)': \(details)"
         case .invalidFormulaFormat(let details):
             return "Invalid formula format: \(details)"
+        case .versionNotAvailable(let package, let requestedVersion, let availableVersion):
+            return "Version \(requestedVersion) of '\(package)' is not available. Available version: \(availableVersion)"
         case .downloadFailed(let url, let error):
             return "Download failed for \(url): \(error.localizedDescription)"
         case .checksumMismatch(let expected, let actual):
