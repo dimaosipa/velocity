@@ -175,7 +175,8 @@ extension Velo {
                     try await installer.install(
                         formula: formula,
                         from: tempFile,
-                        progress: nil
+                        progress: nil,
+                        shouldCreateSymlinks: true  // Upgraded packages get symlinks
                     )
 
                     // Clean up

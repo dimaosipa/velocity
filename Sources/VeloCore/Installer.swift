@@ -24,7 +24,8 @@ public final class Installer {
         formula: Formula,
         from bottleFile: URL,
         progress: InstallationProgress? = nil,
-        force: Bool = false
+        force: Bool = false,
+        shouldCreateSymlinks: Bool = true
     ) async throws {
         progress?.installationDidStart(package: formula.name, version: formula.version)
 
@@ -59,8 +60,10 @@ public final class Installer {
             // Rewrite library paths for Homebrew bottle compatibility
             try await rewriteLibraryPaths(for: formula, packageDir: packageDir)
 
-            // Create symlinks
-            try await createSymlinks(for: formula, packageDir: packageDir, progress: progress, force: force)
+            // Create symlinks (only if requested)
+            if shouldCreateSymlinks {
+                try await createSymlinks(for: formula, packageDir: packageDir, progress: progress, force: force)
+            }
 
             // Create opt symlink for Homebrew compatibility
             try pathHelper.createOptSymlink(for: formula.name, version: formula.version)

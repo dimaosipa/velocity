@@ -665,7 +665,8 @@ extension Velo {
                 formula: formula,
                 from: tempFile,
                 progress: progressHandler,
-                force: force
+                force: force,
+                shouldCreateSymlinks: true  // Main package gets symlinks
             )
             
             if depCount > 0 {
@@ -922,7 +923,8 @@ extension Velo {
                     formula: node.formula,
                     from: downloadResult.downloadPath,
                     progress: visualProgress,
-                    force: force
+                    force: force,
+                    shouldCreateSymlinks: false  // Dependencies don't get symlinks
                 )
                 
                 installTracker?.completePackageInstallation(packageName)
