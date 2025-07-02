@@ -67,9 +67,15 @@ public class ParallelDownloadManager {
         for batch in batches {
             // Process each batch in parallel and collect results
             let batchResults = await withTaskGroup(of: DownloadResult.self) { group in
-                for package in batch {
+                for (index, package) in batch.enumerated() {
                     group.addTask {
-                        await self.downloadSinglePackage(package: package, progress: progress)
+                        // Add jitter to prevent thundering herd to GHCR
+                        // Spread requests over 0-500ms to avoid rate limiting
+                        if index > 0 { // First package starts immediately
+                            let jitter = UInt64.random(in: 0...500_000_000) // 0-500ms in nanoseconds
+                            try? await Task.sleep(nanoseconds: jitter)
+                        }
+                        return await self.downloadSinglePackage(package: package, progress: progress)
                     }
                 }
                 

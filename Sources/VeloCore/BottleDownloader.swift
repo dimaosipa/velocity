@@ -221,6 +221,11 @@ public final class BottleDownloader {
         progress: DownloadProgress?
     ) async throws {
         // First, get the authentication token
+        OSLogger.shared.debug("Authenticating with package registry for \(url.lastPathComponent)", category: OSLogger.shared.download)
+        
+        // Report auth start to progress
+        progress?.downloadDidStart(url: url.absoluteString, totalSize: nil)
+        
         var initialRequest = URLRequest(url: url)
         initialRequest.httpMethod = "HEAD"
 
