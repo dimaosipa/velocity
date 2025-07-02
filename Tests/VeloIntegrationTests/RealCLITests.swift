@@ -26,7 +26,7 @@ final class RealCLITests: XCTestCase {
 
         // Setup clean environment
         try PathHelper.shared.ensureVeloDirectories()
-        Logger.shared.logLevel = .error // Quiet during tests
+        // Using OSLogger.shared with default essential level for quiet tests
     }
 
     override func tearDown() async throws {

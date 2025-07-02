@@ -40,7 +40,7 @@ final class CLIIntegrationTests: XCTestCase {
         try! testPathHelper.ensureVeloDirectories()
 
         // Setup logger for testing
-        Logger.shared.logLevel = .error // Quiet during tests
+        // Using OSLogger.shared with default essential level for quiet tests
     }
 
     // MARK: - Doctor Command Tests

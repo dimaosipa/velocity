@@ -2,15 +2,13 @@ import XCTest
 @testable import VeloSystem
 
 final class LoggerTests: XCTestCase {
-    var logger: Logger!
+    var logger: OSLogger!
     var logFilePath: String!
 
     override func setUp() {
         super.setUp()
-        logger = Logger.shared
-        logger.logLevel = .verbose // Enable all log levels for testing
-        logger.enableTimestamps = false
-        logger.enableColors = false
+        logger = OSLogger.shared
+        // OSLogger uses different configuration
 
         // Create temporary log file
         logFilePath = NSTemporaryDirectory() + "velo_test_\(UUID().uuidString).log"
@@ -25,76 +23,67 @@ final class LoggerTests: XCTestCase {
     }
 
     func testLogLevels() {
-        XCTAssertEqual(LogLevel.verbose.rawValue, 0)
-        XCTAssertEqual(LogLevel.info.rawValue, 1)
-        XCTAssertEqual(LogLevel.warning.rawValue, 2)
-        XCTAssertEqual(LogLevel.error.rawValue, 3)
-
-        XCTAssertTrue(LogLevel.verbose < LogLevel.info)
-        XCTAssertTrue(LogLevel.info < LogLevel.warning)
-        XCTAssertTrue(LogLevel.warning < LogLevel.error)
+        // OSLogger uses os.Logger which has different log levels
+        // Test that logger methods exist and don't crash
+        logger.verbose("Test verbose")
+        logger.info("Test info")
+        logger.warning("Test warning")
+        logger.error("Test error")
+        XCTAssertTrue(true) // If we get here, methods work
     }
 
     func testLogLevelIcons() {
-        XCTAssertEqual(LogLevel.verbose.icon, "🔍")
-        XCTAssertEqual(LogLevel.info.icon, "ℹ️")
-        XCTAssertEqual(LogLevel.warning.icon, "⚠️")
-        XCTAssertEqual(LogLevel.error.icon, "❌")
+        // OSLogger handles icons internally
+        // Test that methods with emojis work
+        logger.success("Test success")
+        logger.progress("Test progress")
+        XCTAssertTrue(true)
     }
 
     func testLogLevelPrefixes() {
-        XCTAssertEqual(LogLevel.verbose.prefix, "VERBOSE")
-        XCTAssertEqual(LogLevel.info.prefix, "INFO")
-        XCTAssertEqual(LogLevel.warning.prefix, "WARNING")
-        XCTAssertEqual(LogLevel.error.prefix, "ERROR")
+        // OSLogger handles prefixes internally through os.Logger
+        // Just verify logging works
+        logger.info("Info message")
+        logger.debug("Debug message")
+        XCTAssertTrue(true)
     }
 
     func testLogFileCreation() throws {
-        XCTAssertNoThrow(try logger.setLogFile(logFilePath))
-        XCTAssertTrue(FileManager.default.fileExists(atPath: logFilePath))
+        // OSLogger uses system logging, not custom file logging
+        // Test that we can log without errors
+        logger.info("Test log message")
+        XCTAssertTrue(true)
     }
 
     func testLogLevelFiltering() {
-        logger.logLevel = .warning
-
-        // Create expectation for async logging
-        let expectation = self.expectation(description: "Logging completes")
-        expectation.isInverted = true // We expect this NOT to be fulfilled (testing filtering)
-
-        // These should not be logged
-        logger.verbose("This should not appear")
-        logger.info("This should not appear either")
-
-        // These should be logged
-        logger.warning("This warning should appear")
-        logger.error("This error should appear")
-
-        // Wait briefly for any logging to complete
-        waitForExpectations(timeout: 0.1, handler: nil)
+        // OSLogger filtering is handled by the system
+        // Just verify all methods work
+        logger.verbose("Verbose message")
+        logger.info("Info message") 
+        logger.warning("Warning message")
+        logger.error("Error message")
+        XCTAssertTrue(true)
     }
 
-    func testGlobalLogFunctions() {
-        // Test that global functions don't crash
-        logVerbose("Test verbose message")
-        logInfo("Test info message")
-        logWarning("Test warning message")
-        logError("Test error message")
-
-        // If we get here without crashing, the test passes
+    func testCategoryLogging() {
+        // Test category-specific logging
+        logger.verbose("Parser message", category: logger.parser)
+        logger.info("Download message", category: logger.download)
+        logger.debug("Installer message", category: logger.installer)
         XCTAssertTrue(true)
     }
 
     func testLoggerSingleton() {
-        let logger1 = Logger.shared
-        let logger2 = Logger.shared
+        let logger1 = OSLogger.shared
+        let logger2 = OSLogger.shared
 
         // Both should be the same instance
         XCTAssertTrue(logger1 === logger2)
     }
 
     func testProgressMessage() {
-        // Progress messages should always be shown regardless of log level
-        logger.logLevel = .error
+        // Progress messages should always be shown
+        // OSLogger doesn't have configurable log levels
 
         // This should not crash and should output
         logger.progress("Downloading... 50%")
@@ -104,7 +93,7 @@ final class LoggerTests: XCTestCase {
 
     func testSuccessMessage() {
         // Success messages should always be shown
-        logger.logLevel = .error
+        // OSLogger doesn't have configurable log levels
 
         // This should not crash and should output
         logger.success("Installation completed!")

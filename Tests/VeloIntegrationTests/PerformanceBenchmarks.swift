@@ -8,10 +8,12 @@ final class PerformanceBenchmarks: XCTestCase {
     var optimizer: PerformanceOptimizer!
     var cache: FormulaCache!
     var parser: FormulaParser!
+    var tapCacheManager: TapCacheManager!
 
     override func setUp() {
         super.setUp()
         optimizer = PerformanceOptimizer()
+        tapCacheManager = TapCacheManager()
         cache = FormulaCache()
         parser = FormulaParser()
 
@@ -161,7 +163,7 @@ final class PerformanceBenchmarks: XCTestCase {
             createTestFormula(name: "search-test-\(i)", description: "Test package number \(i)")
         }
 
-        let index = FormulaIndex(cache: cache)
+        let index = FormulaIndex(cache: cache, tapCacheManager: tapCacheManager)
 
         // Benchmark index building
         let (_, buildTime) = measureSync(operation: "Index Build") {
@@ -326,7 +328,7 @@ final class PerformanceBenchmarks: XCTestCase {
 
     private func measureSearchTime() -> TimeInterval {
         let formulae = (0..<100).map { createTestFormula(name: "search-\($0)") }
-        let index = FormulaIndex(cache: cache)
+        let index = FormulaIndex(cache: cache, tapCacheManager: tapCacheManager)
         try! index.buildIndex(from: formulae)
 
         let startTime = CFAbsoluteTimeGetCurrent()
