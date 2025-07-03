@@ -389,6 +389,23 @@ public struct PathHelper {
         
         return nil
     }
+    
+    public func findConflictingPackage(for binary: String) -> String? {
+        let symlinkPath = symlinkPath(for: binary)
+        
+        // Check if symlink exists
+        guard fileManager.fileExists(atPath: symlinkPath.path) else {
+            return nil
+        }
+        
+        // If it's a symlink, find the target package
+        if let target = try? fileManager.destinationOfSymbolicLink(atPath: symlinkPath.path) {
+            return extractPackageFromPath(target)
+        }
+        
+        // If it's a regular file, we don't know which package it belongs to
+        return "unknown"
+    }
 
     public func createOptSymlink(for package: String, version: String) throws {
         let packageDir = packagePath(for: package, version: version)
