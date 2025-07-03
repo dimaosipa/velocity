@@ -372,6 +372,13 @@ public final class Installer {
 
         for binary in binaries {
             let binaryPath = binDir.appendingPathComponent(binary)
+            
+            // Only process actual Mach-O binaries
+            guard try await isMachOBinary(at: binaryPath) else {
+                OSLogger.shared.debug("Skipping non-binary file: \(binary)", category: OSLogger.shared.installer)
+                continue
+            }
+            
             try await rewriteBinaryLibraryPaths(binaryPath: binaryPath)
         }
 
@@ -527,7 +534,53 @@ public final class Installer {
         }
     }
 
+    private func isMachOBinary(at path: URL) async throws -> Bool {
+        // First check if file exists and is readable
+        guard fileManager.fileExists(atPath: path.path) else {
+            return false
+        }
+        
+        // Check if file has some content (empty files can't be binaries)
+        guard let attributes = try? fileManager.attributesOfItem(atPath: path.path),
+              let fileSize = attributes[.size] as? Int64,
+              fileSize > 0 else {
+            return false
+        }
+        
+        // Use file command to check if it's a Mach-O binary
+        let fileProcess = Process()
+        fileProcess.executableURL = URL(fileURLWithPath: "/usr/bin/file")
+        fileProcess.arguments = [path.path]
+        
+        let filePipe = Pipe()
+        fileProcess.standardOutput = filePipe
+        fileProcess.standardError = Pipe() // Suppress error output
+        
+        do {
+            try fileProcess.run()
+            fileProcess.waitUntilExit()
+            
+            guard fileProcess.terminationStatus == 0 else {
+                return false
+            }
+            
+            let output = filePipe.fileHandleForReading.readDataToEndOfFile()
+            let outputString = String(data: output, encoding: .utf8) ?? ""
+            
+            // Check if it's a Mach-O executable or dynamic library
+            return outputString.contains("Mach-O") && 
+                   (outputString.contains("executable") || outputString.contains("dynamically linked shared library"))
+        } catch {
+            return false
+        }
+    }
+
     private func binaryNeedsPathRewriting(binaryPath: URL) async throws -> Bool {
+        // Only check actual Mach-O binaries
+        guard try await isMachOBinary(at: binaryPath) else {
+            return false // Not a binary, skip
+        }
+        
         // Check if binary contains Homebrew placeholders
         let otoolProcess = Process()
         otoolProcess.executableURL = URL(fileURLWithPath: "/usr/bin/otool")
@@ -551,6 +604,11 @@ public final class Installer {
     }
 
     private func verifyPlaceholderReplacement(binaryPath: URL) async throws -> Bool {
+        // Only verify actual Mach-O binaries
+        guard try await isMachOBinary(at: binaryPath) else {
+            return true // Not a binary, nothing to verify
+        }
+        
         // Check if any Homebrew placeholders remain after rewriting
         let otoolProcess = Process()
         otoolProcess.executableURL = URL(fileURLWithPath: "/usr/bin/otool")
@@ -637,6 +695,13 @@ public final class Installer {
 
         for libraryFile in libraryFiles {
             let libraryPath = libDir.appendingPathComponent(libraryFile)
+            
+            // Only process actual Mach-O libraries
+            guard try await isMachOBinary(at: libraryPath) else {
+                OSLogger.shared.debug("Skipping non-binary library file: \(libraryFile)", category: OSLogger.shared.installer)
+                continue
+            }
+            
             try await rewriteBinaryLibraryPaths(binaryPath: libraryPath)
         }
     }
