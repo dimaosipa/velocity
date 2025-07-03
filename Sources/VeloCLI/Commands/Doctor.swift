@@ -42,6 +42,9 @@ extension Velo {
             // Check installed packages
             issueCount += checkInstalledPackages()
 
+            // Check symlink health
+            issueCount += checkSymlinkHealth()
+
             // Check disk space
             warningCount += checkDiskSpace()
 
@@ -250,6 +253,202 @@ extension Velo {
             }
         }
 
+        private func checkSymlinkHealth() -> Int {
+            print("Checking symlink health...")
+
+            let pathHelper = PathHelper.shared
+            let receiptManager = ReceiptManager(pathHelper: pathHelper)
+            var issues = 0
+
+            // Check if bin directory exists
+            guard FileManager.default.fileExists(atPath: pathHelper.binPath.path) else {
+                print("  ℹ️  No bin directory found (no symlinks to check)")
+                return 0
+            }
+
+            do {
+                // Get all symlinks in bin directory
+                let binContents = try FileManager.default.contentsOfDirectory(atPath: pathHelper.binPath.path)
+                let symlinks = binContents.filter { filename in
+                    let symlinkPath = pathHelper.binPath.appendingPathComponent(filename)
+                    return isSymlink(at: symlinkPath)
+                }
+
+                if symlinks.isEmpty {
+                    print("  ℹ️  No symlinks found in bin directory")
+                    return 0
+                }
+
+                if verbose {
+                    print("  📊 Found \(symlinks.count) symlinks to check")
+                }
+
+                var brokenSymlinks: [String] = []
+                var orphanedSymlinks: [String] = []
+                var validSymlinks = 0
+
+                // Check each symlink
+                for symlink in symlinks {
+                    let symlinkPath = pathHelper.binPath.appendingPathComponent(symlink)
+                    
+                    do {
+                        let targetPath = try FileManager.default.destinationOfSymbolicLink(atPath: symlinkPath.path)
+                        
+                        // Check if target exists
+                        if !FileManager.default.fileExists(atPath: targetPath) {
+                            brokenSymlinks.append("\(symlink) → \(targetPath)")
+                            issues += 1
+                        } else {
+                            // Check if target is part of a valid Velo package
+                            if targetPath.contains("/.velo/Cellar/") {
+                                let packageName = extractPackageNameFromSymlinkTarget(targetPath)
+                                if let pkg = packageName, !pathHelper.isPackageInstalled(pkg) {
+                                    orphanedSymlinks.append("\(symlink) → \(pkg) (package not installed)")
+                                    issues += 1
+                                } else {
+                                    validSymlinks += 1
+                                    if verbose {
+                                        print("  ✅ \(symlink) → \(targetPath)")
+                                    }
+                                }
+                            } else {
+                                // Non-Velo symlink (might be system tool or custom)
+                                validSymlinks += 1
+                                if verbose {
+                                    print("  ✅ \(symlink) → \(targetPath) (external)")
+                                }
+                            }
+                        }
+                    } catch {
+                        brokenSymlinks.append("\(symlink) (unreadable: \(error.localizedDescription))")
+                        issues += 1
+                    }
+                }
+
+                // Report results
+                if !brokenSymlinks.isEmpty {
+                    print("  ❌ Broken symlinks (\(brokenSymlinks.count)):")
+                    for broken in brokenSymlinks.prefix(5) {
+                        print("     \(broken)")
+                    }
+                    if brokenSymlinks.count > 5 {
+                        print("     ... and \(brokenSymlinks.count - 5) more")
+                    }
+                }
+
+                if !orphanedSymlinks.isEmpty {
+                    print("  ⚠️  Orphaned symlinks (\(orphanedSymlinks.count)):")
+                    for orphaned in orphanedSymlinks.prefix(5) {
+                        print("     \(orphaned)")
+                    }
+                    if orphanedSymlinks.count > 5 {
+                        print("     ... and \(orphanedSymlinks.count - 5) more")
+                    }
+                }
+
+                if issues == 0 {
+                    print("  ✅ All \(validSymlinks) symlinks are healthy")
+                }
+
+                // Check for missing symlinks
+                issues += checkForMissingSymlinks(pathHelper: pathHelper, receiptManager: receiptManager)
+
+                return issues
+
+            } catch {
+                print("  ❌ Failed to check symlinks: \(error.localizedDescription)")
+                return 1
+            }
+        }
+
+        private func checkForMissingSymlinks(pathHelper: PathHelper, receiptManager: ReceiptManager) -> Int {
+            var issues = 0
+            
+            do {
+                // Check all installed packages for missing symlinks
+                let packages = try FileManager.default.contentsOfDirectory(atPath: pathHelper.cellarPath.path)
+                    .filter { !$0.hasPrefix(".") }
+
+                var missingSymlinks: [(package: String, version: String, binary: String)] = []
+
+                for package in packages {
+                    let versions = pathHelper.installedVersions(for: package)
+                    
+                    for version in versions {
+                        // Check if this package should have symlinks
+                        let shouldHaveSymlinks: Bool
+                        if let receipt = try? receiptManager.loadReceipt(for: package, version: version) {
+                            shouldHaveSymlinks = receipt.installedAs == .explicit
+                        } else {
+                            // No receipt - assume explicit installation for older packages
+                            shouldHaveSymlinks = true
+                        }
+                        
+                        if shouldHaveSymlinks {
+                            let packageDir = pathHelper.packagePath(for: package, version: version)
+                            let binDir = packageDir.appendingPathComponent("bin")
+                            
+                            if FileManager.default.fileExists(atPath: binDir.path) {
+                                let binaries = try FileManager.default.contentsOfDirectory(atPath: binDir.path)
+                                    .filter { !$0.hasPrefix(".") }
+                                
+                                for binary in binaries {
+                                    let symlinkPath = pathHelper.symlinkPath(for: binary)
+                                    
+                                    if !FileManager.default.fileExists(atPath: symlinkPath.path) {
+                                        missingSymlinks.append((package: package, version: version, binary: binary))
+                                        issues += 1
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if !missingSymlinks.isEmpty {
+                    print("  ⚠️  Missing symlinks for explicitly installed packages (\(missingSymlinks.count)):")
+                    for missing in missingSymlinks.prefix(5) {
+                        print("     \(missing.binary) (from \(missing.package) \(missing.version))")
+                    }
+                    if missingSymlinks.count > 5 {
+                        print("     ... and \(missingSymlinks.count - 5) more")
+                    }
+                    if fix {
+                        print("     💡 Run 'velo doctor --fix' to recreate missing symlinks")
+                    }
+                }
+
+                return issues
+
+            } catch {
+                if verbose {
+                    print("  ⚠️  Could not check for missing symlinks: \(error.localizedDescription)")
+                }
+                return 0
+            }
+        }
+
+        private func extractPackageNameFromSymlinkTarget(_ targetPath: String) -> String? {
+            // Extract package name from path like ~/.velo/Cellar/package-name/version/bin/binary
+            let components = targetPath.components(separatedBy: "/")
+            
+            if let cellarIndex = components.lastIndex(of: "Cellar"),
+               cellarIndex + 1 < components.count {
+                return components[cellarIndex + 1]
+            }
+            
+            return nil
+        }
+
+        private func isSymlink(at url: URL) -> Bool {
+            do {
+                let resourceValues = try url.resourceValues(forKeys: [.isSymbolicLinkKey])
+                return resourceValues.isSymbolicLink ?? false
+            } catch {
+                return false
+            }
+        }
+
         private func checkDiskSpace() -> Int {
             print("Checking disk space...")
 
@@ -283,9 +482,17 @@ extension Velo {
         }
 
         private func fixIssues() throws {
+            try runAsyncAndWait {
+                try await self.fixIssuesAsync()
+            }
+        }
+        
+        private func fixIssuesAsync() async throws {
             print("Fixing detected issues...")
 
             let pathHelper = PathHelper.shared
+            let installer = Installer(pathHelper: pathHelper)
+            let receiptManager = ReceiptManager(pathHelper: pathHelper)
 
             // Create missing directories
             do {
@@ -295,8 +502,108 @@ extension Velo {
                 print("  ❌ Failed to create directories: \(error.localizedDescription)")
             }
 
-            // TODO: Add more automatic fixes
+            // Fix symlink issues
+            try await fixSymlinkIssues(pathHelper: pathHelper, installer: installer, receiptManager: receiptManager)
+
             print("  ℹ️  Some issues may require manual intervention")
+        }
+
+        private func fixSymlinkIssues(pathHelper: PathHelper, installer: Installer, receiptManager: ReceiptManager) async throws {
+            print("  🔗 Fixing symlink issues...")
+
+            guard FileManager.default.fileExists(atPath: pathHelper.binPath.path) else {
+                return // No bin directory to fix
+            }
+
+            var fixedCount = 0
+            var failedCount = 0
+
+            // Remove broken symlinks
+            do {
+                let binContents = try FileManager.default.contentsOfDirectory(atPath: pathHelper.binPath.path)
+                let symlinks = binContents.filter { filename in
+                    let symlinkPath = pathHelper.binPath.appendingPathComponent(filename)
+                    return isSymlink(at: symlinkPath)
+                }
+
+                for symlink in symlinks {
+                    let symlinkPath = pathHelper.binPath.appendingPathComponent(symlink)
+                    
+                    do {
+                        let targetPath = try FileManager.default.destinationOfSymbolicLink(atPath: symlinkPath.path)
+                        
+                        // Remove broken symlinks
+                        if !FileManager.default.fileExists(atPath: targetPath) {
+                            try FileManager.default.removeItem(at: symlinkPath)
+                            print("    ✅ Removed broken symlink: \(symlink)")
+                            fixedCount += 1
+                        }
+                    } catch {
+                        // Symlink is unreadable, remove it
+                        try? FileManager.default.removeItem(at: symlinkPath)
+                        print("    ✅ Removed unreadable symlink: \(symlink)")
+                        fixedCount += 1
+                    }
+                }
+            } catch {
+                print("    ❌ Failed to clean broken symlinks: \(error.localizedDescription)")
+                failedCount += 1
+            }
+
+            // Recreate missing symlinks for explicitly installed packages
+            do {
+                let packages = try FileManager.default.contentsOfDirectory(atPath: pathHelper.cellarPath.path)
+                    .filter { !$0.hasPrefix(".") }
+
+                for package in packages {
+                    let versions = pathHelper.installedVersions(for: package)
+                    
+                    for version in versions {
+                        // Check if this package should have symlinks
+                        let shouldHaveSymlinks: Bool
+                        if let receipt = try? receiptManager.loadReceipt(for: package, version: version) {
+                            shouldHaveSymlinks = receipt.installedAs == .explicit
+                        } else {
+                            // No receipt - assume explicit installation for older packages
+                            shouldHaveSymlinks = true
+                        }
+                        
+                        if shouldHaveSymlinks {
+                            let packageDir = pathHelper.packagePath(for: package, version: version)
+                            
+                            do {
+                                // Create a formula for symlink creation
+                                let formula = Formula(
+                                    name: package,
+                                    description: "",
+                                    homepage: "",
+                                    url: "",
+                                    sha256: "",
+                                    version: version
+                                )
+                                
+                                // Use installer to recreate symlinks
+                                try await installer.createSymlinksForExistingPackage(formula: formula, packageDir: packageDir)
+                                print("    ✅ Recreated symlinks for \(package) \(version)")
+                                fixedCount += 1
+                            } catch {
+                                print("    ❌ Failed to recreate symlinks for \(package) \(version): \(error.localizedDescription)")
+                                failedCount += 1
+                            }
+                        }
+                    }
+                }
+            } catch {
+                print("    ❌ Failed to recreate missing symlinks: \(error.localizedDescription)")
+                failedCount += 1
+            }
+
+            if fixedCount > 0 {
+                print("    ✅ Fixed \(fixedCount) symlink issue(s)")
+            }
+            if failedCount > 0 {
+                print("    ❌ Failed to fix \(failedCount) symlink issue(s)")
+            }
         }
 
         private func checkContextInformation() {
