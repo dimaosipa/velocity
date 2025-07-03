@@ -18,6 +18,9 @@ extension Velo {
 
         @Flag(help: "Force repair even if no issues are detected")
         var force = false
+        
+        @Flag(help: "Also check and fix PATH configuration")
+        var fixPath = false
 
         func run() throws {
             try runAsyncAndWait {
@@ -28,6 +31,11 @@ extension Velo {
         private func runAsync() async throws {
             let context = ProjectContext()
             let pathHelper = context.getPathHelper(preferLocal: false) // Always use global for repair
+
+            // Check and fix PATH configuration if requested
+            if fixPath {
+                try checkAndFixPathConfiguration(pathHelper: pathHelper)
+            }
 
             if let packageName = package {
                 // Repair specific package
@@ -114,8 +122,8 @@ extension Velo {
             let packageDir = pathHelper.packagePath(for: packageName, version: version)
             let packageDisplayName = "\(packageName) \(version)"
 
-            // Find all binary and dylib files that need repair
-            let filesToRepair = try findFilesNeedingRepair(in: packageDir)
+            // Find all files that need repair (binaries, scripts, etc.)
+            let filesToRepair = try await findAllFilesNeedingRepair(in: packageDir)
 
             if filesToRepair.isEmpty {
                 if force {
@@ -128,8 +136,9 @@ extension Velo {
 
             if dryRun {
                 for file in filesToRepair {
-                    let relativePath = file.path.replacingOccurrences(of: packageDir.path + "/", with: "")
-                    OSLogger.shared.info("    - \(relativePath)")
+                    let relativePath = file.url.path.replacingOccurrences(of: packageDir.path + "/", with: "")
+                    let typeDescription = file.type == .binary ? "binary" : file.type == .script ? "script" : "Python shebang"
+                    OSLogger.shared.info("    - \(relativePath) (\(typeDescription))")
                 }
                 return (hasIssues: true, fixed: false)
             }
@@ -140,13 +149,22 @@ extension Velo {
 
             for file in filesToRepair {
                 do {
-                    let relativePath = file.path.replacingOccurrences(of: packageDir.path + "/", with: "")
-                    OSLogger.shared.info("    Repairing \(relativePath)...")
+                    let relativePath = file.url.path.replacingOccurrences(of: packageDir.path + "/", with: "")
+                    let typeDescription = file.type == .binary ? "binary" : file.type == .script ? "script" : "Python shebang"
+                    OSLogger.shared.info("    Repairing \(relativePath) (\(typeDescription))...")
                     
-                    try await installer.repairBinaryLibraryPaths(binaryPath: file)
+                    switch file.type {
+                    case .binary:
+                        try await installer.repairBinaryLibraryPaths(binaryPath: file.url)
+                    case .script:
+                        try await repairScriptFile(file.url, pathHelper: pathHelper)
+                    case .pythonShebang:
+                        try await repairPythonShebang(file.url)
+                    }
+                    
                     fixedCount += 1
                 } catch {
-                    OSLogger.shared.warning("    Failed to repair \(file.lastPathComponent): \(error.localizedDescription)")
+                    OSLogger.shared.warning("    Failed to repair \(file.url.lastPathComponent): \(error.localizedDescription)")
                 }
             }
 
@@ -260,6 +278,225 @@ extension Velo {
             let dependencies = String(data: otoolOutput, encoding: .utf8) ?? ""
 
             return dependencies.contains("@@HOMEBREW_PREFIX@@") || dependencies.contains("@@HOMEBREW_CELLAR@@")
+        }
+
+        // MARK: - PATH Configuration Repair
+
+        private func checkAndFixPathConfiguration(pathHelper: PathHelper) throws {
+            OSLogger.shared.info("🛤️  Checking PATH configuration...")
+
+            let veloPath = pathHelper.binPath.path
+            
+            // Check if Velo is in PATH at all
+            guard pathHelper.isInPath() else {
+                OSLogger.shared.warning("  ❌ ~/.velo/bin is not in PATH")
+                if dryRun {
+                    OSLogger.shared.info("  Would run: velo install-self")
+                } else {
+                    OSLogger.shared.info("  Run 'velo install-self' to fix PATH setup")
+                }
+                return
+            }
+
+            // Check PATH position
+            let pathPosition = checkVeloPathPosition(veloPath: veloPath)
+            
+            switch pathPosition {
+            case .first:
+                OSLogger.shared.info("  ✅ ~/.velo/bin is correctly positioned first in PATH")
+            case .notFirst(let position):
+                OSLogger.shared.warning("  ⚠️  ~/.velo/bin is in PATH but not first (position \(position))")
+                if dryRun {
+                    OSLogger.shared.info("  Would run: velo install-self")
+                } else {
+                    OSLogger.shared.info("  Run 'velo install-self' to fix PATH ordering")
+                }
+            case .notFound:
+                OSLogger.shared.warning("  ❌ ~/.velo/bin not found in PATH (inconsistent state)")
+                if dryRun {
+                    OSLogger.shared.info("  Would run: velo install-self")
+                } else {
+                    OSLogger.shared.info("  Run 'velo install-self' to fix PATH setup")
+                }
+            }
+        }
+
+        private enum PathPosition {
+            case first
+            case notFirst(Int)
+            case notFound
+        }
+        
+        private func checkVeloPathPosition(veloPath: String) -> PathPosition {
+            guard let pathEnv = ProcessInfo.processInfo.environment["PATH"] else {
+                return .notFound
+            }
+            
+            let pathComponents = pathEnv.components(separatedBy: ":")
+                .filter { !$0.isEmpty }
+            
+            // Check for various Velo path representations
+            let veloPathVariants = [
+                veloPath,
+                "$HOME/.velo/bin", 
+                "~/.velo/bin",
+                NSString(string: veloPath).expandingTildeInPath
+            ]
+            
+            for (index, component) in pathComponents.enumerated() {
+                let expandedComponent = NSString(string: component).expandingTildeInPath
+                
+                if veloPathVariants.contains(component) || veloPathVariants.contains(expandedComponent) {
+                    return index == 0 ? .first : .notFirst(index + 1)
+                }
+            }
+            
+            return .notFound
+        }
+
+        // MARK: - Comprehensive File Repair
+
+        private func findAllFilesNeedingRepair(in packageDir: URL) async throws -> [RepairableFile] {
+            var filesToRepair: [RepairableFile] = []
+            
+            // Find binary files needing repair
+            let binaryFiles = try findFilesNeedingRepair(in: packageDir)
+            filesToRepair.append(contentsOf: binaryFiles.map { RepairableFile(url: $0, type: .binary) })
+            
+            // Find script files with placeholders
+            let scriptFiles = try await findScriptFilesWithPlaceholders(in: packageDir)
+            filesToRepair.append(contentsOf: scriptFiles.map { RepairableFile(url: $0, type: .script) })
+            
+            // Find Python files with hardcoded shebangs
+            let pythonFiles = try await findPythonFilesWithHardcodedShebangs(in: packageDir)
+            filesToRepair.append(contentsOf: pythonFiles.map { RepairableFile(url: $0, type: .pythonShebang) })
+            
+            return filesToRepair
+        }
+
+        private struct RepairableFile {
+            let url: URL
+            let type: RepairType
+            
+            enum RepairType {
+                case binary
+                case script
+                case pythonShebang
+            }
+        }
+
+        private func findScriptFilesWithPlaceholders(in directory: URL) async throws -> [URL] {
+            let grepProcess = Process()
+            grepProcess.executableURL = URL(fileURLWithPath: "/usr/bin/grep")
+            grepProcess.arguments = [
+                "-r",  // Recursive
+                "-l",  // Only show filenames, not content
+                "--binary-files=without-match",  // Skip binary files
+                "@@HOMEBREW_",  // Search pattern
+                directory.path
+            ]
+            
+            let grepPipe = Pipe()
+            grepProcess.standardOutput = grepPipe
+            grepProcess.standardError = Pipe() // Suppress error output
+            
+            try grepProcess.run()
+            grepProcess.waitUntilExit()
+            
+            let output = grepPipe.fileHandleForReading.readDataToEndOfFile()
+            let outputString = String(data: output, encoding: .utf8) ?? ""
+            
+            return outputString.components(separatedBy: .newlines)
+                .filter { !$0.isEmpty }
+                .map { URL(fileURLWithPath: $0) }
+        }
+
+        private func findPythonFilesWithHardcodedShebangs(in directory: URL) async throws -> [URL] {
+            let grepProcess = Process()
+            grepProcess.executableURL = URL(fileURLWithPath: "/usr/bin/grep")
+            grepProcess.arguments = [
+                "-r",  // Recursive
+                "-l",  // Only show filenames, not content
+                "--binary-files=without-match",  // Skip binary files
+                "^#!/.*\\.velo/.*python",  // Search for shebangs with .velo paths
+                directory.path
+            ]
+            
+            let grepPipe = Pipe()
+            grepProcess.standardOutput = grepPipe
+            grepProcess.standardError = Pipe() // Suppress error output
+            
+            try grepProcess.run()
+            grepProcess.waitUntilExit()
+            
+            let output = grepPipe.fileHandleForReading.readDataToEndOfFile()
+            let outputString = String(data: output, encoding: .utf8) ?? ""
+            
+            return outputString.components(separatedBy: .newlines)
+                .filter { !$0.isEmpty }
+                .map { URL(fileURLWithPath: $0) }
+        }
+
+        private func repairScriptFile(_ filePath: URL, pathHelper: PathHelper) async throws {
+            let content = try String(contentsOf: filePath, encoding: .utf8)
+            
+            // Replace Homebrew placeholders with actual Velo paths
+            var newContent = content
+            newContent = newContent.replacingOccurrences(of: "@@HOMEBREW_PREFIX@@", with: pathHelper.veloPrefix.path)
+            newContent = newContent.replacingOccurrences(of: "@@HOMEBREW_CELLAR@@", with: pathHelper.cellarPath.path)
+            
+            // Only write if content actually changed
+            if newContent != content {
+                try newContent.write(to: filePath, atomically: true, encoding: .utf8)
+            }
+        }
+
+        private func repairPythonShebang(_ filePath: URL) async throws {
+            let content = try String(contentsOf: filePath, encoding: .utf8)
+            let lines = content.components(separatedBy: .newlines)
+            
+            guard let firstLine = lines.first, firstLine.hasPrefix("#!") else {
+                return // No shebang to fix
+            }
+            
+            // Check if it's a hardcoded Python path
+            let hardcodedPythonPatterns = [
+                "/Users/[^/]+/\\.velo/.*python",
+                "/.*\\.velo/.*python"
+            ]
+            
+            var needsFixing = false
+            for pattern in hardcodedPythonPatterns {
+                if let regex = try? NSRegularExpression(pattern: pattern, options: []),
+                   regex.firstMatch(in: firstLine, options: [], range: NSRange(location: 0, length: firstLine.count)) != nil {
+                    needsFixing = true
+                    break
+                }
+            }
+            
+            guard needsFixing else {
+                return // Shebang doesn't need fixing
+            }
+            
+            // Determine the appropriate portable shebang
+            let portableShebang: String
+            if firstLine.contains("python3") {
+                portableShebang = "#!/usr/bin/env python3"
+            } else if firstLine.contains("python") {
+                portableShebang = "#!/usr/bin/env python3"  // Upgrade python to python3
+            } else {
+                return // Not a Python shebang
+            }
+            
+            // Replace the first line with the portable shebang
+            var newLines = lines
+            newLines[0] = portableShebang
+            let newContent = newLines.joined(separator: "\n")
+            
+            // Only write if content actually changed
+            if newContent != content {
+                try newContent.write(to: filePath, atomically: true, encoding: .utf8)
+            }
         }
     }
 }

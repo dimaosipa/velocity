@@ -65,6 +65,9 @@ public final class Installer {
             
             // Rewrite script files with Homebrew placeholders
             try await rewriteScriptFiles(packageDir: packageDir)
+            
+            // Fix hardcoded Python shebangs
+            try await fixPythonShebangs(packageDir: packageDir)
 
             // Create symlinks (only if requested)
             if shouldCreateSymlinks {
@@ -1179,6 +1182,108 @@ public final class Installer {
         if newContent != content {
             try newContent.write(to: filePath, atomically: true, encoding: .utf8)
             OSLogger.shared.debug("  ✓ Rewrote placeholders in \(filePath.lastPathComponent)", category: OSLogger.shared.installer)
+        }
+    }
+    
+    // MARK: - Python Shebang Rewriting
+    
+    private func fixPythonShebangs(packageDir: URL) async throws {
+        OSLogger.shared.verbose("🐍 Fixing hardcoded Python shebangs", category: OSLogger.shared.installer)
+        
+        // Find all files with hardcoded Python shebangs recursively
+        let filesWithPythonShebangs = try await findFilesWithHardcodedPythonShebangs(in: packageDir)
+        
+        if filesWithPythonShebangs.isEmpty {
+            return
+        }
+        
+        OSLogger.shared.verbose("  Found \(filesWithPythonShebangs.count) files with hardcoded Python shebangs", category: OSLogger.shared.installer)
+        
+        for filePath in filesWithPythonShebangs {
+            do {
+                try await fixPythonShebang(filePath: filePath)
+            } catch {
+                OSLogger.shared.installerWarning("Failed to fix Python shebang in \(filePath.lastPathComponent): \(error.localizedDescription)")
+            }
+        }
+    }
+    
+    private func findFilesWithHardcodedPythonShebangs(in directory: URL) async throws -> [URL] {
+        // Use grep to find files with hardcoded Python paths
+        let grepProcess = Process()
+        grepProcess.executableURL = URL(fileURLWithPath: "/usr/bin/grep")
+        grepProcess.arguments = [
+            "-r",  // Recursive
+            "-l",  // Only show filenames, not content
+            "--binary-files=without-match",  // Skip binary files
+            "^#!/.*\\.velo/.*python",  // Search for shebangs with .velo paths
+            directory.path
+        ]
+        
+        let grepPipe = Pipe()
+        grepProcess.standardOutput = grepPipe
+        grepProcess.standardError = Pipe() // Suppress error output
+        
+        try grepProcess.run()
+        grepProcess.waitUntilExit()
+        
+        let output = grepPipe.fileHandleForReading.readDataToEndOfFile()
+        let outputString = String(data: output, encoding: .utf8) ?? ""
+        
+        // Parse file paths from grep output
+        let filePaths = outputString.components(separatedBy: .newlines)
+            .filter { !$0.isEmpty }
+            .map { URL(fileURLWithPath: $0) }
+        
+        return filePaths
+    }
+    
+    private func fixPythonShebang(filePath: URL) async throws {
+        let content = try String(contentsOf: filePath, encoding: .utf8)
+        let lines = content.components(separatedBy: .newlines)
+        
+        guard let firstLine = lines.first, firstLine.hasPrefix("#!") else {
+            return // No shebang to fix
+        }
+        
+        // Check if it's a hardcoded Python path
+        let hardcodedPythonPatterns = [
+            "/Users/[^/]+/\\.velo/.*python",
+            "/.*\\.velo/.*python"
+        ]
+        
+        var needsFixing = false
+        for pattern in hardcodedPythonPatterns {
+            if let regex = try? NSRegularExpression(pattern: pattern, options: []),
+               regex.firstMatch(in: firstLine, options: [], range: NSRange(location: 0, length: firstLine.count)) != nil {
+                needsFixing = true
+                break
+            }
+        }
+        
+        guard needsFixing else {
+            return // Shebang doesn't need fixing
+        }
+        
+        // Determine the appropriate portable shebang
+        let portableShebang: String
+        if firstLine.contains("python3") {
+            portableShebang = "#!/usr/bin/env python3"
+        } else if firstLine.contains("python") {
+            portableShebang = "#!/usr/bin/env python3"  // Upgrade python to python3
+        } else {
+            return // Not a Python shebang
+        }
+        
+        // Replace the first line with the portable shebang
+        var newLines = lines
+        newLines[0] = portableShebang
+        let newContent = newLines.joined(separator: "\n")
+        
+        // Only write if content actually changed
+        if newContent != content {
+            try newContent.write(to: filePath, atomically: true, encoding: .utf8)
+            OSLogger.shared.debug("  ✓ Fixed Python shebang in \(filePath.lastPathComponent)", category: OSLogger.shared.installer)
         }
     }
 

@@ -153,16 +153,68 @@ extension Velo {
             print("Checking PATH...")
 
             let pathHelper = PathHelper.shared
+            let veloPath = pathHelper.binPath.path
 
-            if pathHelper.isInPath() {
-                print("  ✅ ~/.velo/bin is in PATH")
-                return 0
-            } else {
-                print("  ⚠️  ~/.velo/bin is not in PATH")
+            // Check if Velo is in PATH at all
+            guard pathHelper.isInPath() else {
+                print("  ❌ ~/.velo/bin is not in PATH")
                 print("     Add this to your shell profile:")
                 print("     echo 'export PATH=\"$HOME/.velo/bin:$PATH\"' >> ~/.zshrc")
+                print("     Or run: velo install-self")
                 return 1
             }
+
+            // Check PATH position
+            let pathPosition = checkVeloPathPosition(veloPath: veloPath)
+            
+            switch pathPosition {
+            case .first:
+                print("  ✅ ~/.velo/bin is first in PATH")
+                print("     ℹ️  This ensures #!/usr/bin/env python3 uses Velo Python")
+                return 0
+            case .notFirst(let position):
+                print("  ⚠️  ~/.velo/bin is in PATH but not first (position \(position))")
+                print("     This may prevent #!/usr/bin/env python3 from using Velo Python")
+                print("     Run 'velo install-self' to fix PATH ordering")
+                return 1
+            case .notFound:
+                print("  ❌ ~/.velo/bin not found in PATH (inconsistent state)")
+                print("     Run 'velo install-self' to fix PATH setup")
+                return 1
+            }
+        }
+        
+        private enum PathPosition {
+            case first
+            case notFirst(Int)
+            case notFound
+        }
+        
+        private func checkVeloPathPosition(veloPath: String) -> PathPosition {
+            guard let pathEnv = ProcessInfo.processInfo.environment["PATH"] else {
+                return .notFound
+            }
+            
+            let pathComponents = pathEnv.components(separatedBy: ":")
+                .filter { !$0.isEmpty }
+            
+            // Check for various Velo path representations
+            let veloPathVariants = [
+                veloPath,
+                "$HOME/.velo/bin", 
+                "~/.velo/bin",
+                NSString(string: veloPath).expandingTildeInPath
+            ]
+            
+            for (index, component) in pathComponents.enumerated() {
+                let expandedComponent = NSString(string: component).expandingTildeInPath
+                
+                if veloPathVariants.contains(component) || veloPathVariants.contains(expandedComponent) {
+                    return index == 0 ? .first : .notFirst(index + 1)
+                }
+            }
+            
+            return .notFound
         }
 
         private func checkPermissions() -> Int {
@@ -742,12 +794,18 @@ extension Velo {
             print("     \(context.isProjectContext ? "3" : "2"). System PATH: /usr/local/bin, /usr/bin, etc.")
 
             // Example resolution for common tools
-            let commonTools = ["wget", "node", "python"]
+            let commonTools = ["wget", "node", "python3"]
             for tool in commonTools {
                 if let resolvedPath = resolveCommand(tool) {
                     let isLocal = resolvedPath.contains("/.velo/")
                     let scope = isLocal ? (resolvedPath.contains("/.velo/bin/") ? "global" : "local") : "system"
-                    print("     \(tool) → \(scope): \(resolvedPath)")
+                    let status = (tool == "python3" && scope == "global") ? "✅" : ""
+                    print("     \(tool) → \(scope): \(resolvedPath) \(status)")
+                    
+                    // Special check for python3 resolution
+                    if tool == "python3" && scope != "global" {
+                        print("       ⚠️  python3 should resolve to Velo for #!/usr/bin/env python3 scripts")
+                    }
                 } else {
                     print("     \(tool) → not found")
                 }
