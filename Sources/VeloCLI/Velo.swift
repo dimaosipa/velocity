@@ -1,6 +1,7 @@
 import Foundation
 import ArgumentParser
 import VeloSystem
+import VeloCore
 
 public struct Velo: ParsableCommand {
     public static let configuration = CommandConfiguration(
@@ -41,4 +42,10 @@ public struct Velo: ParsableCommand {
     var quiet = false
 
     public init() {}
+
+    public func run() throws {
+        // This should never be called due to defaultSubcommand
+        let doctor = Velo.Doctor()
+        try doctor.run()
+    }
 }
