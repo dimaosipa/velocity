@@ -391,8 +391,7 @@ public final class Installer {
         try prepareForModification(binaryPath: binaryPath)
 
         // Use install_name_tool to rewrite library paths
-        // Replace @@HOMEBREW_PREFIX@@ with our Velo prefix
-        let veloPrefix = pathHelper.veloPrefix
+        // Replace @@HOMEBREW_PREFIX@@ with @rpath for portability
 
         // First, get the current library dependencies
         let otoolProcess = Process()
@@ -427,9 +426,9 @@ public final class Installer {
                 let components = trimmed.components(separatedBy: " ")
                 guard let oldPath = components.first else { continue }
 
-                // Replace both Homebrew placeholders with our Velo prefix
-                var newPath = oldPath.replacingOccurrences(of: "@@HOMEBREW_PREFIX@@", with: veloPrefix.path)
-                newPath = newPath.replacingOccurrences(of: "@@HOMEBREW_CELLAR@@", with: veloPrefix.path + "/Cellar")
+                // Replace both Homebrew placeholders with @rpath for portability
+                var newPath = oldPath.replacingOccurrences(of: "@@HOMEBREW_PREFIX@@", with: "@rpath")
+                newPath = newPath.replacingOccurrences(of: "@@HOMEBREW_CELLAR@@", with: "@rpath/Cellar")
 
                 // Check if this is the first line (install name) or a dependency
                 let isInstallName = index == 1 // otool -L output: line 0 is the file path, line 1 is install name
@@ -495,6 +494,9 @@ public final class Installer {
                 OSLogger.shared.installerWarning("  ⚠️ Some placeholders remain unreplaced in \(binaryPath.lastPathComponent)")
             }
         }
+
+        // Add @rpath entries for portable library resolution
+        try await addRPathEntries(binaryPath: binaryPath)
 
         // Re-sign the binary after modifying library paths
         try await resignBinaryWithFallback(binaryPath: binaryPath)
@@ -634,6 +636,58 @@ public final class Installer {
             let libraryPath = libDir.appendingPathComponent(libraryFile)
             try await rewriteBinaryLibraryPaths(binaryPath: libraryPath)
         }
+    }
+
+    private func addRPathEntries(binaryPath: URL) async throws {
+        // Determine appropriate @rpath entries based on binary location
+        let rpathEntries = calculateRPathEntries(for: binaryPath)
+        
+        for rpath in rpathEntries {
+            OSLogger.shared.debug("  Adding @rpath: \(rpath)", category: OSLogger.shared.installer)
+            
+            let rpathProcess = Process()
+            rpathProcess.executableURL = URL(fileURLWithPath: "/usr/bin/install_name_tool")
+            rpathProcess.arguments = ["-add_rpath", rpath, binaryPath.path]
+            
+            let rpathPipe = Pipe()
+            rpathProcess.standardOutput = rpathPipe
+            rpathProcess.standardError = rpathPipe
+            
+            try rpathProcess.run()
+            rpathProcess.waitUntilExit()
+            
+            // Note: We don't treat rpath addition failures as fatal
+            // Some binaries may already have these paths or may not need them
+            if rpathProcess.terminationStatus != 0 {
+                let errorOutput = rpathPipe.fileHandleForReading.readDataToEndOfFile()
+                let errorString = String(data: errorOutput, encoding: .utf8) ?? "Unknown error"
+                OSLogger.shared.debug("  @rpath addition warning for \(binaryPath.lastPathComponent): \(errorString)", category: OSLogger.shared.installer)
+            }
+        }
+    }
+    
+    private func calculateRPathEntries(for binaryPath: URL) -> [String] {
+        let pathComponents = binaryPath.pathComponents
+        
+        // Find where we are relative to .velo root
+        guard let veloIndex = pathComponents.lastIndex(of: ".velo") else {
+            // Fallback for binaries not in .velo structure
+            return ["@loader_path/../opt", "@executable_path/../opt"]
+        }
+        
+        let relativePath = Array(pathComponents[(veloIndex + 1)...])
+        
+        // Calculate depth from binary to .velo root
+        let depth = relativePath.count - 1 // -1 because we don't count the binary filename
+        let upPath = String(repeating: "../", count: depth)
+        
+        // Standard @rpath entries for portable library resolution
+        // Point to .velo root so @rpath/lib/... and @rpath/Cellar/... resolve correctly
+        let rootPath = upPath.isEmpty ? "." : String(upPath.dropLast()) // Remove trailing /
+        return [
+            "@loader_path/\(rootPath)",      // For finding libraries relative to loader
+            "@executable_path/\(rootPath)"   // For main executables finding libraries
+        ]
     }
 
     // MARK: - Verification
