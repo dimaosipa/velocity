@@ -59,6 +59,9 @@ public final class Installer {
 
             // Rewrite library paths for Homebrew bottle compatibility
             try await rewriteLibraryPaths(for: formula, packageDir: packageDir)
+            
+            // Rewrite script files with Homebrew placeholders
+            try await rewriteScriptFiles(packageDir: packageDir)
 
             // Create symlinks (only if requested)
             if shouldCreateSymlinks {
@@ -688,6 +691,74 @@ public final class Installer {
             "@loader_path/\(rootPath)",      // For finding libraries relative to loader
             "@executable_path/\(rootPath)"   // For main executables finding libraries
         ]
+    }
+
+    // MARK: - Script File Rewriting
+
+    private func rewriteScriptFiles(packageDir: URL) async throws {
+        OSLogger.shared.verbose("🔧 Rewriting script file placeholders", category: OSLogger.shared.installer)
+        
+        // Find all files with Homebrew placeholders recursively
+        let filesWithPlaceholders = try await findFilesWithPlaceholders(in: packageDir)
+        
+        if filesWithPlaceholders.isEmpty {
+            return
+        }
+        
+        OSLogger.shared.verbose("  Found \(filesWithPlaceholders.count) files with placeholders", category: OSLogger.shared.installer)
+        
+        for filePath in filesWithPlaceholders {
+            do {
+                try await rewriteFileContent(filePath: filePath)
+            } catch {
+                OSLogger.shared.installerWarning("Failed to rewrite placeholders in \(filePath.lastPathComponent): \(error.localizedDescription)")
+            }
+        }
+    }
+    
+    private func findFilesWithPlaceholders(in directory: URL) async throws -> [URL] {
+        // Use find command to search for files containing Homebrew placeholders
+        let findProcess = Process()
+        findProcess.executableURL = URL(fileURLWithPath: "/usr/bin/grep")
+        findProcess.arguments = [
+            "-r",  // Recursive
+            "-l",  // Only show filenames, not content
+            "--binary-files=without-match",  // Skip binary files
+            "@@HOMEBREW_",  // Search pattern
+            directory.path
+        ]
+        
+        let findPipe = Pipe()
+        findProcess.standardOutput = findPipe
+        findProcess.standardError = Pipe() // Suppress error output
+        
+        try findProcess.run()
+        findProcess.waitUntilExit()
+        
+        let output = findPipe.fileHandleForReading.readDataToEndOfFile()
+        let outputString = String(data: output, encoding: .utf8) ?? ""
+        
+        // Parse file paths from grep output
+        let filePaths = outputString.components(separatedBy: .newlines)
+            .filter { !$0.isEmpty }
+            .map { URL(fileURLWithPath: $0) }
+        
+        return filePaths
+    }
+    
+    private func rewriteFileContent(filePath: URL) async throws {
+        let content = try String(contentsOf: filePath, encoding: .utf8)
+        
+        // Replace Homebrew placeholders with actual Velo paths (not @rpath - that's for binaries only)
+        var newContent = content
+        newContent = newContent.replacingOccurrences(of: "@@HOMEBREW_PREFIX@@", with: pathHelper.veloPrefix.path)
+        newContent = newContent.replacingOccurrences(of: "@@HOMEBREW_CELLAR@@", with: pathHelper.cellarPath.path)
+        
+        // Only write if content actually changed
+        if newContent != content {
+            try newContent.write(to: filePath, atomically: true, encoding: .utf8)
+            OSLogger.shared.debug("  ✓ Rewrote placeholders in \(filePath.lastPathComponent)", category: OSLogger.shared.installer)
+        }
     }
 
     // MARK: - Verification
