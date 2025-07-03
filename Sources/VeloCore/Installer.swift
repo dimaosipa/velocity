@@ -407,48 +407,21 @@ public final class Installer {
     // MARK: - Library Path Rewriting
 
     private func rewriteLibraryPaths(for formula: Formula, packageDir: URL) async throws {
-        // Find all binaries in the package
-        let binDir = packageDir.appendingPathComponent("bin")
-
-        guard fileManager.fileExists(atPath: binDir.path) else {
-            return // No binaries to rewrite
-        }
-
-        let binaries = try fileManager.contentsOfDirectory(atPath: binDir.path)
-            .filter { !$0.hasPrefix(".") }
-
-        for binary in binaries {
-            let binaryPath = binDir.appendingPathComponent(binary)
-            
-            // Skip symlinks - only process actual files
-            var isSymlink: ObjCBool = false
-            if fileManager.fileExists(atPath: binaryPath.path, isDirectory: &isSymlink) {
-                let attributes = try? fileManager.attributesOfItem(atPath: binaryPath.path)
-                if let fileType = attributes?[.type] as? FileAttributeType, fileType == .typeSymbolicLink {
-                    OSLogger.shared.debug("Skipping symlink: \(binary)", category: OSLogger.shared.installer)
-                    continue
-                }
-            }
-            
-            // Only process actual Mach-O binaries
-            guard try await isMachOBinary(at: binaryPath) else {
-                OSLogger.shared.debug("Skipping non-binary file: \(binary)", category: OSLogger.shared.installer)
+        // Use recursive discovery to process ALL files in the package
+        let allFiles = try findAllProcessableFiles(in: packageDir)
+        
+        for filePath in allFiles {
+            // Skip symlinks to avoid duplicate processing
+            let attributes = try? fileManager.attributesOfItem(atPath: filePath.path)
+            if let fileType = attributes?[.type] as? FileAttributeType, fileType == .typeSymbolicLink {
                 continue
             }
             
-            try await rewriteBinaryLibraryPaths(binaryPath: binaryPath)
-        }
-
-        // Also rewrite any dynamic libraries in the package
-        let libDir = packageDir.appendingPathComponent("lib")
-        if fileManager.fileExists(atPath: libDir.path) {
-            try await rewriteLibraryDirectory(libDir)
-        }
-        
-        // Also rewrite binaries and libraries in Frameworks (e.g., Python)
-        let frameworksDir = packageDir.appendingPathComponent("Frameworks")
-        if fileManager.fileExists(atPath: frameworksDir.path) {
-            try await rewriteFrameworksDirectory(frameworksDir)
+            if try await isMachOBinary(at: filePath) {
+                try await rewriteBinaryLibraryPaths(binaryPath: filePath)
+            } else if try await isTextScript(at: filePath) {
+                try await rewriteTextScript(at: filePath)
+            }
         }
     }
 
@@ -687,9 +660,11 @@ public final class Installer {
             
             let outputString = String(data: output, encoding: .utf8) ?? ""
             
-            // Check if it's a Mach-O executable or dynamic library
+            // Check if it's a Mach-O executable, dynamic library, or bundle
             return outputString.contains("Mach-O") && 
-                   (outputString.contains("executable") || outputString.contains("dynamically linked shared library"))
+                   (outputString.contains("executable") || 
+                    outputString.contains("dynamically linked shared library") ||
+                    outputString.contains("bundle"))
         } catch {
             let nsError = error as NSError
             if nsError.domain == NSPOSIXErrorDomain && nsError.code == EBADF {
@@ -841,107 +816,116 @@ public final class Installer {
     }
     
     private func rewriteFrameworksDirectory(_ frameworksDir: URL) async throws {
-        // Process all frameworks in the directory
-        let frameworks = try fileManager.contentsOfDirectory(atPath: frameworksDir.path)
+        // Use recursive discovery instead of hardcoded paths
+        let allFiles = try findAllProcessableFiles(in: frameworksDir)
         
-        for framework in frameworks {
-            let frameworkPath = frameworksDir.appendingPathComponent(framework)
-            
-            // Skip if not a directory
-            var isDirectory: ObjCBool = false
-            guard fileManager.fileExists(atPath: frameworkPath.path, isDirectory: &isDirectory),
-                  isDirectory.boolValue else {
+        for filePath in allFiles {
+            // Skip symlinks to avoid duplicate processing
+            let attributes = try? fileManager.attributesOfItem(atPath: filePath.path)
+            if let fileType = attributes?[.type] as? FileAttributeType, fileType == .typeSymbolicLink {
                 continue
             }
             
-            // Look for binaries in common Framework locations
-            var possibleBinaryPaths = [
-                // Standard Framework structure
-                frameworkPath.appendingPathComponent("Versions/Current/bin"),
-                // Python-specific structure
-                frameworkPath.appendingPathComponent("Versions").appendingPathComponent("3.13/bin"),
-                frameworkPath.appendingPathComponent("Versions").appendingPathComponent("3.12/bin"),
-                // Python.app structure 
-                frameworkPath.appendingPathComponent("Versions/Current/Resources/Python.app/Contents/MacOS"),
-                frameworkPath.appendingPathComponent("Versions/3.13/Resources/Python.app/Contents/MacOS"),
-                frameworkPath.appendingPathComponent("Versions/3.12/Resources/Python.app/Contents/MacOS"),
-                // Generic version search
-                frameworkPath.appendingPathComponent("bin")
-            ]
-            
-            // Also process the main framework library itself
-            var possibleLibraryPaths = [
-                frameworkPath.appendingPathComponent("Versions/Current").appendingPathComponent(framework.replacingOccurrences(of: ".framework", with: "")),
-                frameworkPath.appendingPathComponent("Versions/3.13").appendingPathComponent(framework.replacingOccurrences(of: ".framework", with: "")),
-                frameworkPath.appendingPathComponent("Versions/3.12").appendingPathComponent(framework.replacingOccurrences(of: ".framework", with: ""))
-            ]
-            
-            // Also check for versioned directories
-            if let versionsDir = try? fileManager.contentsOfDirectory(atPath: frameworkPath.appendingPathComponent("Versions").path) {
-                for version in versionsDir {
-                    if version != "Current" { // Skip the Current symlink
-                        possibleBinaryPaths.append(frameworkPath.appendingPathComponent("Versions/\(version)/bin"))
-                        possibleBinaryPaths.append(frameworkPath.appendingPathComponent("Versions/\(version)/Resources/Python.app/Contents/MacOS"))
-                    }
+            if try await isMachOBinary(at: filePath) {
+                try await rewriteBinaryLibraryPaths(binaryPath: filePath)
+            } else if try await isTextScript(at: filePath) {
+                try await rewriteTextScript(at: filePath)
+            }
+        }
+    }
+    
+    // MARK: - Recursive File Discovery
+    
+    private func findAllProcessableFiles(in directory: URL) throws -> [URL] {
+        var processableFiles: [URL] = []
+        
+        guard let enumerator = fileManager.enumerator(
+            at: directory,
+            includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey],
+            options: [.skipsHiddenFiles, .skipsPackageDescendants]
+        ) else {
+            return processableFiles
+        }
+        
+        for case let fileURL as URL in enumerator {
+            do {
+                let resourceValues = try fileURL.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+                
+                // Only process regular files (not directories or symlinks)
+                if resourceValues.isRegularFile == true && resourceValues.isSymbolicLink != true {
+                    processableFiles.append(fileURL)
                 }
+            } catch {
+                // Skip files we can't read attributes for
+                continue
             }
+        }
+        
+        return processableFiles
+    }
+    
+    private func isTextScript(at fileURL: URL) async throws -> Bool {
+        // Only process files that are likely to be text scripts
+        let fileExtension = fileURL.pathExtension.lowercased()
+        let fileName = fileURL.lastPathComponent
+        
+        // Skip binary file extensions
+        let binaryExtensions = ["so", "dylib", "a", "o", "bin", "exe", "dll", "pkg", "dmg", "tar", "gz", "zip", "png", "jpg", "pdf"]
+        if binaryExtensions.contains(fileExtension) {
+            return false
+        }
+        
+        // Skip common binary files
+        if fileName.contains(".cpython-") || fileName.contains(".dylib") || fileName.hasPrefix("lib") {
+            return false
+        }
+        
+        // Check if file starts with shebang or contains Homebrew placeholders
+        guard let fileHandle = FileHandle(forReadingAtPath: fileURL.path) else {
+            return false
+        }
+        defer { fileHandle.closeFile() }
+        
+        // Read first 512 bytes to check for shebang and placeholders
+        let data = fileHandle.readData(ofLength: 512)
+        guard let content = String(data: data, encoding: .utf8) else {
+            return false
+        }
+        
+        // Check for null bytes (indicates binary file)
+        if data.contains(0) {
+            return false
+        }
+        
+        // Check for shebang or Homebrew placeholders
+        return content.hasPrefix("#!") || 
+               content.contains("@@HOMEBREW_PREFIX@@") ||
+               content.contains("@@HOMEBREW_CELLAR@@") ||
+               content.contains("/opt/homebrew") ||
+               content.contains("/usr/local/Cellar") ||
+               content.contains("/usr/local/opt")
+    }
+    
+    private func rewriteTextScript(at fileURL: URL) async throws {
+        do {
+            // Read the entire file
+            let originalContent = try String(contentsOf: fileURL, encoding: .utf8)
             
-            // Process each binary directory found
-            for binPath in possibleBinaryPaths {
-                if fileManager.fileExists(atPath: binPath.path) {
-                    let binaries = try fileManager.contentsOfDirectory(atPath: binPath.path)
-                        .filter { !$0.hasPrefix(".") }
-                    
-                    for binary in binaries {
-                        let binaryPath = binPath.appendingPathComponent(binary)
-                        
-                        // Skip symlinks
-                        let attributes = try? fileManager.attributesOfItem(atPath: binaryPath.path)
-                        if let fileType = attributes?[.type] as? FileAttributeType, fileType == .typeSymbolicLink {
-                            continue
-                        }
-                        
-                        // Only process actual Mach-O binaries
-                        guard try await isMachOBinary(at: binaryPath) else {
-                            continue
-                        }
-                        
-                        try await rewriteBinaryLibraryPaths(binaryPath: binaryPath)
-                    }
-                } else {
-                    OSLogger.shared.debug("⚠️ Binary path doesn't exist: \(binPath.path)", category: OSLogger.shared.installer)
-                }
-            }
+            // Replace all Homebrew path variants with Velo paths
+            var updatedContent = originalContent
+            updatedContent = updatedContent.replacingOccurrences(of: "@@HOMEBREW_PREFIX@@", with: pathHelper.veloHome.path)
+            updatedContent = updatedContent.replacingOccurrences(of: "@@HOMEBREW_CELLAR@@", with: pathHelper.cellarPath.path)
+            updatedContent = updatedContent.replacingOccurrences(of: "/opt/homebrew", with: pathHelper.veloHome.path)
+            updatedContent = updatedContent.replacingOccurrences(of: "/usr/local", with: pathHelper.veloHome.path)
             
-            // Process the main framework libraries
-            for libraryPath in possibleLibraryPaths {
-                if fileManager.fileExists(atPath: libraryPath.path) {
-                    if try await isMachOBinary(at: libraryPath) {
-                        try await rewriteBinaryLibraryPaths(binaryPath: libraryPath)
-                    }
-                }
+            // Only write back if content changed
+            if updatedContent != originalContent {
+                try updatedContent.write(to: fileURL, atomically: true, encoding: .utf8)
+                OSLogger.shared.debug("🔧 Updated text script: \(fileURL.lastPathComponent)", category: OSLogger.shared.installer)
             }
-            
-            // Also process the main framework binary (if it exists) - legacy code
-            let mainBinary = frameworkPath.appendingPathComponent(framework.replacingOccurrences(of: ".framework", with: ""))
-            if fileManager.fileExists(atPath: mainBinary.path),
-               try await isMachOBinary(at: mainBinary) {
-                try await rewriteBinaryLibraryPaths(binaryPath: mainBinary)
-            }
-            
-            // Also check versioned framework binaries (e.g., Python.framework/Versions/3.13/Python)
-            if let versionsDir = try? fileManager.contentsOfDirectory(atPath: frameworkPath.appendingPathComponent("Versions").path) {
-                for version in versionsDir {
-                    if version != "Current" {
-                        let versionedBinary = frameworkPath.appendingPathComponent("Versions/\(version)/\(framework.replacingOccurrences(of: ".framework", with: ""))")
-                        if fileManager.fileExists(atPath: versionedBinary.path),
-                           try await isMachOBinary(at: versionedBinary) {
-                            OSLogger.shared.debug("Processing versioned framework binary: \(versionedBinary.path)", category: OSLogger.shared.installer)
-                            try await rewriteBinaryLibraryPaths(binaryPath: versionedBinary)
-                        }
-                    }
-                }
-            }
+        } catch {
+            // Skip files that can't be read/written as text
+            OSLogger.shared.debug("⚠️ Skipping text processing for \(fileURL.lastPathComponent): \(error.localizedDescription)", category: OSLogger.shared.installer)
         }
     }
 
