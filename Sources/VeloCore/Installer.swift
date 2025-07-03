@@ -57,6 +57,9 @@ public final class Installer {
             // Extract bottle
             try await extractBottle(from: bottleFile, to: packageDir, progress: progress)
 
+            // Small delay to avoid file system race conditions during heavy I/O
+            try await Task.sleep(nanoseconds: 100_000_000) // 100ms
+
             // Rewrite library paths for Homebrew bottle compatibility
             try await rewriteLibraryPaths(for: formula, packageDir: packageDir)
             
@@ -373,6 +376,16 @@ public final class Installer {
         for binary in binaries {
             let binaryPath = binDir.appendingPathComponent(binary)
             
+            // Skip symlinks - only process actual files
+            var isSymlink: ObjCBool = false
+            if fileManager.fileExists(atPath: binaryPath.path, isDirectory: &isSymlink) {
+                let attributes = try? fileManager.attributesOfItem(atPath: binaryPath.path)
+                if let fileType = attributes?[.type] as? FileAttributeType, fileType == .typeSymbolicLink {
+                    OSLogger.shared.debug("Skipping symlink: \(binary)", category: OSLogger.shared.installer)
+                    continue
+                }
+            }
+            
             // Only process actual Mach-O binaries
             guard try await isMachOBinary(at: binaryPath) else {
                 OSLogger.shared.debug("Skipping non-binary file: \(binary)", category: OSLogger.shared.installer)
@@ -409,20 +422,31 @@ public final class Installer {
         otoolProcess.arguments = ["-L", binaryPath.path]
 
         let otoolPipe = Pipe()
+        let errorPipe = Pipe()
         otoolProcess.standardOutput = otoolPipe
-        otoolProcess.standardError = otoolPipe
+        otoolProcess.standardError = errorPipe
 
         try otoolProcess.run()
         otoolProcess.waitUntilExit()
 
+        // Read output and ensure file handles are closed
+        let otoolOutput = otoolPipe.fileHandleForReading.readDataToEndOfFile()
+        let errorOutput = errorPipe.fileHandleForReading.readDataToEndOfFile()
+        
+        // Explicitly close file handles to prevent descriptor leaks
+        try? otoolPipe.fileHandleForReading.close()
+        try? otoolPipe.fileHandleForWriting.close()
+        try? errorPipe.fileHandleForReading.close()
+        try? errorPipe.fileHandleForWriting.close()
+
         guard otoolProcess.terminationStatus == 0 else {
+            let errorString = String(data: errorOutput, encoding: .utf8) ?? "Unknown error"
             throw VeloError.libraryPathRewriteFailed(
                 binary: binaryPath.lastPathComponent,
-                reason: "Failed to read library dependencies"
+                reason: "Failed to read library dependencies: \(errorString)"
             )
         }
 
-        let otoolOutput = otoolPipe.fileHandleForReading.readDataToEndOfFile()
         let dependencies = String(data: otoolOutput, encoding: .utf8) ?? ""
 
         // Find lines containing @@HOMEBREW_PREFIX@@ or @@HOMEBREW_CELLAR@@ and rewrite them
@@ -452,14 +476,23 @@ public final class Installer {
                     installNameProcess.arguments = ["-id", newPath, binaryPath.path]
 
                     let installNamePipe = Pipe()
+                    let installNameErrorPipe = Pipe()
                     installNameProcess.standardOutput = installNamePipe
-                    installNameProcess.standardError = installNamePipe
+                    installNameProcess.standardError = installNameErrorPipe
 
                     try installNameProcess.run()
                     installNameProcess.waitUntilExit()
 
+                    // Read output and close handles
+                    _ = installNamePipe.fileHandleForReading.readDataToEndOfFile()
+                    let errorOutput = installNameErrorPipe.fileHandleForReading.readDataToEndOfFile()
+                    
+                    try? installNamePipe.fileHandleForReading.close()
+                    try? installNamePipe.fileHandleForWriting.close()
+                    try? installNameErrorPipe.fileHandleForReading.close()
+                    try? installNameErrorPipe.fileHandleForWriting.close()
+
                     if installNameProcess.terminationStatus != 0 {
-                        let errorOutput = installNamePipe.fileHandleForReading.readDataToEndOfFile()
                         let errorString = String(data: errorOutput, encoding: .utf8) ?? "Unknown error"
                         OSLogger.shared.installerWarning("install_name_tool -id failed for \(binaryPath.lastPathComponent): \(errorString)")
                     } else {
@@ -474,14 +507,23 @@ public final class Installer {
                     installNameProcess.arguments = ["-change", oldPath, newPath, binaryPath.path]
 
                     let installNamePipe = Pipe()
+                    let installNameErrorPipe = Pipe()
                     installNameProcess.standardOutput = installNamePipe
-                    installNameProcess.standardError = installNamePipe
+                    installNameProcess.standardError = installNameErrorPipe
 
                     try installNameProcess.run()
                     installNameProcess.waitUntilExit()
 
+                    // Read output and close handles
+                    _ = installNamePipe.fileHandleForReading.readDataToEndOfFile()
+                    let errorOutput = installNameErrorPipe.fileHandleForReading.readDataToEndOfFile()
+                    
+                    try? installNamePipe.fileHandleForReading.close()
+                    try? installNamePipe.fileHandleForWriting.close()
+                    try? installNameErrorPipe.fileHandleForReading.close()
+                    try? installNameErrorPipe.fileHandleForWriting.close()
+
                     if installNameProcess.terminationStatus != 0 {
-                        let errorOutput = installNamePipe.fileHandleForReading.readDataToEndOfFile()
                         let errorString = String(data: errorOutput, encoding: .utf8) ?? "Unknown error"
                         OSLogger.shared.installerWarning("install_name_tool -change failed for \(binaryPath.lastPathComponent): \(errorString)")
                         throw VeloError.libraryPathRewriteFailed(
@@ -553,24 +595,42 @@ public final class Installer {
         fileProcess.arguments = [path.path]
         
         let filePipe = Pipe()
+        let errorPipe = Pipe()
         fileProcess.standardOutput = filePipe
-        fileProcess.standardError = Pipe() // Suppress error output
+        fileProcess.standardError = errorPipe
         
         do {
             try fileProcess.run()
             fileProcess.waitUntilExit()
             
+            // Read output and ensure file handles are closed
+            let output = filePipe.fileHandleForReading.readDataToEndOfFile()
+            let errorOutput = errorPipe.fileHandleForReading.readDataToEndOfFile()
+            
+            // Explicitly close file handles
+            try? filePipe.fileHandleForReading.close()
+            try? filePipe.fileHandleForWriting.close()
+            try? errorPipe.fileHandleForReading.close()
+            try? errorPipe.fileHandleForWriting.close()
+            
             guard fileProcess.terminationStatus == 0 else {
+                let errorString = String(data: errorOutput, encoding: .utf8) ?? ""
+                if errorString.contains("Bad file descriptor") {
+                    OSLogger.shared.installerWarning("Bad file descriptor when checking \(path.lastPathComponent)")
+                }
                 return false
             }
             
-            let output = filePipe.fileHandleForReading.readDataToEndOfFile()
             let outputString = String(data: output, encoding: .utf8) ?? ""
             
             // Check if it's a Mach-O executable or dynamic library
             return outputString.contains("Mach-O") && 
                    (outputString.contains("executable") || outputString.contains("dynamically linked shared library"))
         } catch {
+            let nsError = error as NSError
+            if nsError.domain == NSPOSIXErrorDomain && nsError.code == EBADF {
+                OSLogger.shared.installerWarning("EBADF error checking file type for \(path.lastPathComponent)")
+            }
             return false
         }
     }
@@ -695,6 +755,16 @@ public final class Installer {
 
         for libraryFile in libraryFiles {
             let libraryPath = libDir.appendingPathComponent(libraryFile)
+            
+            // Skip symlinks - only process actual files
+            var isSymlink: ObjCBool = false
+            if fileManager.fileExists(atPath: libraryPath.path, isDirectory: &isSymlink) {
+                let attributes = try? fileManager.attributesOfItem(atPath: libraryPath.path)
+                if let fileType = attributes?[.type] as? FileAttributeType, fileType == .typeSymbolicLink {
+                    OSLogger.shared.debug("Skipping symlink: \(libraryFile)", category: OSLogger.shared.installer)
+                    continue
+                }
+            }
             
             // Only process actual Mach-O libraries
             guard try await isMachOBinary(at: libraryPath) else {
