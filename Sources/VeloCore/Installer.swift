@@ -584,6 +584,9 @@ public final class Installer {
             }
         }
 
+        // Rewrite existing @rpath entries with placeholders
+        try await rewriteRPathEntries(binaryPath: binaryPath)
+        
         // Add @rpath entries for portable library resolution
         try await addRPathEntries(binaryPath: binaryPath)
 
@@ -996,6 +999,119 @@ public final class Installer {
         }
         
         return rpathEntries
+    }
+    
+    private func rewriteRPathEntries(binaryPath: URL) async throws {
+        // Get current @rpath entries
+        let otoolProcess = Process()
+        otoolProcess.executableURL = URL(fileURLWithPath: "/usr/bin/otool")
+        otoolProcess.arguments = ["-l", binaryPath.path]
+
+        let otoolPipe = Pipe()
+        let errorPipe = Pipe()
+        otoolProcess.standardOutput = otoolPipe
+        otoolProcess.standardError = errorPipe
+
+        try otoolProcess.run()
+        otoolProcess.waitUntilExit()
+
+        // Read output and ensure file handles are closed
+        let otoolOutput = otoolPipe.fileHandleForReading.readDataToEndOfFile()
+        let errorOutput = errorPipe.fileHandleForReading.readDataToEndOfFile()
+        
+        // Explicitly close file handles to prevent descriptor leaks
+        try? otoolPipe.fileHandleForReading.close()
+        try? otoolPipe.fileHandleForWriting.close()
+        try? errorPipe.fileHandleForReading.close()
+        try? errorPipe.fileHandleForWriting.close()
+
+        guard otoolProcess.terminationStatus == 0 else {
+            let errorString = String(data: errorOutput, encoding: .utf8) ?? "Unknown error"
+            OSLogger.shared.debug("Failed to read @rpath entries for \(binaryPath.lastPathComponent): \(errorString)", category: OSLogger.shared.installer)
+            return
+        }
+
+        let output = String(data: otoolOutput, encoding: .utf8) ?? ""
+        let lines = output.components(separatedBy: .newlines)
+        
+        // Parse @rpath entries from otool -l output
+        var rpathEntries: [String] = []
+        var isInRPathCommand = false
+        
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            
+            if trimmed.starts(with: "cmd LC_RPATH") {
+                isInRPathCommand = true
+                continue
+            }
+            
+            if isInRPathCommand && trimmed.starts(with: "path ") {
+                // Extract path from "path /some/path (offset 12)"
+                let pathLine = trimmed.replacingOccurrences(of: "path ", with: "")
+                if let spaceIndex = pathLine.firstIndex(of: " ") {
+                    let path = String(pathLine[..<spaceIndex])
+                    rpathEntries.append(path)
+                }
+                isInRPathCommand = false
+            }
+        }
+        
+        // Check if any @rpath entries contain Homebrew placeholders
+        var rewriteCount = 0
+        for rpathEntry in rpathEntries {
+            if rpathEntry.contains("@@HOMEBREW_PREFIX@@") || rpathEntry.contains("@@HOMEBREW_CELLAR@@") {
+                // Create new path with Velo paths
+                var newPath = rpathEntry
+                newPath = newPath.replacingOccurrences(of: "@@HOMEBREW_PREFIX@@", with: pathHelper.veloHome.path)
+                newPath = newPath.replacingOccurrences(of: "@@HOMEBREW_CELLAR@@", with: pathHelper.cellarPath.path)
+                
+                OSLogger.shared.debug("  Rewriting @rpath entry: \(rpathEntry) -> \(newPath)", category: OSLogger.shared.installer)
+                
+                // Remove old @rpath entry
+                let deleteProcess = Process()
+                deleteProcess.executableURL = URL(fileURLWithPath: "/usr/bin/install_name_tool")
+                deleteProcess.arguments = ["-delete_rpath", rpathEntry, binaryPath.path]
+                
+                let deletePipe = Pipe()
+                deleteProcess.standardOutput = deletePipe
+                deleteProcess.standardError = deletePipe
+                
+                try deleteProcess.run()
+                deleteProcess.waitUntilExit()
+                
+                if deleteProcess.terminationStatus != 0 {
+                    let errorOutput = deletePipe.fileHandleForReading.readDataToEndOfFile()
+                    let errorString = String(data: errorOutput, encoding: .utf8) ?? "Unknown error"
+                    OSLogger.shared.debug("Failed to delete @rpath entry \(rpathEntry): \(errorString)", category: OSLogger.shared.installer)
+                    continue
+                }
+                
+                // Add new @rpath entry
+                let addProcess = Process()
+                addProcess.executableURL = URL(fileURLWithPath: "/usr/bin/install_name_tool")
+                addProcess.arguments = ["-add_rpath", newPath, binaryPath.path]
+                
+                let addPipe = Pipe()
+                addProcess.standardOutput = addPipe
+                addProcess.standardError = addPipe
+                
+                try addProcess.run()
+                addProcess.waitUntilExit()
+                
+                if addProcess.terminationStatus != 0 {
+                    let errorOutput = addPipe.fileHandleForReading.readDataToEndOfFile()
+                    let errorString = String(data: errorOutput, encoding: .utf8) ?? "Unknown error"
+                    OSLogger.shared.debug("Failed to add @rpath entry \(newPath): \(errorString)", category: OSLogger.shared.installer)
+                } else {
+                    rewriteCount += 1
+                }
+            }
+        }
+        
+        if rewriteCount > 0 {
+            OSLogger.shared.installerInfo("  ✓ Rewrote \(rewriteCount) @rpath entries")
+        }
     }
 
     // MARK: - Script File Rewriting
