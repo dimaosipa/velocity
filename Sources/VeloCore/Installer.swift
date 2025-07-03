@@ -61,7 +61,9 @@ public final class Installer {
             try await Task.sleep(nanoseconds: 100_000_000) // 100ms
 
             // Rewrite library paths for Homebrew bottle compatibility
+            print("DEBUG: Starting library path rewriting for \(formula.name)")
             try await rewriteLibraryPaths(for: formula, packageDir: packageDir)
+            print("DEBUG: Completed library path rewriting for \(formula.name)")
             
             // Rewrite script files with Homebrew placeholders
             try await rewriteScriptFiles(packageDir: packageDir)
@@ -400,14 +402,29 @@ public final class Installer {
         if fileManager.fileExists(atPath: libDir.path) {
             try await rewriteLibraryDirectory(libDir)
         }
+        
+        // Also rewrite binaries and libraries in Frameworks (e.g., Python)
+        print("DEBUG: Checking for Frameworks directory...")
+        let frameworksDir = packageDir.appendingPathComponent("Frameworks")
+        print("DEBUG: Looking for Frameworks at: \(frameworksDir.path)")
+        if fileManager.fileExists(atPath: frameworksDir.path) {
+            print("DEBUG: Found Frameworks directory, processing framework binaries...")
+            try await rewriteFrameworksDirectory(frameworksDir)
+            print("DEBUG: Completed framework processing")
+        } else {
+            print("DEBUG: No Frameworks directory found at: \(frameworksDir.path)")
+        }
     }
 
     private func rewriteBinaryLibraryPaths(binaryPath: URL) async throws {
         // Check if binary needs library path rewriting
+        print("DEBUG: Checking if \(binaryPath.lastPathComponent) needs rewriting...")
         guard try await binaryNeedsPathRewriting(binaryPath: binaryPath) else {
+            print("DEBUG: \(binaryPath.lastPathComponent) does not need rewriting")
             return // Skip if no placeholders found
         }
 
+        print("DEBUG: \(binaryPath.lastPathComponent) needs rewriting, proceeding...")
         OSLogger.shared.verbose("🔧 Rewriting library paths for \(binaryPath.lastPathComponent)", category: OSLogger.shared.installer)
 
         // Prepare binary for modification
@@ -452,23 +469,43 @@ public final class Installer {
         // Find lines containing @@HOMEBREW_PREFIX@@ or @@HOMEBREW_CELLAR@@ and rewrite them
         let lines = dependencies.components(separatedBy: .newlines)
         var rewriteCount = 0
+        print("DEBUG: Analyzing \(lines.count) dependency lines for \(binaryPath.lastPathComponent)")
 
         for (index, line) in lines.enumerated() {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             if trimmed.contains("@@HOMEBREW_PREFIX@@") || trimmed.contains("@@HOMEBREW_CELLAR@@") {
+                print("DEBUG: Found placeholder line \(index): \(trimmed)")
                 // Extract the old path (everything before the first space)
                 let components = trimmed.components(separatedBy: " ")
                 guard let oldPath = components.first else { continue }
 
                 // Replace both Homebrew placeholders with @rpath for portability
-                var newPath = oldPath.replacingOccurrences(of: "@@HOMEBREW_PREFIX@@", with: "@rpath")
+                // For @@HOMEBREW_PREFIX@@/opt, we need to include the package version in the path
+                var newPath = oldPath.replacingOccurrences(of: "@@HOMEBREW_PREFIX@@/opt/", with: "@rpath/Cellar/")
+                // Then add the package version if it's missing (for framework libraries)
+                if newPath.contains("@rpath/Cellar/") && binaryPath.path.contains("/Frameworks/") {
+                    // Extract package name and version from the binary path
+                    let pathComponents = binaryPath.pathComponents
+                    if let cellarIndex = pathComponents.firstIndex(of: "Cellar"),
+                       cellarIndex + 2 < pathComponents.count {
+                        let packageName = pathComponents[cellarIndex + 1]
+                        let packageVersion = pathComponents[cellarIndex + 2]
+                        // Replace the package path to include version
+                        newPath = newPath.replacingOccurrences(of: "@rpath/Cellar/\(packageName)/", with: "@rpath/Cellar/\(packageName)/\(packageVersion)/")
+                    }
+                }
                 newPath = newPath.replacingOccurrences(of: "@@HOMEBREW_CELLAR@@", with: "@rpath/Cellar")
 
                 // Check if this is the first line (install name) or a dependency
                 let isInstallName = index == 1 // otool -L output: line 0 is the file path, line 1 is install name
+                print("DEBUG: index=\(index), isInstallName=\(isInstallName), pathExtension=\(binaryPath.pathExtension)")
+                print("DEBUG: trimmed.contains('Framework')=\(trimmed.contains("Framework"))")
                 
-                if isInstallName && binaryPath.pathExtension == "dylib" {
-                    // Fix the library's own install name (identity)
+                if isInstallName && (binaryPath.pathExtension == "dylib" || 
+                                   binaryPath.pathExtension == "so" ||
+                                   (binaryPath.path.contains("/Frameworks/") && binaryPath.path.contains(".framework/") && !binaryPath.path.contains("/bin/"))) {
+                    print("DEBUG: This is an install name for a shared library")
+                    // Fix the library's own install name (identity) for shared libraries
                     OSLogger.shared.debug("  Rewriting install name: \(oldPath) -> \(newPath)", category: OSLogger.shared.installer)
                     
                     let installNameProcess = Process()
@@ -499,12 +536,15 @@ public final class Installer {
                         rewriteCount += 1
                     }
                 } else {
+                    print("DEBUG: This is a dependency reference")
                     // Fix dependency reference
+                    print("DEBUG: Rewriting dependency: \(oldPath) -> \(newPath)")
                     OSLogger.shared.debug("  Rewriting dependency: \(oldPath) -> \(newPath)", category: OSLogger.shared.installer)
 
                     let installNameProcess = Process()
                     installNameProcess.executableURL = URL(fileURLWithPath: "/usr/bin/install_name_tool")
                     installNameProcess.arguments = ["-change", oldPath, newPath, binaryPath.path]
+                    print("DEBUG: Running: install_name_tool -change '\(oldPath)' '\(newPath)' '\(binaryPath.path)'")
 
                     let installNamePipe = Pipe()
                     let installNameErrorPipe = Pipe()
@@ -525,12 +565,14 @@ public final class Installer {
 
                     if installNameProcess.terminationStatus != 0 {
                         let errorString = String(data: errorOutput, encoding: .utf8) ?? "Unknown error"
+                        print("DEBUG: install_name_tool failed: \(errorString)")
                         OSLogger.shared.installerWarning("install_name_tool -change failed for \(binaryPath.lastPathComponent): \(errorString)")
                         throw VeloError.libraryPathRewriteFailed(
                             binary: binaryPath.lastPathComponent,
                             reason: "install_name_tool failed: \(errorString)"
                         )
                     } else {
+                        print("DEBUG: install_name_tool succeeded")
                         rewriteCount += 1
                     }
                 }
@@ -775,6 +817,131 @@ public final class Installer {
             try await rewriteBinaryLibraryPaths(binaryPath: libraryPath)
         }
     }
+    
+    private func rewriteFrameworksDirectory(_ frameworksDir: URL) async throws {
+        // Process all frameworks in the directory
+        let frameworks = try fileManager.contentsOfDirectory(atPath: frameworksDir.path)
+        print("DEBUG: Processing \(frameworks.count) frameworks: \(frameworks.joined(separator: ", "))")
+        
+        for framework in frameworks {
+            let frameworkPath = frameworksDir.appendingPathComponent(framework)
+            print("DEBUG: Examining framework: \(framework)")
+            
+            // Skip if not a directory
+            var isDirectory: ObjCBool = false
+            guard fileManager.fileExists(atPath: frameworkPath.path, isDirectory: &isDirectory),
+                  isDirectory.boolValue else {
+                print("DEBUG: Skipping non-directory: \(framework)")
+                continue
+            }
+            
+            // Look for binaries in common Framework locations
+            var possibleBinaryPaths = [
+                // Standard Framework structure
+                frameworkPath.appendingPathComponent("Versions/Current/bin"),
+                // Python-specific structure
+                frameworkPath.appendingPathComponent("Versions").appendingPathComponent("3.13/bin"),
+                frameworkPath.appendingPathComponent("Versions").appendingPathComponent("3.12/bin"),
+                // Python.app structure 
+                frameworkPath.appendingPathComponent("Versions/Current/Resources/Python.app/Contents/MacOS"),
+                frameworkPath.appendingPathComponent("Versions/3.13/Resources/Python.app/Contents/MacOS"),
+                frameworkPath.appendingPathComponent("Versions/3.12/Resources/Python.app/Contents/MacOS"),
+                // Generic version search
+                frameworkPath.appendingPathComponent("bin")
+            ]
+            
+            // Also process the main framework library itself
+            var possibleLibraryPaths = [
+                frameworkPath.appendingPathComponent("Versions/Current").appendingPathComponent(framework.replacingOccurrences(of: ".framework", with: "")),
+                frameworkPath.appendingPathComponent("Versions/3.13").appendingPathComponent(framework.replacingOccurrences(of: ".framework", with: "")),
+                frameworkPath.appendingPathComponent("Versions/3.12").appendingPathComponent(framework.replacingOccurrences(of: ".framework", with: ""))
+            ]
+            
+            // Also check for versioned directories
+            if let versionsDir = try? fileManager.contentsOfDirectory(atPath: frameworkPath.appendingPathComponent("Versions").path) {
+                for version in versionsDir {
+                    if version != "Current" { // Skip the Current symlink
+                        possibleBinaryPaths.append(frameworkPath.appendingPathComponent("Versions/\(version)/bin"))
+                        possibleBinaryPaths.append(frameworkPath.appendingPathComponent("Versions/\(version)/Resources/Python.app/Contents/MacOS"))
+                    }
+                }
+            }
+            
+            // Process each binary directory found
+            for binPath in possibleBinaryPaths {
+                if fileManager.fileExists(atPath: binPath.path) {
+                    print("DEBUG: Processing Framework binaries in: \(binPath.path)")
+                    
+                    let binaries = try fileManager.contentsOfDirectory(atPath: binPath.path)
+                        .filter { !$0.hasPrefix(".") }
+                    print("DEBUG: Found \(binaries.count) binaries: \(binaries.joined(separator: ", "))")
+                    
+                    for binary in binaries {
+                        let binaryPath = binPath.appendingPathComponent(binary)
+                        print("DEBUG: Examining binary: \(binary)")
+                        
+                        // Skip symlinks
+                        let attributes = try? fileManager.attributesOfItem(atPath: binaryPath.path)
+                        if let fileType = attributes?[.type] as? FileAttributeType, fileType == .typeSymbolicLink {
+                            print("DEBUG: Skipping symlink: \(binary)")
+                            continue
+                        }
+                        
+                        // Only process actual Mach-O binaries
+                        guard try await isMachOBinary(at: binaryPath) else {
+                            print("DEBUG: Skipping non-Mach-O file: \(binary)")
+                            continue
+                        }
+                        
+                        print("DEBUG: Processing Framework binary: \(binary)")
+                        try await rewriteBinaryLibraryPaths(binaryPath: binaryPath)
+                        print("DEBUG: Completed processing Framework binary: \(binary)")
+                    }
+                } else {
+                    OSLogger.shared.debug("⚠️ Binary path doesn't exist: \(binPath.path)", category: OSLogger.shared.installer)
+                }
+            }
+            
+            // Process the main framework libraries
+            for libraryPath in possibleLibraryPaths {
+                print("DEBUG: Checking framework library: \(libraryPath.path)")
+                if fileManager.fileExists(atPath: libraryPath.path) {
+                    if try await isMachOBinary(at: libraryPath) {
+                        print("DEBUG: Processing framework library: \(libraryPath.lastPathComponent)")
+                        try await rewriteBinaryLibraryPaths(binaryPath: libraryPath)
+                        print("DEBUG: Completed processing framework library: \(libraryPath.lastPathComponent)")
+                    } else {
+                        print("DEBUG: Skipping non-Mach-O framework library: \(libraryPath.lastPathComponent)")
+                    }
+                } else {
+                    print("DEBUG: Framework library doesn't exist: \(libraryPath.path)")
+                }
+            }
+            
+            // Also process the main framework binary (if it exists) - legacy code
+            let mainBinary = frameworkPath.appendingPathComponent(framework.replacingOccurrences(of: ".framework", with: ""))
+            print("DEBUG: Checking legacy main binary: \(mainBinary.path)")
+            if fileManager.fileExists(atPath: mainBinary.path),
+               try await isMachOBinary(at: mainBinary) {
+                print("DEBUG: Processing legacy main binary: \(mainBinary.lastPathComponent)")
+                try await rewriteBinaryLibraryPaths(binaryPath: mainBinary)
+            }
+            
+            // Also check versioned framework binaries (e.g., Python.framework/Versions/3.13/Python)
+            if let versionsDir = try? fileManager.contentsOfDirectory(atPath: frameworkPath.appendingPathComponent("Versions").path) {
+                for version in versionsDir {
+                    if version != "Current" {
+                        let versionedBinary = frameworkPath.appendingPathComponent("Versions/\(version)/\(framework.replacingOccurrences(of: ".framework", with: ""))")
+                        if fileManager.fileExists(atPath: versionedBinary.path),
+                           try await isMachOBinary(at: versionedBinary) {
+                            OSLogger.shared.debug("Processing versioned framework binary: \(versionedBinary.path)", category: OSLogger.shared.installer)
+                            try await rewriteBinaryLibraryPaths(binaryPath: versionedBinary)
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     private func addRPathEntries(binaryPath: URL) async throws {
         // Determine appropriate @rpath entries based on binary location
@@ -822,10 +989,27 @@ public final class Installer {
         // Standard @rpath entries for portable library resolution
         // Point to .velo root so @rpath/lib/... and @rpath/Cellar/... resolve correctly
         let rootPath = upPath.isEmpty ? "." : String(upPath.dropLast()) // Remove trailing /
-        return [
+        
+        var rpathEntries = [
             "@loader_path/\(rootPath)",      // For finding libraries relative to loader
             "@executable_path/\(rootPath)"   // For main executables finding libraries
         ]
+        
+        // Special handling for framework binaries to support symlinked access
+        if binaryPath.path.contains("/Frameworks/") && binaryPath.path.contains(".framework/") {
+            // Add additional rpath entries for symlinked framework binaries
+            // These help when binaries are accessed through /opt/ symlinks
+            rpathEntries.append("@loader_path/../../../../../../../..")
+            rpathEntries.append("@executable_path/../../../../../../../..")
+            
+            // For python binaries, add direct path to the framework
+            if binaryPath.path.contains("python") {
+                rpathEntries.append("@loader_path/../../..")  // Relative to framework library
+                rpathEntries.append("@executable_path/../../..")
+            }
+        }
+        
+        return rpathEntries
     }
 
     // MARK: - Script File Rewriting
