@@ -36,6 +36,9 @@ extension Velo {
             if fixPath {
                 try checkAndFixPathConfiguration(pathHelper: pathHelper)
             }
+            
+            // Check and fix hardcoded wrapper scripts
+            try await checkAndFixWrapperScripts(pathHelper: pathHelper)
 
             if let packageName = package {
                 // Repair specific package
@@ -497,6 +500,198 @@ extension Velo {
             if newContent != content {
                 try newContent.write(to: filePath, atomically: true, encoding: .utf8)
             }
+        }
+
+        // MARK: - Wrapper Script Repair
+
+        private func checkAndFixWrapperScripts(pathHelper: PathHelper) async throws {
+            OSLogger.shared.info("🔧 Checking wrapper scripts for hardcoded paths...")
+
+            let binPath = pathHelper.binPath
+            guard FileManager.default.fileExists(atPath: binPath.path) else {
+                OSLogger.shared.info("  ℹ️  No bin directory found")
+                return
+            }
+
+            let binContents = try FileManager.default.contentsOfDirectory(atPath: binPath.path)
+            var wrapperScriptsChecked = 0
+            var hardcodedPathsFound = 0
+            var scriptsFixed = 0
+
+            for filename in binContents {
+                let scriptPath = binPath.appendingPathComponent(filename)
+                
+                // Skip if not a regular file
+                guard let resourceValues = try? scriptPath.resourceValues(forKeys: [.isRegularFileKey]),
+                      resourceValues.isRegularFile == true else {
+                    continue
+                }
+                
+                // Check if it's a shell script or Python script
+                guard filename != "velo" && (isShellScript(scriptPath) || isPythonScript(scriptPath)) else {
+                    continue
+                }
+                
+                wrapperScriptsChecked += 1
+                
+                if try hasHardcodedPaths(scriptPath: scriptPath, pathHelper: pathHelper) {
+                    hardcodedPathsFound += 1
+                    OSLogger.shared.info("  ⚠️  Found hardcoded paths in \(filename)")
+                    
+                    if !dryRun {
+                        if try await regenerateWrapperScript(scriptPath: scriptPath, pathHelper: pathHelper) {
+                            scriptsFixed += 1
+                            OSLogger.shared.info("    ✅ Regenerated \(filename) with portable paths")
+                        } else {
+                            OSLogger.shared.warning("    ❌ Could not regenerate \(filename)")
+                        }
+                    }
+                }
+            }
+
+            if wrapperScriptsChecked == 0 {
+                OSLogger.shared.info("  ℹ️  No wrapper scripts found to check")
+            } else if hardcodedPathsFound == 0 {
+                OSLogger.shared.info("  ✅ All \(wrapperScriptsChecked) wrapper scripts use portable paths")
+            } else {
+                if dryRun {
+                    OSLogger.shared.info("  📊 Found \(hardcodedPathsFound) wrapper scripts with hardcoded paths")
+                } else {
+                    OSLogger.shared.info("  📊 Fixed \(scriptsFixed)/\(hardcodedPathsFound) wrapper scripts")
+                }
+            }
+        }
+
+        private func isShellScript(_ path: URL) -> Bool {
+            guard let content = try? String(contentsOf: path, encoding: .utf8),
+                  let firstLine = content.components(separatedBy: .newlines).first else {
+                return false
+            }
+            return firstLine.hasPrefix("#!/bin/bash") || firstLine.hasPrefix("#!/bin/sh")
+        }
+
+        private func isPythonScript(_ path: URL) -> Bool {
+            guard let content = try? String(contentsOf: path, encoding: .utf8),
+                  let firstLine = content.components(separatedBy: .newlines).first else {
+                return false
+            }
+            return firstLine.contains("python")
+        }
+
+        private func hasHardcodedPaths(scriptPath: URL, pathHelper: PathHelper) throws -> Bool {
+            let content = try String(contentsOf: scriptPath, encoding: .utf8)
+            
+            // Check for hardcoded paths that should be made portable
+            let homeDir = FileManager.default.homeDirectoryForCurrentUser.path
+            let hardcodedPatterns = [
+                "/Users/[^/]+/\\.velo/",
+                "\(homeDir)/.velo/"
+            ]
+            
+            for pattern in hardcodedPatterns {
+                if let regex = try? NSRegularExpression(pattern: pattern, options: []),
+                   regex.firstMatch(in: content, options: [], range: NSRange(location: 0, length: content.count)) != nil {
+                    return true
+                }
+            }
+            
+            return false
+        }
+
+        private func regenerateWrapperScript(scriptPath: URL, pathHelper: PathHelper) async throws -> Bool {
+            let filename = scriptPath.lastPathComponent
+            
+            // For now, we'll focus on the most common cases: Python framework wrappers
+            if filename.hasPrefix("python") {
+                try regeneratePythonWrapper(scriptPath: scriptPath, pathHelper: pathHelper)
+                return true
+            }
+            
+            // For other scripts that use #!/usr/bin/env python3, we can make them portable
+            if isPythonScript(scriptPath) {
+                try regenerateGenericPythonWrapper(scriptPath: scriptPath, pathHelper: pathHelper)
+                return true
+            }
+            
+            // For other wrapper scripts, we can't automatically regenerate them
+            return false
+        }
+
+        private func regeneratePythonWrapper(scriptPath: URL, pathHelper: PathHelper) throws {
+            let filename = scriptPath.lastPathComponent
+            
+            // Generate portable Python wrapper
+            let wrapperContent = """
+            #!/bin/bash
+            # Velo framework wrapper script - portable version
+            
+            # Dynamically discover Velo installation root from script location
+            SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+            VELO_ROOT="$(dirname "$SCRIPT_DIR")"
+            
+            # Set framework path for dynamic library loading
+            export DYLD_FRAMEWORK_PATH="$VELO_ROOT/Cellar/python@3.13/3.13.5/Frameworks:$DYLD_FRAMEWORK_PATH"
+            
+            # For Python specifically, set PYTHONHOME to help find the standard library
+            if [[ "\(filename)" == python* ]]; then
+                export PYTHONHOME="$VELO_ROOT/Cellar/python@3.13/3.13.5/Frameworks/Python.framework/Versions/3.13"
+                # Also set PYTHONPATH for extension modules
+                export PYTHONPATH="$VELO_ROOT/Cellar/python@3.13/3.13.5/Frameworks/Python.framework/Versions/3.13/lib/python3.13:$VELO_ROOT/Cellar/python@3.13/3.13.5/Frameworks/Python.framework/Versions/3.13/lib/python3.13/lib-dynload:$PYTHONPATH"
+            fi
+            
+            # Execute the actual binary using relative path
+            exec "$VELO_ROOT/Cellar/python@3.13/3.13.5/Frameworks/Python.framework/Versions/3.13/bin/\(filename)" "$@"
+            """
+            
+            try wrapperContent.write(to: scriptPath, atomically: true, encoding: .utf8)
+            
+            // Make executable
+            let attributes = [FileAttributeKey.posixPermissions: 0o755]
+            try FileManager.default.setAttributes(attributes, ofItemAtPath: scriptPath.path)
+        }
+
+        private func regenerateGenericPythonWrapper(scriptPath: URL, pathHelper: PathHelper) throws {
+            // For generic Python scripts, make them use #!/usr/bin/env python3 and dynamic path discovery
+            let content = try String(contentsOf: scriptPath, encoding: .utf8)
+            let lines = content.components(separatedBy: .newlines)
+            
+            guard lines.count > 1 else { return }
+            
+            // Update to portable version with dynamic site-packages discovery
+            let portableContent = """
+            #!/usr/bin/env python3
+            # -*- coding: utf-8 -*-
+            import sys
+            import os
+            
+            # Dynamically discover Velo packages
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            velo_root = os.path.dirname(script_dir)
+            
+            # Add package-specific site-packages to Python path
+            # This assumes the script is for a specific package with its own libexec
+            package_name = os.path.basename(__file__)
+            if package_name.endswith('.py'):
+                package_name = package_name[:-3]
+            
+            # Try to find the package's site-packages directory
+            for item in os.listdir(os.path.join(velo_root, 'Cellar')):
+                if package_name in item:
+                    potential_packages = os.path.join(velo_root, 'Cellar', item)
+                    for version_dir in os.listdir(potential_packages):
+                        site_packages = os.path.join(potential_packages, version_dir, 'libexec', 'lib', 'python3.13', 'site-packages')
+                        if os.path.exists(site_packages) and site_packages not in sys.path:
+                            sys.path.insert(0, site_packages)
+                            break
+            
+            \(lines.dropFirst().joined(separator: "\n"))
+            """
+            
+            try portableContent.write(to: scriptPath, atomically: true, encoding: .utf8)
+            
+            // Make executable
+            let attributes = [FileAttributeKey.posixPermissions: 0o755]
+            try FileManager.default.setAttributes(attributes, ofItemAtPath: scriptPath.path)
         }
     }
 }

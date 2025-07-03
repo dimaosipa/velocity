@@ -1438,20 +1438,34 @@ public final class Installer {
     }
     
     private func generateFrameworkWrapperScript(binaryPath: URL, frameworkPath: URL) -> String {
+        // Extract the relative path from ~/.velo/bin to the binary and framework
+        let binaryName = binaryPath.lastPathComponent
+        
+        // Calculate relative paths from the wrapper script location to avoid hardcoding
+        let veloRoot = pathHelper.veloHome.path
+        let relativeBinaryPath = String(binaryPath.path.dropFirst(veloRoot.count + 1)) // Remove "~/.velo/" prefix
+        let relativeFrameworkPath = String(frameworkPath.path.dropFirst(veloRoot.count + 1)) // Remove "~/.velo/" prefix
+        
         return """
         #!/bin/bash
-        # Velo framework wrapper script
+        # Velo framework wrapper script - portable version
+        
+        # Dynamically discover Velo installation root from script location
+        SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+        VELO_ROOT="$(dirname "$SCRIPT_DIR")"
         
         # Set framework path for dynamic library loading
-        export DYLD_FRAMEWORK_PATH="\(frameworkPath.path):$DYLD_FRAMEWORK_PATH"
+        export DYLD_FRAMEWORK_PATH="$VELO_ROOT/\(relativeFrameworkPath):$DYLD_FRAMEWORK_PATH"
         
         # For Python specifically, set PYTHONHOME to help find the standard library
-        if [[ "\(binaryPath.lastPathComponent)" == python* ]]; then
-            export PYTHONHOME="\(frameworkPath.path)/Python.framework/Versions/Current"
+        if [[ "\(binaryName)" == python* ]]; then
+            export PYTHONHOME="$VELO_ROOT/\(relativeFrameworkPath)/Python.framework/Versions/Current"
+            # Also set PYTHONPATH for extension modules
+            export PYTHONPATH="$VELO_ROOT/\(relativeFrameworkPath)/Python.framework/Versions/Current/lib/python3.13:$VELO_ROOT/\(relativeFrameworkPath)/Python.framework/Versions/Current/lib/python3.13/lib-dynload:$PYTHONPATH"
         fi
         
-        # Execute the actual binary
-        exec "\(binaryPath.path)" "$@"
+        # Execute the actual binary using relative path
+        exec "$VELO_ROOT/\(relativeBinaryPath)" "$@"
         """
     }
     
