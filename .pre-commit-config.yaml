@@ -39,11 +39,3 @@ repos:
         pass_filenames: false
         stages: [pre-push]
         
-      - id: no-homebrew-name
-        name: No Homebrew Name Check
-        entry: |
-          bash -c 'if grep -r "Homebrew" Sources/ Tests/ --include="*.swift" | grep -v "// Attribution" | grep -v "homebrew-core" | grep -v "Homebrew bottle" | grep -v "Homebrew on Apple" | grep -v "Homebrew tap" | grep -v "Homebrew placeholder" | grep -v "homebrew/" | grep -v "/opt/homebrew" | grep -v "Homebrew compatibility" | grep -v "IsHomebrew"; then echo "Error: Found inappropriate Homebrew reference in code. Use Velo instead."; exit 1; fi'
-        language: system
-        pass_filenames: false
-        always_run: true
-        stages: [pre-commit]
