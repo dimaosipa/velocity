@@ -9,6 +9,7 @@ public struct Formula: Codable, Equatable {
     public let version: String
     public let dependencies: [Dependency]
     public let bottles: [Bottle]
+    public let postInstallScript: String?
 
     public struct Dependency: Codable, Equatable {
         public let name: String
@@ -151,7 +152,8 @@ public struct Formula: Codable, Equatable {
         sha256: String,
         version: String,
         dependencies: [Dependency] = [],
-        bottles: [Bottle] = []
+        bottles: [Bottle] = [],
+        postInstallScript: String? = nil
     ) {
         self.name = name
         self.description = description
@@ -161,6 +163,7 @@ public struct Formula: Codable, Equatable {
         self.version = version
         self.dependencies = dependencies
         self.bottles = bottles
+        self.postInstallScript = postInstallScript
     }
 
     /// Returns the best bottle for the current system

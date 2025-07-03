@@ -20,6 +20,9 @@ public struct FormulaParser {
             // Extract bottles
             let bottles = try extractBottles(from: rubyContent)
 
+            // Extract post_install script (optional)
+            let postInstallScript = extractPostInstall(from: rubyContent)
+
             return Formula(
                 name: formulaName,
                 description: description,
@@ -28,7 +31,8 @@ public struct FormulaParser {
                 sha256: sha256,
                 version: version,
                 dependencies: dependencies,
-                bottles: bottles
+                bottles: bottles,
+                postInstallScript: postInstallScript
             )
         } catch {
             // Re-throw with formula name for better error reporting
@@ -416,5 +420,54 @@ public struct FormulaParser {
             return results
         }
         return results
+    }
+
+    // MARK: - Post-Install Script Extraction
+
+    private func extractPostInstall(from content: String) -> String? {
+        // Look for post_install method definitions using manual parsing
+        // to handle Ruby block structure properly
+        
+        let lines = content.components(separatedBy: .newlines)
+        var inPostInstall = false
+        var postInstallLines: [String] = []
+        var depth = 0
+        
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            
+            // Check for start of post_install block
+            if !inPostInstall {
+                if trimmed.starts(with: "def post_install") || 
+                   trimmed.starts(with: "post_install do") ||
+                   trimmed == "post_install do" {
+                    inPostInstall = true
+                    depth = 1
+                    continue
+                }
+            } else {
+                // Inside post_install block
+                if trimmed.hasSuffix(" do") || trimmed == "do" {
+                    depth += 1
+                } else if trimmed == "end" {
+                    depth -= 1
+                    if depth == 0 {
+                        // End of post_install block
+                        break
+                    }
+                }
+                
+                // Add line to post_install content
+                postInstallLines.append(line)
+            }
+        }
+        
+        if postInstallLines.isEmpty {
+            return nil
+        }
+        
+        // Join lines and clean up indentation
+        let script = postInstallLines.joined(separator: "\n")
+        return script.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
