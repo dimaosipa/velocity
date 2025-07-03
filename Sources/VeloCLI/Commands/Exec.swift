@@ -12,7 +12,7 @@ extension Velo {
         @Argument(help: "The command to execute")
         var command: String
 
-        @Argument(parsing: .remaining, help: "Arguments to pass to the command")
+        @Argument(parsing: .captureForPassthrough, help: "Arguments to pass to the command")
         var arguments: [String] = []
 
         @Flag(help: "Use global packages instead of local")
@@ -90,23 +90,91 @@ extension Velo {
             }
             process.environment = environment
 
-            // Inherit stdin/stdout/stderr
+            // Inherit stdin/stdout/stderr for full terminal compatibility
             process.standardInput = FileHandle.standardInput
             process.standardOutput = FileHandle.standardOutput
             process.standardError = FileHandle.standardError
+            
+            // Ensure the process runs in its own process group for better signal handling
+            // This helps with interactive commands and proper terminal control
+            process.qualityOfService = .userInteractive
+
+            // Set up signal forwarding
+            let signalForwarder = SignalForwarder(process: process)
+            signalForwarder.setupSignalHandling()
 
             do {
                 try process.run()
                 process.waitUntilExit()
+                
+                // Clean up signal handling
+                signalForwarder.cleanupSignalHandling()
 
-                // Exit with the same code as the subprocess
-                if process.terminationStatus != 0 {
-                    throw ExitCode(process.terminationStatus)
-                }
+                // Always exit with the same code as the subprocess
+                throw ExitCode(process.terminationStatus)
+            } catch let exitCode as ExitCode {
+                // Clean up signal handling on early exit
+                signalForwarder.cleanupSignalHandling()
+                // Re-throw ExitCode directly to preserve the subprocess exit code
+                throw exitCode
             } catch {
+                // Clean up signal handling on error
+                signalForwarder.cleanupSignalHandling()
                 OSLogger.shared.error("Failed to execute '\(command)': \(error.localizedDescription)")
                 throw ExitCode.failure
             }
         }
+    }
+}
+
+// MARK: - Signal Forwarding
+
+private class SignalForwarder {
+    private let process: Process
+    private var signalSources: [DispatchSourceSignal] = []
+    
+    init(process: Process) {
+        self.process = process
+    }
+    
+    func setupSignalHandling() {
+        // Handle common signals that should be forwarded to the child process
+        let signalsToForward = [SIGINT, SIGTERM, SIGUSR1, SIGUSR2]
+        
+        for signal in signalsToForward {
+            let signalSource = DispatchSource.makeSignalSource(signal: signal, queue: .main)
+            
+            signalSource.setEventHandler { [weak self] in
+                self?.forwardSignal(signal)
+            }
+            
+            signalSource.resume()
+            signalSources.append(signalSource)
+            
+            // Ignore the signal in the parent process so we can handle it manually
+            Darwin.signal(signal, SIG_IGN)
+        }
+    }
+    
+    func cleanupSignalHandling() {
+        // Cancel all signal sources
+        for signalSource in signalSources {
+            signalSource.cancel()
+        }
+        signalSources.removeAll()
+        
+        // Restore default signal handling
+        Darwin.signal(SIGINT, SIG_DFL)
+        Darwin.signal(SIGTERM, SIG_DFL)
+        Darwin.signal(SIGUSR1, SIG_DFL)
+        Darwin.signal(SIGUSR2, SIG_DFL)
+    }
+    
+    private func forwardSignal(_ signal: Int32) {
+        guard process.isRunning else { return }
+        
+        // Forward the signal to the child process
+        // Use negative PID to send signal to the process group
+        kill(-process.processIdentifier, signal)
     }
 }
