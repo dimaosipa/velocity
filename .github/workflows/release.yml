@@ -34,7 +34,7 @@ jobs:
 
       - name: Build release binary
         run: |
-          swift build -c release --arch arm64
+          ./Scripts/build.sh --release --arch arm64
           
       - name: Create release directory
         run: |

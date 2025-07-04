@@ -65,9 +65,9 @@ jobs:
     - name: Build All Configurations
       run: |
         echo "=== Building Debug ==="
-        swift build --configuration debug
+        ./Scripts/build.sh
         echo "=== Building Release ==="
-        swift build --configuration release
+        ./Scripts/build.sh --release
         echo "=== Binary Info ==="
         file .build/release/velo
         .build/release/velo --version || echo "Binary not ready"
@@ -144,7 +144,7 @@ jobs:
         swift-version: "5.9"
     
     - name: Build Release
-      run: swift build --configuration release
+      run: ./Scripts/build.sh --release
     
     - name: Performance Baseline Tests
       run: |
@@ -198,7 +198,7 @@ jobs:
     
     - name: Build and Setup
       run: |
-        swift build --configuration release
+        ./Scripts/build.sh --release
         export PATH="$PWD/.build/release:$PATH"
         mkdir -p ~/.velo/{bin,Cellar,cache,taps,logs,tmp}
         ln -sf $PWD/.build/release/velo ~/.velo/bin/velo
@@ -289,7 +289,7 @@ jobs:
     - name: Build Release Artifacts
       run: |
         # Build for Apple Silicon
-        swift build --configuration release --arch arm64
+        ./Scripts/build.sh --release --arch arm64
         
         # Create distribution
         mkdir -p dist

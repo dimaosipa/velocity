@@ -35,7 +35,7 @@ jobs:
     
     - name: Build Release for Performance Testing
       run: |
-        swift build --configuration release
+        ./Scripts/build.sh --release
     
     - name: Setup Performance Test Environment
       run: |
@@ -252,7 +252,7 @@ jobs:
     - name: Test Current Branch Performance
       run: |
         echo "=== Current Branch Performance ==="
-        swift build --configuration release
+        ./Scripts/build.sh --release
         export PATH="$PWD/.build/release:$PATH"
         mkdir -p ~/.velo/{bin,Cellar,cache,taps,logs,tmp}
         
@@ -268,7 +268,7 @@ jobs:
         git stash push -m "Current changes"
         git checkout origin/main
         
-        swift build --configuration release
+        ./Scripts/build.sh --release
         
         echo "Main branch formula parsing:"
         /usr/bin/time -p .build/release/velo info wget >/dev/null 2>&1 | grep real || echo "Main parse test"

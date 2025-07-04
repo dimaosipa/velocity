@@ -46,10 +46,10 @@ jobs:
       run: swift package resolve
       
     - name: Build Debug
-      run: swift build --configuration debug
+      run: ./Scripts/build.sh
       
     - name: Build Release
-      run: swift build --configuration release
+      run: ./Scripts/build.sh --release
       
     - name: Setup Test Environment for Unit Tests
       run: |
@@ -61,7 +61,7 @@ jobs:
         echo "=== Running Unit Tests ==="
         # Unit tests need the release binary for ArgumentParser integration tests
         echo "Building release binary for unit tests..."
-        swift build --configuration release
+        ./Scripts/build.sh --release
         echo "Running unit tests..."
         swift test --parallel || exit 1
         echo "✅ Unit tests passed"
@@ -101,7 +101,7 @@ jobs:
         swift-version: "5.9"
     
     - name: Build Velo
-      run: swift build --configuration release
+      run: ./Scripts/build.sh --release
       
     - name: Setup Test Environment
       run: |
@@ -294,9 +294,7 @@ jobs:
     
     - name: Build Release Binary
       run: |
-        swift build \
-          --configuration release \
-          --arch arm64
+        ./Scripts/build.sh --release --arch arm64
     
     - name: Create Distribution
       run: |
