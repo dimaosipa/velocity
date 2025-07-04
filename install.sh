@@ -18,34 +18,19 @@ if ! command -v swift &> /dev/null; then
     exit 1
 fi
 
-# Generate version information
-echo "📋 Generating version information..."
-if [[ -f "Scripts/generate-version.sh" ]]; then
-    # Make sure the script is executable
-    chmod +x Scripts/generate-version.sh
-    
-    # Run version generation
-    if ! ./Scripts/generate-version.sh; then
-        echo "⚠️  Warning: Version generation failed, using fallback version"
-    fi
-else
-    echo "⚠️  Warning: Version generation script not found, using fallback version"
-fi
-
-# Build the project
-echo "🔨 Building Velocity..."
-swift build -c release
-
-# Check if build succeeded
-if [[ ! -f ".build/release/velo" ]]; then
-    echo "❌ Error: Build failed - velo binary not found"
+# Check if build script exists
+if [[ ! -f "Scripts/build-release.sh" ]]; then
+    echo "❌ Error: Build script not found (Scripts/build-release.sh)"
+    echo "   Please ensure you're in the Velo project directory"
     exit 1
 fi
 
-# Display built version
-echo "✅ Build successful!"
-BUILT_VERSION=$(.build/release/velo --version 2>/dev/null || echo "unknown")
-echo "📦 Built version: $BUILT_VERSION"
+# Build the project using our build script
+echo "🔨 Building Velocity for release..."
+if ! ./Scripts/build-release.sh; then
+    echo "❌ Error: Build failed"
+    exit 1
+fi
 
 # Run install-self to complete installation
 echo "📦 Installing to ~/.velo/bin..."
