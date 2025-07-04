@@ -7,9 +7,11 @@ on:
     branches: [ main ]
 
 jobs:
-  test:
+  build:
     runs-on: macos-14 # Apple Silicon only
-    name: Test (Apple Silicon)
+    name: Build Binaries
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     
     steps:
     - uses: actions/checkout@v4
@@ -41,28 +43,74 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-arm64-spm-
     
-    
     - name: Resolve Dependencies
       run: swift package resolve
       
-    - name: Build Debug
-      run: ./Scripts/build.sh
-      
-    - name: Build Release
-      run: ./Scripts/build.sh --release
-      
-    - name: Setup Test Environment for Unit Tests
+    - name: Build Debug and Release
       run: |
-        # Tests now create their own isolated environments
-        # No need for external homebrew/core tap download
+        echo "=== Building Debug ==="
+        ./Scripts/build.sh
+        echo "=== Building Release ==="
+        ./Scripts/build.sh --release
+      
+    - name: Get Version
+      id: version
+      run: |
+        VERSION=$(.build/release/velo --version)
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        echo "Built version: $VERSION"
+      
+    - name: Upload Build Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: velo-binaries
+        path: |
+          .build/debug/velo
+          .build/release/velo
+        retention-days: 1
+
+  test:
+    runs-on: macos-14
+    name: Unit and Integration Tests
+    needs: build
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Swift
+      uses: swift-actions/setup-swift@v1
+      with:
+        swift-version: "5.9"
+    
+    - name: Cache Swift Package Manager
+      uses: actions/cache@v3
+      with:
+        path: .build
+        key: ${{ runner.os }}-arm64-spm-${{ hashFiles('Package.resolved') }}
+        restore-keys: |
+          ${{ runner.os }}-arm64-spm-
+    
+    - name: Resolve Dependencies
+      run: swift package resolve
+    
+    - name: Download Build Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: velo-binaries
+        path: .build/
+      
+    - name: Setup Downloaded Binaries
+      run: |
+        # Restore executable permissions
+        chmod +x .build/debug/velo .build/release/velo
+        
+        # Verify binaries work
+        .build/debug/velo --version
+        .build/release/velo --version
 
     - name: Run Unit Tests
       run: |
         echo "=== Running Unit Tests ==="
-        # Unit tests need the release binary for ArgumentParser integration tests
-        echo "Building release binary for unit tests..."
-        ./Scripts/build.sh --release
-        echo "Running unit tests..."
         swift test --parallel || exit 1
         echo "✅ Unit tests passed"
       
@@ -89,19 +137,26 @@ jobs:
         fail_ci_if_error: false
 
   cli-integration-tests:
-    runs-on: macos-14 # Use Apple Silicon for realistic testing
+    runs-on: macos-14
     name: CLI Integration Tests
+    needs: build
     
     steps:
     - uses: actions/checkout@v4
     
-    - name: Setup Swift
-      uses: swift-actions/setup-swift@v1
+    - name: Download Build Artifacts
+      uses: actions/download-artifact@v4
       with:
-        swift-version: "5.9"
-    
-    - name: Build Velo
-      run: ./Scripts/build.sh --release
+        name: velo-binaries
+        path: .build/
+      
+    - name: Setup Velo Binary
+      run: |
+        # Restore executable permissions
+        chmod +x .build/release/velo
+        
+        # Verify binary
+        .build/release/velo --version
       
     - name: Setup Test Environment
       run: |
@@ -232,6 +287,7 @@ jobs:
   performance-benchmarks:
     runs-on: macos-14
     name: Performance Benchmarks
+    needs: build
     
     steps:
     - uses: actions/checkout@v4
@@ -251,16 +307,21 @@ jobs:
     
     - name: Resolve Dependencies
       run: swift package resolve
+    
+    - name: Download Build Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: velo-binaries
+        path: .build/
       
-    - name: Build Debug Configuration
+    - name: Setup Downloaded Binaries
       run: |
-        echo "=== Building Debug Configuration for Performance Tests ==="
-        swift build --configuration debug
-        echo "Building test target explicitly..."
-        swift build --target VeloCore
-        swift build --target VeloFormula
-        swift build --target VeloSystem
-        echo "✅ Debug build completed"
+        # Restore executable permissions
+        chmod +x .build/debug/velo .build/release/velo
+        
+        # Verify binaries work
+        .build/debug/velo --version
+        .build/release/velo --version
     
     - name: Run Performance Tests
       run: |
@@ -282,19 +343,25 @@ jobs:
   build-artifacts:
     runs-on: macos-14
     name: Build Release Artifacts
+    needs: build
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     
     steps:
     - uses: actions/checkout@v4
     
-    - name: Setup Swift
-      uses: swift-actions/setup-swift@v1
+    - name: Download Build Artifacts
+      uses: actions/download-artifact@v4
       with:
-        swift-version: "5.9"
-    
-    - name: Build Release Binary
+        name: velo-binaries
+        path: .build/
+      
+    - name: Setup Binary
       run: |
-        ./Scripts/build.sh --release --arch arm64
+        # Restore executable permissions
+        chmod +x .build/release/velo
+        
+        # Verify binary
+        .build/release/velo --version
     
     - name: Create Distribution
       run: |
@@ -302,9 +369,10 @@ jobs:
         cp .build/release/velo dist/
         strip dist/velo
         
-        # Verify binary
+        # Verify binary architecture and functionality
         file dist/velo
         dist/velo --version
+        echo "Version: ${{ needs.build.outputs.version }}"
         
         # Create tarball
         tar -czf dist/velo-macos-arm64.tar.gz -C dist velo
