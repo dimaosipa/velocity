@@ -19,15 +19,15 @@ if ! command -v swift &> /dev/null; then
 fi
 
 # Check if build script exists
-if [[ ! -f "Scripts/build-release.sh" ]]; then
-    echo "❌ Error: Build script not found (Scripts/build-release.sh)"
+if [[ ! -f "Scripts/build.sh" ]]; then
+    echo "❌ Error: Build script not found (Scripts/build.sh)"
     echo "   Please ensure you're in the Velo project directory"
     exit 1
 fi
 
 # Build the project using our build script
 echo "🔨 Building Velocity for release..."
-if ! ./Scripts/build-release.sh; then
+if ! ./Scripts/build.sh --release; then
     echo "❌ Error: Build failed"
     exit 1
 fi
