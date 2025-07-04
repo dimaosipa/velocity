@@ -49,6 +49,23 @@ get_git_info() {
     fi
 }
 
+# Silent version of get_git_info for capturing output without warnings
+get_git_info_silent() {
+    local git_command=("$@")
+    
+    # Basic checks without warnings
+    if ! command -v git >/dev/null 2>&1; then
+        return 1
+    fi
+    
+    if ! git rev-parse --git-dir >/dev/null 2>&1; then
+        return 1
+    fi
+    
+    # Run git command silently
+    git "${git_command[@]}" 2>/dev/null
+}
+
 # Collect version information
 VERSION=""
 GIT_TAG=""
@@ -63,22 +80,22 @@ BUILD_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
 # Try to get Git information
 if get_git_info rev-parse HEAD >/dev/null; then
-    # Get commit hash (short and full)
-    GIT_COMMIT=$(get_git_info rev-parse --short HEAD || echo "unknown")
-    GIT_COMMIT_FULL=$(get_git_info rev-parse HEAD || echo "unknown")
+    # Get commit hash (short and full) - capture only stdout, suppress warnings
+    GIT_COMMIT=$(get_git_info_silent rev-parse --short HEAD || echo "unknown")
+    GIT_COMMIT_FULL=$(get_git_info_silent rev-parse HEAD || echo "unknown")
     
     # Check if working directory is clean
-    if [[ -n $(get_git_info status --porcelain || echo "") ]]; then
+    if [[ -n $(get_git_info_silent status --porcelain || echo "") ]]; then
         IS_DIRTY="true"
     fi
     
     # Check if we're exactly on a tag
-    if get_git_info describe --exact-match --tags HEAD >/dev/null; then
+    if get_git_info_silent describe --exact-match --tags HEAD >/dev/null 2>&1; then
         IS_ON_TAG="true"
-        GIT_TAG=$(get_git_info describe --exact-match --tags HEAD || echo "")
+        GIT_TAG=$(get_git_info_silent describe --exact-match --tags HEAD || echo "")
     else
         # Get the last tag (if any)
-        GIT_TAG=$(get_git_info describe --tags --abbrev=0 || echo "")
+        GIT_TAG=$(get_git_info_silent describe --tags --abbrev=0 || echo "")
     fi
     
     # Generate version string

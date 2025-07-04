@@ -49,6 +49,9 @@ velo-cache/
 benchmarks/results/
 performance-logs/
 
+# Generated files (build-time generated, should not be tracked)
+Sources/VeloCore/GeneratedVersion.swift
+
 # Testing
 .coverage/
 *.profraw
