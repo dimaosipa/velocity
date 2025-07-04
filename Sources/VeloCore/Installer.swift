@@ -1557,7 +1557,7 @@ extension Installer {
         let versionDir = packageBaseDir.appendingPathComponent(version)
 
         // Common directories that might need symlinks
-        let commonDirs = ["lib", "include", "share", "etc", "var"]
+        let commonDirs = ["lib", "include", "share", "etc", "var", "bin"]
 
         for dirName in commonDirs {
             let versionedDir = versionDir.appendingPathComponent(dirName)
