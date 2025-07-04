@@ -1,7 +1,7 @@
 import Foundation
 
 /// Centralized version management for Velo
-/// Provides dynamic version detection based on Git tags and commits
+/// Uses build-time generated version information for consistent versioning
 public struct VeloVersion {
 
     /// The current version of Velo
@@ -14,24 +14,31 @@ public struct VeloVersion {
         return current.description
     }()
 
-    /// Detect the current version based on Git information
+    /// Detect the current version using build-time generated information
     private static func detectVersion() -> SemanticVersion {
-        // Try to get version from Git
+        // First, try to use the generated version from build script
+        // This will be available when GeneratedVersion.swift is created by build script
+        if let generatedVersion = getGeneratedVersion() {
+            return generatedVersion
+        }
+
+        // Fallback to runtime Git detection (for development builds)
         if let gitVersion = getVersionFromGit() {
             return gitVersion
         }
 
-        // If Git failed, create a development version manually
-        let commitHash = getGitCommitHash() ?? "unknown"
-        let isClean = isGitWorkingDirectoryClean()
-
-        let baseVersion = SemanticVersion(major: 0, minor: 0, patch: 1)
-        let devSuffix = createDevSuffix(commitHash: commitHash, isClean: isClean)
-
-        return createDevVersion(base: baseVersion, suffix: devSuffix)
+        // Final fallback - hardcoded development version
+        return SemanticVersion(major: 0, minor: 0, patch: 1, prerelease: "dev+unknown")
     }
 
-    /// Get version from Git tags and commit information
+    /// Get version from GeneratedVersion struct (if available)
+    private static func getGeneratedVersion() -> SemanticVersion? {
+        // Use the generated version from build script
+        // This provides consistent versioning after installation
+        return SemanticVersion(string: GeneratedVersion.version)
+    }
+
+    /// Get version from Git tags and commit information (development fallback)
     private static func getVersionFromGit() -> SemanticVersion? {
         let commitHash = getGitCommitHash()
         let isClean = isGitWorkingDirectoryClean()
