@@ -39,18 +39,18 @@ public final class Installer {
 
         // Create package directory
         let packageDir = pathHelper.packagePath(for: formula.name, version: formula.version)
-        
+
         // If force is used and package directory exists, remove it first for clean reinstall
         if force && fileManager.fileExists(atPath: packageDir.path) {
             OSLogger.shared.info("🔧 Force mode: removing existing package directory for clean reinstall", category: OSLogger.shared.installer)
-            
+
             // First remove any existing symlinks for this package/version
             try removeSymlinks(for: formula.name, version: formula.version, packageDir: packageDir)
-            
+
             // Then remove the package directory
             try fileManager.removeItem(at: packageDir)
         }
-        
+
         try pathHelper.ensureDirectoryExists(at: packageDir)
 
         do {
@@ -62,10 +62,10 @@ public final class Installer {
 
             // Rewrite library paths for Homebrew bottle compatibility
             try await rewriteLibraryPaths(for: formula, packageDir: packageDir)
-            
+
             // Rewrite script files with Homebrew placeholders
             try await rewriteScriptFiles(packageDir: packageDir)
-            
+
             // Fix hardcoded Python shebangs
             try await fixPythonShebangs(packageDir: packageDir)
 
@@ -76,6 +76,9 @@ public final class Installer {
 
             // Create opt symlink for Homebrew compatibility
             try pathHelper.createOptSymlink(for: formula.name, version: formula.version)
+
+            // Create compatibility symlinks for common directories (lib, include, share, etc.)
+            try createCompatibilitySymlinks(for: formula.name, version: formula.version)
 
             // Ensure all existing packages have opt symlinks (retroactive fix)
             try pathHelper.ensureAllOptSymlinks()
@@ -187,7 +190,7 @@ public final class Installer {
 
         // Count total binaries from bin/, libexec/bin/, and Framework bins
         var binDirectories: [URL] = []
-        
+
         if fileManager.fileExists(atPath: binDir.path) {
             binDirectories.append(binDir)
             let binaries = try fileManager.contentsOfDirectory(atPath: binDir.path)
@@ -202,7 +205,7 @@ public final class Installer {
                 .filter { !$0.hasPrefix(".") && !$0.hasSuffix(".pyc") }
             totalBinaries += libexecBinaries.count
         }
-        
+
         // Also check for Framework binaries (for Python, etc.)
         let frameworkBinDirs = try findFrameworkBinDirectories(in: packageDir)
         for frameworkBinDir in frameworkBinDirs {
@@ -218,10 +221,10 @@ public final class Installer {
         var createdSymlinks = 0
         var skippedSymlinks: [String] = []
         var failedSymlinks: [String] = []
-        
+
         // Detect if package contains frameworks
         let hasFrameworks = try hasFrameworkDependencies(packageDir: packageDir)
-        
+
         // Process all bin directories
         for directory in binDirectories {
             let binaries = try fileManager.contentsOfDirectory(atPath: directory.path)
@@ -229,10 +232,10 @@ public final class Installer {
 
             for binary in binaries {
                 let sourcePath = directory.appendingPathComponent(binary)
-                
+
                 // Check if this is a framework binary
                 let isFrameworkBinary = isFrameworkBinary(path: sourcePath, packageDir: packageDir)
-                
+
                 if isFrameworkBinary && hasFrameworks {
                     // Use wrapper script for framework binaries
                     let (versionedResult, defaultResult) = try await createFrameworkSymlinks(
@@ -242,7 +245,7 @@ public final class Installer {
                         packageDir: packageDir,
                         force: force
                     )
-                    
+
                     switch versionedResult {
                     case .created:
                         createdSymlinks += 1
@@ -255,7 +258,7 @@ public final class Installer {
                             failedSymlinks.append("\(binary)@\(formula.version)")
                         }
                     }
-                    
+
                     switch defaultResult {
                     case .created:
                         createdSymlinks += 1
@@ -273,7 +276,7 @@ public final class Installer {
                     // Create versioned symlink
                     let versionedPath = pathHelper.versionedSymlinkPath(for: binary, package: formula.name, version: formula.version)
                     let versionedResult = pathHelper.createSymlinkWithConflictDetection(from: sourcePath, to: versionedPath, packageName: formula.name, force: force)
-                    
+
                     switch versionedResult {
                     case .created:
                         createdSymlinks += 1
@@ -290,7 +293,7 @@ public final class Installer {
                     // Create or update default symlink
                     let defaultPath = pathHelper.symlinkPath(for: binary)
                     let defaultResult = pathHelper.createSymlinkWithConflictDetection(from: sourcePath, to: defaultPath, packageName: formula.name, force: force)
-                    
+
                     switch defaultResult {
                     case .created:
                         createdSymlinks += 1
@@ -309,19 +312,18 @@ public final class Installer {
                 progress?.linkingDidUpdate(binariesLinked: linkedBinaries, totalBinaries: totalBinaries)
             }
         }
-        
+
         // Log symlink creation summary
         if !skippedSymlinks.isEmpty {
             OSLogger.shared.info("⚠️ Skipped \(skippedSymlinks.count) symlinks due to conflicts: \(skippedSymlinks.joined(separator: ", "))", category: OSLogger.shared.installer)
             OSLogger.shared.info("💡 Use versioned symlinks or --force to override conflicts", category: OSLogger.shared.installer)
         }
-        
+
         if !failedSymlinks.isEmpty {
             OSLogger.shared.warning("❌ Failed to create \(failedSymlinks.count) symlinks: \(failedSymlinks.joined(separator: ", "))", category: OSLogger.shared.installer)
         }
-        
-        OSLogger.shared.info("✅ Created \(createdSymlinks) symlinks for \(formula.name)", category: OSLogger.shared.installer)
 
+        OSLogger.shared.info("✅ Created \(createdSymlinks) symlinks for \(formula.name)", category: OSLogger.shared.installer)
 
         if totalBinaries == 0 {
             progress?.linkingDidStart(binariesCount: 0)
@@ -354,7 +356,7 @@ public final class Installer {
                 let defaultSymlinkPath = pathHelper.symlinkPath(for: binary)
                 if fileManager.fileExists(atPath: defaultSymlinkPath.path) {
                     let targetBinary = directory.appendingPathComponent(binary)
-                    
+
                     // For libexec/bin symlinks, need to resolve the actual target
                     let actualTarget: URL
                     if directory.lastPathComponent == "bin" && directory.deletingLastPathComponent().lastPathComponent == "libexec" {
@@ -368,7 +370,7 @@ public final class Installer {
                     } else {
                         actualTarget = targetBinary
                     }
-                    
+
                     if let resolvedPath = try? fileManager.destinationOfSymbolicLink(atPath: defaultSymlinkPath.path),
                        resolvedPath == actualTarget.path {
                         try fileManager.removeItem(at: defaultSymlinkPath)
@@ -395,7 +397,7 @@ public final class Installer {
         if fileManager.fileExists(atPath: latestBinaryPath.path) {
             let defaultSymlinkPath = pathHelper.symlinkPath(for: binary)
             let result = pathHelper.createSymlinkWithConflictDetection(from: latestBinaryPath, to: defaultSymlinkPath, packageName: package, force: false)
-            
+
             switch result {
             case .created:
                 OSLogger.shared.debug("✅ Updated default symlink for \(binary) -> \(package) \(latestVersion)", category: OSLogger.shared.installer)
@@ -412,14 +414,14 @@ public final class Installer {
     private func rewriteLibraryPaths(for formula: Formula, packageDir: URL) async throws {
         // Use recursive discovery to process ALL files in the package
         let allFiles = try findAllProcessableFiles(in: packageDir)
-        
+
         for filePath in allFiles {
             // Skip symlinks to avoid duplicate processing
             let attributes = try? fileManager.attributesOfItem(atPath: filePath.path)
             if let fileType = attributes?[.type] as? FileAttributeType, fileType == .typeSymbolicLink {
                 continue
             }
-            
+
             if try await isMachOBinary(at: filePath) {
                 try await rewriteBinaryLibraryPaths(binaryPath: filePath)
             } else if try await isTextScript(at: filePath) {
@@ -457,7 +459,7 @@ public final class Installer {
         // Read output and ensure file handles are closed
         let otoolOutput = otoolPipe.fileHandleForReading.readDataToEndOfFile()
         let errorOutput = errorPipe.fileHandleForReading.readDataToEndOfFile()
-        
+
         // Explicitly close file handles to prevent descriptor leaks
         try? otoolPipe.fileHandleForReading.close()
         try? otoolPipe.fileHandleForWriting.close()
@@ -504,13 +506,13 @@ public final class Installer {
 
                 // Check if this is the first line (install name) or a dependency
                 let isInstallName = index == 1 // otool -L output: line 0 is the file path, line 1 is install name
-                
-                if isInstallName && (binaryPath.pathExtension == "dylib" || 
+
+                if isInstallName && (binaryPath.pathExtension == "dylib" ||
                                    binaryPath.pathExtension == "so" ||
                                    (binaryPath.path.contains("/Frameworks/") && binaryPath.path.contains(".framework/") && !binaryPath.path.contains("/bin/"))) {
                     // Fix the library's own install name (identity) for shared libraries
                     OSLogger.shared.debug("  Rewriting install name: \(oldPath) -> \(newPath)", category: OSLogger.shared.installer)
-                    
+
                     let installNameProcess = Process()
                     installNameProcess.executableURL = URL(fileURLWithPath: "/usr/bin/install_name_tool")
                     installNameProcess.arguments = ["-id", newPath, binaryPath.path]
@@ -526,7 +528,7 @@ public final class Installer {
                     // Read output and close handles
                     _ = installNamePipe.fileHandleForReading.readDataToEndOfFile()
                     let errorOutput = installNameErrorPipe.fileHandleForReading.readDataToEndOfFile()
-                    
+
                     try? installNamePipe.fileHandleForReading.close()
                     try? installNamePipe.fileHandleForWriting.close()
                     try? installNameErrorPipe.fileHandleForReading.close()
@@ -557,7 +559,7 @@ public final class Installer {
                     // Read output and close handles
                     _ = installNamePipe.fileHandleForReading.readDataToEndOfFile()
                     let errorOutput = installNameErrorPipe.fileHandleForReading.readDataToEndOfFile()
-                    
+
                     try? installNamePipe.fileHandleForReading.close()
                     try? installNamePipe.fileHandleForWriting.close()
                     try? installNameErrorPipe.fileHandleForReading.close()
@@ -579,7 +581,7 @@ public final class Installer {
 
         if rewriteCount > 0 {
             OSLogger.shared.installerInfo("  ✓ Rewrote \(rewriteCount) library paths")
-            
+
             // Verify the rewriting worked
             let verifySuccess = try await verifyPlaceholderReplacement(binaryPath: binaryPath)
             if !verifySuccess {
@@ -589,7 +591,7 @@ public final class Installer {
 
         // Rewrite existing @rpath entries with placeholders
         try await rewriteRPathEntries(binaryPath: binaryPath)
-        
+
         // Add @rpath entries for portable library resolution
         try await addRPathEntries(binaryPath: binaryPath)
 
@@ -624,38 +626,38 @@ public final class Installer {
         guard fileManager.fileExists(atPath: path.path) else {
             return false
         }
-        
+
         // Check if file has some content (empty files can't be binaries)
         guard let attributes = try? fileManager.attributesOfItem(atPath: path.path),
               let fileSize = attributes[.size] as? Int64,
               fileSize > 0 else {
             return false
         }
-        
+
         // Use file command to check if it's a Mach-O binary
         let fileProcess = Process()
         fileProcess.executableURL = URL(fileURLWithPath: "/usr/bin/file")
         fileProcess.arguments = [path.path]
-        
+
         let filePipe = Pipe()
         let errorPipe = Pipe()
         fileProcess.standardOutput = filePipe
         fileProcess.standardError = errorPipe
-        
+
         do {
             try fileProcess.run()
             fileProcess.waitUntilExit()
-            
+
             // Read output and ensure file handles are closed
             let output = filePipe.fileHandleForReading.readDataToEndOfFile()
             let errorOutput = errorPipe.fileHandleForReading.readDataToEndOfFile()
-            
+
             // Explicitly close file handles
             try? filePipe.fileHandleForReading.close()
             try? filePipe.fileHandleForWriting.close()
             try? errorPipe.fileHandleForReading.close()
             try? errorPipe.fileHandleForWriting.close()
-            
+
             guard fileProcess.terminationStatus == 0 else {
                 let errorString = String(data: errorOutput, encoding: .utf8) ?? ""
                 if errorString.contains("Bad file descriptor") {
@@ -663,12 +665,12 @@ public final class Installer {
                 }
                 return false
             }
-            
+
             let outputString = String(data: output, encoding: .utf8) ?? ""
-            
+
             // Check if it's a Mach-O executable, dynamic library, or bundle
-            return outputString.contains("Mach-O") && 
-                   (outputString.contains("executable") || 
+            return outputString.contains("Mach-O") &&
+                   (outputString.contains("executable") ||
                     outputString.contains("dynamically linked shared library") ||
                     outputString.contains("bundle"))
         } catch {
@@ -685,7 +687,7 @@ public final class Installer {
         guard try await isMachOBinary(at: binaryPath) else {
             return false // Not a binary, skip
         }
-        
+
         // Check if binary contains Homebrew placeholders
         let otoolProcess = Process()
         otoolProcess.executableURL = URL(fileURLWithPath: "/usr/bin/otool")
@@ -713,7 +715,7 @@ public final class Installer {
         guard try await isMachOBinary(at: binaryPath) else {
             return true // Not a binary, nothing to verify
         }
-        
+
         // Check if any Homebrew placeholders remain after rewriting
         let otoolProcess = Process()
         otoolProcess.executableURL = URL(fileURLWithPath: "/usr/bin/otool")
@@ -800,7 +802,7 @@ public final class Installer {
 
         for libraryFile in libraryFiles {
             let libraryPath = libDir.appendingPathComponent(libraryFile)
-            
+
             // Skip symlinks - only process actual files
             var isSymlink: ObjCBool = false
             if fileManager.fileExists(atPath: libraryPath.path, isDirectory: &isSymlink) {
@@ -810,28 +812,28 @@ public final class Installer {
                     continue
                 }
             }
-            
+
             // Only process actual Mach-O libraries
             guard try await isMachOBinary(at: libraryPath) else {
                 OSLogger.shared.debug("Skipping non-binary library file: \(libraryFile)", category: OSLogger.shared.installer)
                 continue
             }
-            
+
             try await rewriteBinaryLibraryPaths(binaryPath: libraryPath)
         }
     }
-    
+
     private func rewriteFrameworksDirectory(_ frameworksDir: URL) async throws {
         // Use recursive discovery instead of hardcoded paths
         let allFiles = try findAllProcessableFiles(in: frameworksDir)
-        
+
         for filePath in allFiles {
             // Skip symlinks to avoid duplicate processing
             let attributes = try? fileManager.attributesOfItem(atPath: filePath.path)
             if let fileType = attributes?[.type] as? FileAttributeType, fileType == .typeSymbolicLink {
                 continue
             }
-            
+
             if try await isMachOBinary(at: filePath) {
                 try await rewriteBinaryLibraryPaths(binaryPath: filePath)
             } else if try await isTextScript(at: filePath) {
@@ -839,12 +841,12 @@ public final class Installer {
             }
         }
     }
-    
+
     // MARK: - Recursive File Discovery
-    
+
     private func findAllProcessableFiles(in directory: URL) throws -> [URL] {
         var processableFiles: [URL] = []
-        
+
         guard let enumerator = fileManager.enumerator(
             at: directory,
             includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey],
@@ -852,11 +854,11 @@ public final class Installer {
         ) else {
             return processableFiles
         }
-        
+
         for case let fileURL as URL in enumerator {
             do {
                 let resourceValues = try fileURL.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
-                
+
                 // Only process regular files (not directories or symlinks)
                 if resourceValues.isRegularFile == true && resourceValues.isSymbolicLink != true {
                     processableFiles.append(fileURL)
@@ -866,64 +868,64 @@ public final class Installer {
                 continue
             }
         }
-        
+
         return processableFiles
     }
-    
+
     private func isTextScript(at fileURL: URL) async throws -> Bool {
         // Only process files that are likely to be text scripts
         let fileExtension = fileURL.pathExtension.lowercased()
         let fileName = fileURL.lastPathComponent
-        
+
         // Skip binary file extensions
         let binaryExtensions = ["so", "dylib", "a", "o", "bin", "exe", "dll", "pkg", "dmg", "tar", "gz", "zip", "png", "jpg", "pdf"]
         if binaryExtensions.contains(fileExtension) {
             return false
         }
-        
+
         // Skip common binary files
         if fileName.contains(".cpython-") || fileName.contains(".dylib") || fileName.hasPrefix("lib") {
             return false
         }
-        
+
         // Check if file starts with shebang or contains Homebrew placeholders
         guard let fileHandle = FileHandle(forReadingAtPath: fileURL.path) else {
             return false
         }
         defer { fileHandle.closeFile() }
-        
+
         // Read first 512 bytes to check for shebang and placeholders
         let data = fileHandle.readData(ofLength: 512)
         guard let content = String(data: data, encoding: .utf8) else {
             return false
         }
-        
+
         // Check for null bytes (indicates binary file)
         if data.contains(0) {
             return false
         }
-        
+
         // Check for shebang or Homebrew placeholders
-        return content.hasPrefix("#!") || 
+        return content.hasPrefix("#!") ||
                content.contains("@@HOMEBREW_PREFIX@@") ||
                content.contains("@@HOMEBREW_CELLAR@@") ||
                content.contains("/opt/homebrew") ||
                content.contains("/usr/local/Cellar") ||
                content.contains("/usr/local/opt")
     }
-    
+
     private func rewriteTextScript(at fileURL: URL) async throws {
         do {
             // Read the entire file
             let originalContent = try String(contentsOf: fileURL, encoding: .utf8)
-            
+
             // Replace all Homebrew path variants with Velo paths
             var updatedContent = originalContent
             updatedContent = updatedContent.replacingOccurrences(of: "@@HOMEBREW_PREFIX@@", with: pathHelper.veloHome.path)
             updatedContent = updatedContent.replacingOccurrences(of: "@@HOMEBREW_CELLAR@@", with: pathHelper.cellarPath.path)
             updatedContent = updatedContent.replacingOccurrences(of: "/opt/homebrew", with: pathHelper.veloHome.path)
             updatedContent = updatedContent.replacingOccurrences(of: "/usr/local", with: pathHelper.veloHome.path)
-            
+
             // Only write back if content changed
             if updatedContent != originalContent {
                 try updatedContent.write(to: fileURL, atomically: true, encoding: .utf8)
@@ -938,21 +940,21 @@ public final class Installer {
     private func addRPathEntries(binaryPath: URL) async throws {
         // Determine appropriate @rpath entries based on binary location
         let rpathEntries = calculateRPathEntries(for: binaryPath)
-        
+
         for rpath in rpathEntries {
             OSLogger.shared.debug("  Adding @rpath: \(rpath)", category: OSLogger.shared.installer)
-            
+
             let rpathProcess = Process()
             rpathProcess.executableURL = URL(fileURLWithPath: "/usr/bin/install_name_tool")
             rpathProcess.arguments = ["-add_rpath", rpath, binaryPath.path]
-            
+
             let rpathPipe = Pipe()
             rpathProcess.standardOutput = rpathPipe
             rpathProcess.standardError = rpathPipe
-            
+
             try rpathProcess.run()
             rpathProcess.waitUntilExit()
-            
+
             // Note: We don't treat rpath addition failures as fatal
             // Some binaries may already have these paths or may not need them
             if rpathProcess.terminationStatus != 0 {
@@ -962,48 +964,48 @@ public final class Installer {
             }
         }
     }
-    
+
     private func calculateRPathEntries(for binaryPath: URL) -> [String] {
         let pathComponents = binaryPath.pathComponents
-        
+
         // Find where we are relative to .velo root
         guard let veloIndex = pathComponents.lastIndex(of: ".velo") else {
             // Fallback for binaries not in .velo structure
             return ["@loader_path/../opt", "@executable_path/../opt"]
         }
-        
+
         let relativePath = Array(pathComponents[(veloIndex + 1)...])
-        
+
         // Calculate depth from binary to .velo root
         let depth = relativePath.count - 1 // -1 because we don't count the binary filename
         let upPath = String(repeating: "../", count: depth)
-        
+
         // Standard @rpath entries for portable library resolution
         // Point to .velo root so @rpath/lib/... and @rpath/Cellar/... resolve correctly
         let rootPath = upPath.isEmpty ? "." : String(upPath.dropLast()) // Remove trailing /
-        
+
         var rpathEntries = [
             "@loader_path/\(rootPath)",      // For finding libraries relative to loader
             "@executable_path/\(rootPath)"   // For main executables finding libraries
         ]
-        
+
         // Special handling for framework binaries to support symlinked access
         if binaryPath.path.contains("/Frameworks/") && binaryPath.path.contains(".framework/") {
             // Add additional rpath entries for symlinked framework binaries
             // These help when binaries are accessed through /opt/ symlinks
             rpathEntries.append("@loader_path/../../../../../../../..")
             rpathEntries.append("@executable_path/../../../../../../../..")
-            
+
             // For python binaries, add direct path to the framework
             if binaryPath.path.contains("python") {
                 rpathEntries.append("@loader_path/../../..")  // Relative to framework library
                 rpathEntries.append("@executable_path/../../..")
             }
         }
-        
+
         return rpathEntries
     }
-    
+
     private func rewriteRPathEntries(binaryPath: URL) async throws {
         // Get current @rpath entries
         let otoolProcess = Process()
@@ -1021,7 +1023,7 @@ public final class Installer {
         // Read output and ensure file handles are closed
         let otoolOutput = otoolPipe.fileHandleForReading.readDataToEndOfFile()
         let errorOutput = errorPipe.fileHandleForReading.readDataToEndOfFile()
-        
+
         // Explicitly close file handles to prevent descriptor leaks
         try? otoolPipe.fileHandleForReading.close()
         try? otoolPipe.fileHandleForWriting.close()
@@ -1036,19 +1038,19 @@ public final class Installer {
 
         let output = String(data: otoolOutput, encoding: .utf8) ?? ""
         let lines = output.components(separatedBy: .newlines)
-        
+
         // Parse @rpath entries from otool -l output
         var rpathEntries: [String] = []
         var isInRPathCommand = false
-        
+
         for line in lines {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
-            
+
             if trimmed.starts(with: "cmd LC_RPATH") {
                 isInRPathCommand = true
                 continue
             }
-            
+
             if isInRPathCommand && trimmed.starts(with: "path ") {
                 // Extract path from "path /some/path (offset 12)"
                 let pathLine = trimmed.replacingOccurrences(of: "path ", with: "")
@@ -1059,7 +1061,7 @@ public final class Installer {
                 isInRPathCommand = false
             }
         }
-        
+
         // Check if any @rpath entries contain Homebrew placeholders
         var rewriteCount = 0
         for rpathEntry in rpathEntries {
@@ -1068,40 +1070,40 @@ public final class Installer {
                 var newPath = rpathEntry
                 newPath = newPath.replacingOccurrences(of: "@@HOMEBREW_PREFIX@@", with: pathHelper.veloHome.path)
                 newPath = newPath.replacingOccurrences(of: "@@HOMEBREW_CELLAR@@", with: pathHelper.cellarPath.path)
-                
+
                 OSLogger.shared.debug("  Rewriting @rpath entry: \(rpathEntry) -> \(newPath)", category: OSLogger.shared.installer)
-                
+
                 // Remove old @rpath entry
                 let deleteProcess = Process()
                 deleteProcess.executableURL = URL(fileURLWithPath: "/usr/bin/install_name_tool")
                 deleteProcess.arguments = ["-delete_rpath", rpathEntry, binaryPath.path]
-                
+
                 let deletePipe = Pipe()
                 deleteProcess.standardOutput = deletePipe
                 deleteProcess.standardError = deletePipe
-                
+
                 try deleteProcess.run()
                 deleteProcess.waitUntilExit()
-                
+
                 if deleteProcess.terminationStatus != 0 {
                     let errorOutput = deletePipe.fileHandleForReading.readDataToEndOfFile()
                     let errorString = String(data: errorOutput, encoding: .utf8) ?? "Unknown error"
                     OSLogger.shared.debug("Failed to delete @rpath entry \(rpathEntry): \(errorString)", category: OSLogger.shared.installer)
                     continue
                 }
-                
+
                 // Add new @rpath entry
                 let addProcess = Process()
                 addProcess.executableURL = URL(fileURLWithPath: "/usr/bin/install_name_tool")
                 addProcess.arguments = ["-add_rpath", newPath, binaryPath.path]
-                
+
                 let addPipe = Pipe()
                 addProcess.standardOutput = addPipe
                 addProcess.standardError = addPipe
-                
+
                 try addProcess.run()
                 addProcess.waitUntilExit()
-                
+
                 if addProcess.terminationStatus != 0 {
                     let errorOutput = addPipe.fileHandleForReading.readDataToEndOfFile()
                     let errorString = String(data: errorOutput, encoding: .utf8) ?? "Unknown error"
@@ -1111,7 +1113,7 @@ public final class Installer {
                 }
             }
         }
-        
+
         if rewriteCount > 0 {
             OSLogger.shared.installerInfo("  ✓ Rewrote \(rewriteCount) @rpath entries")
         }
@@ -1121,16 +1123,16 @@ public final class Installer {
 
     private func rewriteScriptFiles(packageDir: URL) async throws {
         OSLogger.shared.verbose("🔧 Rewriting script file placeholders", category: OSLogger.shared.installer)
-        
+
         // Find all files with Homebrew placeholders recursively
         let filesWithPlaceholders = try await findFilesWithPlaceholders(in: packageDir)
-        
+
         if filesWithPlaceholders.isEmpty {
             return
         }
-        
+
         OSLogger.shared.verbose("  Found \(filesWithPlaceholders.count) files with placeholders", category: OSLogger.shared.installer)
-        
+
         for filePath in filesWithPlaceholders {
             do {
                 try await rewriteFileContent(filePath: filePath)
@@ -1139,7 +1141,7 @@ public final class Installer {
             }
         }
     }
-    
+
     private func findFilesWithPlaceholders(in directory: URL) async throws -> [URL] {
         // Use find command to search for files containing Homebrew placeholders
         let findProcess = Process()
@@ -1151,54 +1153,54 @@ public final class Installer {
             "@@HOMEBREW_",  // Search pattern
             directory.path
         ]
-        
+
         let findPipe = Pipe()
         findProcess.standardOutput = findPipe
         findProcess.standardError = Pipe() // Suppress error output
-        
+
         try findProcess.run()
         findProcess.waitUntilExit()
-        
+
         let output = findPipe.fileHandleForReading.readDataToEndOfFile()
         let outputString = String(data: output, encoding: .utf8) ?? ""
-        
+
         // Parse file paths from grep output
         let filePaths = outputString.components(separatedBy: .newlines)
             .filter { !$0.isEmpty }
             .map { URL(fileURLWithPath: $0) }
-        
+
         return filePaths
     }
-    
+
     private func rewriteFileContent(filePath: URL) async throws {
         let content = try String(contentsOf: filePath, encoding: .utf8)
-        
+
         // Replace Homebrew placeholders with actual Velo paths (not @rpath - that's for binaries only)
         var newContent = content
         newContent = newContent.replacingOccurrences(of: "@@HOMEBREW_PREFIX@@", with: pathHelper.veloPrefix.path)
         newContent = newContent.replacingOccurrences(of: "@@HOMEBREW_CELLAR@@", with: pathHelper.cellarPath.path)
-        
+
         // Only write if content actually changed
         if newContent != content {
             try newContent.write(to: filePath, atomically: true, encoding: .utf8)
             OSLogger.shared.debug("  ✓ Rewrote placeholders in \(filePath.lastPathComponent)", category: OSLogger.shared.installer)
         }
     }
-    
+
     // MARK: - Python Shebang Rewriting
-    
+
     private func fixPythonShebangs(packageDir: URL) async throws {
         OSLogger.shared.verbose("🐍 Fixing hardcoded Python shebangs", category: OSLogger.shared.installer)
-        
+
         // Find all files with hardcoded Python shebangs recursively
         let filesWithPythonShebangs = try await findFilesWithHardcodedPythonShebangs(in: packageDir)
-        
+
         if filesWithPythonShebangs.isEmpty {
             return
         }
-        
+
         OSLogger.shared.verbose("  Found \(filesWithPythonShebangs.count) files with hardcoded Python shebangs", category: OSLogger.shared.installer)
-        
+
         for filePath in filesWithPythonShebangs {
             do {
                 try await fixPythonShebang(filePath: filePath)
@@ -1207,7 +1209,7 @@ public final class Installer {
             }
         }
     }
-    
+
     private func findFilesWithHardcodedPythonShebangs(in directory: URL) async throws -> [URL] {
         // Use grep to find files with hardcoded Python paths
         let grepProcess = Process()
@@ -1219,39 +1221,39 @@ public final class Installer {
             "^#!/.*\\.velo/.*python",  // Search for shebangs with .velo paths
             directory.path
         ]
-        
+
         let grepPipe = Pipe()
         grepProcess.standardOutput = grepPipe
         grepProcess.standardError = Pipe() // Suppress error output
-        
+
         try grepProcess.run()
         grepProcess.waitUntilExit()
-        
+
         let output = grepPipe.fileHandleForReading.readDataToEndOfFile()
         let outputString = String(data: output, encoding: .utf8) ?? ""
-        
+
         // Parse file paths from grep output
         let filePaths = outputString.components(separatedBy: .newlines)
             .filter { !$0.isEmpty }
             .map { URL(fileURLWithPath: $0) }
-        
+
         return filePaths
     }
-    
+
     private func fixPythonShebang(filePath: URL) async throws {
         let content = try String(contentsOf: filePath, encoding: .utf8)
         let lines = content.components(separatedBy: .newlines)
-        
+
         guard let firstLine = lines.first, firstLine.hasPrefix("#!") else {
             return // No shebang to fix
         }
-        
+
         // Check if it's a hardcoded Python path
         let hardcodedPythonPatterns = [
             "/Users/[^/]+/\\.velo/.*python",
             "/.*\\.velo/.*python"
         ]
-        
+
         var needsFixing = false
         for pattern in hardcodedPythonPatterns {
             if let regex = try? NSRegularExpression(pattern: pattern, options: []),
@@ -1260,11 +1262,11 @@ public final class Installer {
                 break
             }
         }
-        
+
         guard needsFixing else {
             return // Shebang doesn't need fixing
         }
-        
+
         // Determine the appropriate portable shebang
         let portableShebang: String
         if firstLine.contains("python3") {
@@ -1274,12 +1276,12 @@ public final class Installer {
         } else {
             return // Not a Python shebang
         }
-        
+
         // Replace the first line with the portable shebang
         var newLines = lines
         newLines[0] = portableShebang
         let newContent = newLines.joined(separator: "\n")
-        
+
         // Only write if content actually changed
         if newContent != content {
             try newContent.write(to: filePath, atomically: true, encoding: .utf8)
@@ -1348,27 +1350,27 @@ public final class Installer {
             }
         }
     }
-    
+
     // MARK: - Framework Support
-    
+
     private func findFrameworkBinDirectories(in packageDir: URL) throws -> [URL] {
         var frameworkBinDirs: [URL] = []
-        
+
         // Look for Framework directories
         let frameworksDir = packageDir.appendingPathComponent("Frameworks")
         if fileManager.fileExists(atPath: frameworksDir.path) {
             let frameworks = try fileManager.contentsOfDirectory(atPath: frameworksDir.path)
                 .filter { $0.hasSuffix(".framework") }
-            
+
             for framework in frameworks {
                 let frameworkDir = frameworksDir.appendingPathComponent(framework)
-                
+
                 // Look for Versions/*/bin directories in the framework
                 let versionsDir = frameworkDir.appendingPathComponent("Versions")
                 if fileManager.fileExists(atPath: versionsDir.path) {
                     let versions = try fileManager.contentsOfDirectory(atPath: versionsDir.path)
                         .filter { !$0.hasPrefix(".") }
-                    
+
                     for version in versions {
                         let versionBinDir = versionsDir.appendingPathComponent(version).appendingPathComponent("bin")
                         if fileManager.fileExists(atPath: versionBinDir.path) {
@@ -1376,7 +1378,7 @@ public final class Installer {
                         }
                     }
                 }
-                
+
                 // Also check for direct bin directory in framework
                 let frameworkBinDir = frameworkDir.appendingPathComponent("bin")
                 if fileManager.fileExists(atPath: frameworkBinDir.path) {
@@ -1384,22 +1386,22 @@ public final class Installer {
                 }
             }
         }
-        
+
         return frameworkBinDirs
     }
-    
+
     // MARK: - Framework Detection
-    
+
     private func hasFrameworkDependencies(packageDir: URL) throws -> Bool {
         let frameworksDir = packageDir.appendingPathComponent("Frameworks")
         return fileManager.fileExists(atPath: frameworksDir.path)
     }
-    
+
     private func isFrameworkBinary(path: URL, packageDir: URL) -> Bool {
         let relativePath = path.path.replacingOccurrences(of: packageDir.path, with: "")
         return relativePath.contains("/Frameworks/") && relativePath.contains(".framework/")
     }
-    
+
     private func createFrameworkSymlinks(
         binaryName: String,
         sourcePath: URL,
@@ -1410,14 +1412,14 @@ public final class Installer {
         // Create wrapper scripts instead of direct symlinks for framework binaries
         let versionedPath = pathHelper.versionedSymlinkPath(for: binaryName, package: formula.name, version: formula.version)
         let defaultPath = pathHelper.symlinkPath(for: binaryName)
-        
+
         // Generate wrapper script content
         let frameworkPath = packageDir.appendingPathComponent("Frameworks")
         let wrapperScript = generateFrameworkWrapperScript(
             binaryPath: sourcePath,
             frameworkPath: frameworkPath
         )
-        
+
         // Create versioned wrapper
         let versionedResult = try createWrapperScript(
             content: wrapperScript,
@@ -1425,7 +1427,7 @@ public final class Installer {
             packageName: formula.name,
             force: force
         )
-        
+
         // Create default wrapper
         let defaultResult = try createWrapperScript(
             content: wrapperScript,
@@ -1433,42 +1435,42 @@ public final class Installer {
             packageName: formula.name,
             force: force
         )
-        
+
         return (versionedResult, defaultResult)
     }
-    
+
     private func generateFrameworkWrapperScript(binaryPath: URL, frameworkPath: URL) -> String {
         // Extract the relative path from ~/.velo/bin to the binary and framework
         let binaryName = binaryPath.lastPathComponent
-        
+
         // Calculate relative paths from the wrapper script location to avoid hardcoding
         let veloRoot = pathHelper.veloHome.path
         let relativeBinaryPath = String(binaryPath.path.dropFirst(veloRoot.count + 1)) // Remove "~/.velo/" prefix
         let relativeFrameworkPath = String(frameworkPath.path.dropFirst(veloRoot.count + 1)) // Remove "~/.velo/" prefix
-        
+
         return """
         #!/bin/bash
         # Velo framework wrapper script - portable version
-        
+
         # Dynamically discover Velo installation root from script location
         SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
         VELO_ROOT="$(dirname "$SCRIPT_DIR")"
-        
+
         # Set framework path for dynamic library loading
         export DYLD_FRAMEWORK_PATH="$VELO_ROOT/\(relativeFrameworkPath):$DYLD_FRAMEWORK_PATH"
-        
+
         # For Python specifically, set PYTHONHOME to help find the standard library
         if [[ "\(binaryName)" == python* ]]; then
             export PYTHONHOME="$VELO_ROOT/\(relativeFrameworkPath)/Python.framework/Versions/Current"
             # Also set PYTHONPATH for extension modules
             export PYTHONPATH="$VELO_ROOT/\(relativeFrameworkPath)/Python.framework/Versions/Current/lib/python3.13:$VELO_ROOT/\(relativeFrameworkPath)/Python.framework/Versions/Current/lib/python3.13/lib-dynload:$PYTHONPATH"
         fi
-        
+
         # Execute the actual binary using relative path
         exec "$VELO_ROOT/\(relativeBinaryPath)" "$@"
         """
     }
-    
+
     private func createWrapperScript(
         content: String,
         at path: URL,
@@ -1484,24 +1486,24 @@ public final class Installer {
                     return .skipped(reason: "conflicts with \(conflictingPackage)")
                 }
             }
-            
+
             // Remove existing file
             try fileManager.removeItem(at: path)
         }
-        
+
         // Ensure parent directory exists
         let parentDir = path.deletingLastPathComponent()
         if !fileManager.fileExists(atPath: parentDir.path) {
             try fileManager.createDirectory(at: parentDir, withIntermediateDirectories: true)
         }
-        
+
         // Write wrapper script
         try content.write(to: path, atomically: true, encoding: .utf8)
-        
+
         // Make executable
         let attributes = [FileAttributeKey.posixPermissions: 0o755]
         try fileManager.setAttributes(attributes, ofItemAtPath: path.path)
-        
+
         return .created
     }
 }
@@ -1536,14 +1538,59 @@ extension Installer {
         // Remove only the old version (not all versions)
         try uninstallVersion(package: oldFormula.name, version: oldFormula.version)
     }
-    
+
     /// Create symlinks for an already installed package (used when converting dependency to explicit)
     public func createSymlinksForExistingPackage(formula: Formula, packageDir: URL) async throws {
         try await createSymlinks(for: formula, packageDir: packageDir, progress: nil, force: false)
     }
-    
+
     /// Remove symlinks for a package without uninstalling it
     public func removeSymlinksForPackage(package: String, version: String, packageDir: URL) throws {
         try removeSymlinks(for: package, version: version, packageDir: packageDir)
+    }
+
+    // MARK: - Compatibility Symlinks
+
+    /// Create compatibility symlinks for common directories (lib, include, share, etc.)
+    private func createCompatibilitySymlinks(for package: String, version: String) throws {
+        let packageBaseDir = pathHelper.cellarPath.appendingPathComponent(package)
+        let versionDir = packageBaseDir.appendingPathComponent(version)
+
+        // Common directories that might need symlinks
+        let commonDirs = ["lib", "include", "share", "etc", "var"]
+
+        for dirName in commonDirs {
+            let versionedDir = versionDir.appendingPathComponent(dirName)
+
+            // Check if the versioned directory exists
+            guard fileManager.fileExists(atPath: versionedDir.path) else {
+                continue
+            }
+
+            let symlinkPath = packageBaseDir.appendingPathComponent(dirName)
+
+            // Remove existing symlink if it exists
+            if fileManager.fileExists(atPath: symlinkPath.path) {
+                // Check if it's a symlink pointing to the wrong location
+                if let existingTarget = try? fileManager.destinationOfSymbolicLink(atPath: symlinkPath.path) {
+                    let expectedTarget = "\(version)/\(dirName)"
+                    if existingTarget != expectedTarget {
+                        try fileManager.removeItem(at: symlinkPath)
+                    } else {
+                        // Symlink already correct, skip
+                        continue
+                    }
+                } else {
+                    // It's not a symlink, don't remove it (safety check)
+                    OSLogger.shared.warning("⚠️ \(symlinkPath.path) exists but is not a symlink, skipping", category: OSLogger.shared.installer)
+                    continue
+                }
+            }
+
+            // Create the symlink with relative path
+            let relativePath = "\(version)/\(dirName)"
+            try fileManager.createSymbolicLink(atPath: symlinkPath.path, withDestinationPath: relativePath)
+            OSLogger.shared.debug("✅ Created compatibility symlink: \(package)/\(dirName) -> \(relativePath)", category: OSLogger.shared.installer)
+        }
     }
 }

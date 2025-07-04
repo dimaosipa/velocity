@@ -18,7 +18,7 @@ extension Velo {
 
         @Flag(help: "Force repair even if no issues are detected")
         var force = false
-        
+
         @Flag(help: "Also check and fix PATH configuration")
         var fixPath = false
 
@@ -36,7 +36,7 @@ extension Velo {
             if fixPath {
                 try checkAndFixPathConfiguration(pathHelper: pathHelper)
             }
-            
+
             // Check and fix hardcoded wrapper scripts
             try await checkAndFixWrapperScripts(pathHelper: pathHelper)
 
@@ -61,6 +61,9 @@ extension Velo {
             for version in versions {
                 try await repairPackageVersion(packageName, version: version, pathHelper: pathHelper)
             }
+
+            // Repair compatibility symlinks for the package
+            try repairCompatibilitySymlinks(for: packageName, pathHelper: pathHelper)
 
             OSLogger.shared.success("\(packageName) repair completed!")
         }
@@ -88,14 +91,14 @@ extension Velo {
 
             for packageName in packages {
                 let versions = pathHelper.installedVersions(for: packageName)
-                
+
                 for version in versions {
                     let (hasIssues, fixed) = try await repairPackageVersion(
-                        packageName, 
-                        version: version, 
+                        packageName,
+                        version: version,
                         pathHelper: pathHelper
                     )
-                    
+
                     if hasIssues {
                         issuesFound += 1
                         if fixed {
@@ -103,6 +106,9 @@ extension Velo {
                         }
                     }
                 }
+
+                // Repair compatibility symlinks for each package
+                try repairCompatibilitySymlinks(for: packageName, pathHelper: pathHelper)
             }
 
             if issuesFound == 0 {
@@ -118,8 +124,8 @@ extension Velo {
 
         @discardableResult
         private func repairPackageVersion(
-            _ packageName: String, 
-            version: String, 
+            _ packageName: String,
+            version: String,
             pathHelper: PathHelper
         ) async throws -> (hasIssues: Bool, fixed: Bool) {
             let packageDir = pathHelper.packagePath(for: packageName, version: version)
@@ -155,7 +161,7 @@ extension Velo {
                     let relativePath = file.url.path.replacingOccurrences(of: packageDir.path + "/", with: "")
                     let typeDescription = file.type == .binary ? "binary" : file.type == .script ? "script" : "Python shebang"
                     OSLogger.shared.info("    Repairing \(relativePath) (\(typeDescription))...")
-                    
+
                     switch file.type {
                     case .binary:
                         try await installer.repairBinaryLibraryPaths(binaryPath: file.url)
@@ -164,7 +170,7 @@ extension Velo {
                     case .pythonShebang:
                         try await repairPythonShebang(file.url)
                     }
-                    
+
                     fixedCount += 1
                 } catch {
                     OSLogger.shared.warning("    Failed to repair \(file.url.lastPathComponent): \(error.localizedDescription)")
@@ -189,7 +195,7 @@ extension Velo {
             if fileManager.fileExists(atPath: binDir.path) {
                 let binaries = try fileManager.contentsOfDirectory(atPath: binDir.path)
                     .filter { !$0.hasPrefix(".") }
-                
+
                 for binary in binaries {
                     let binaryPath = binDir.appendingPathComponent(binary)
                     if try fileNeedsRepair(binaryPath) {
@@ -203,7 +209,7 @@ extension Velo {
             if fileManager.fileExists(atPath: libDir.path) {
                 let libraries = try fileManager.contentsOfDirectory(atPath: libDir.path)
                     .filter { $0.hasSuffix(".dylib") }
-                
+
                 for library in libraries {
                     let libraryPath = libDir.appendingPathComponent(library)
                     if try fileNeedsRepair(libraryPath) {
@@ -223,7 +229,7 @@ extension Velo {
 
         private func scanFrameworksDirectory(_ frameworksDir: URL, filesToRepair: inout [URL]) throws {
             let fileManager = FileManager.default
-            
+
             // Recursively scan the Frameworks directory for Mach-O files
             if let enumerator = fileManager.enumerator(at: frameworksDir, includingPropertiesForKeys: [.isRegularFileKey, .isExecutableKey]) {
                 for case let fileURL as URL in enumerator {
@@ -232,21 +238,21 @@ extension Velo {
                           resourceValues.isRegularFile == true else {
                         continue
                     }
-                    
+
                     let fileName = fileURL.lastPathComponent
-                    
+
                     // Check for framework executables and dynamic libraries
-                    let isFrameworkBinary = fileName.hasSuffix(".dylib") || 
+                    let isFrameworkBinary = fileName.hasSuffix(".dylib") ||
                                            fileName.hasSuffix(".so") ||
                                            resourceValues.isExecutable == true ||
                                            fileURL.pathExtension.isEmpty // Framework main binary (e.g., Python)
-                    
+
                     // Skip obvious non-binary files
                     let skipExtensions = ["txt", "py", "pyc", "pyo", "h", "plist", "strings", "md", "rst", "html", "xml", "json"]
                     if skipExtensions.contains(fileURL.pathExtension.lowercased()) {
                         continue
                     }
-                    
+
                     if isFrameworkBinary {
                         do {
                             if try fileNeedsRepair(fileURL) {
@@ -289,7 +295,7 @@ extension Velo {
             OSLogger.shared.info("🛤️  Checking PATH configuration...")
 
             let veloPath = pathHelper.binPath.path
-            
+
             // Check if Velo is in PATH at all
             guard pathHelper.isInPath() else {
                 OSLogger.shared.warning("  ❌ ~/.velo/bin is not in PATH")
@@ -303,7 +309,7 @@ extension Velo {
 
             // Check PATH position
             let pathPosition = checkVeloPathPosition(veloPath: veloPath)
-            
+
             switch pathPosition {
             case .first:
                 OSLogger.shared.info("  ✅ ~/.velo/bin is correctly positioned first in PATH")
@@ -329,31 +335,31 @@ extension Velo {
             case notFirst(Int)
             case notFound
         }
-        
+
         private func checkVeloPathPosition(veloPath: String) -> PathPosition {
             guard let pathEnv = ProcessInfo.processInfo.environment["PATH"] else {
                 return .notFound
             }
-            
+
             let pathComponents = pathEnv.components(separatedBy: ":")
                 .filter { !$0.isEmpty }
-            
+
             // Check for various Velo path representations
             let veloPathVariants = [
                 veloPath,
-                "$HOME/.velo/bin", 
+                "$HOME/.velo/bin",
                 "~/.velo/bin",
                 NSString(string: veloPath).expandingTildeInPath
             ]
-            
+
             for (index, component) in pathComponents.enumerated() {
                 let expandedComponent = NSString(string: component).expandingTildeInPath
-                
+
                 if veloPathVariants.contains(component) || veloPathVariants.contains(expandedComponent) {
                     return index == 0 ? .first : .notFirst(index + 1)
                 }
             }
-            
+
             return .notFound
         }
 
@@ -361,26 +367,26 @@ extension Velo {
 
         private func findAllFilesNeedingRepair(in packageDir: URL) async throws -> [RepairableFile] {
             var filesToRepair: [RepairableFile] = []
-            
+
             // Find binary files needing repair
             let binaryFiles = try findFilesNeedingRepair(in: packageDir)
             filesToRepair.append(contentsOf: binaryFiles.map { RepairableFile(url: $0, type: .binary) })
-            
+
             // Find script files with placeholders
             let scriptFiles = try await findScriptFilesWithPlaceholders(in: packageDir)
             filesToRepair.append(contentsOf: scriptFiles.map { RepairableFile(url: $0, type: .script) })
-            
+
             // Find Python files with hardcoded shebangs
             let pythonFiles = try await findPythonFilesWithHardcodedShebangs(in: packageDir)
             filesToRepair.append(contentsOf: pythonFiles.map { RepairableFile(url: $0, type: .pythonShebang) })
-            
+
             return filesToRepair
         }
 
         private struct RepairableFile {
             let url: URL
             let type: RepairType
-            
+
             enum RepairType {
                 case binary
                 case script
@@ -398,17 +404,17 @@ extension Velo {
                 "@@HOMEBREW_",  // Search pattern
                 directory.path
             ]
-            
+
             let grepPipe = Pipe()
             grepProcess.standardOutput = grepPipe
             grepProcess.standardError = Pipe() // Suppress error output
-            
+
             try grepProcess.run()
             grepProcess.waitUntilExit()
-            
+
             let output = grepPipe.fileHandleForReading.readDataToEndOfFile()
             let outputString = String(data: output, encoding: .utf8) ?? ""
-            
+
             return outputString.components(separatedBy: .newlines)
                 .filter { !$0.isEmpty }
                 .map { URL(fileURLWithPath: $0) }
@@ -424,17 +430,17 @@ extension Velo {
                 "^#!/.*\\.velo/.*python",  // Search for shebangs with .velo paths
                 directory.path
             ]
-            
+
             let grepPipe = Pipe()
             grepProcess.standardOutput = grepPipe
             grepProcess.standardError = Pipe() // Suppress error output
-            
+
             try grepProcess.run()
             grepProcess.waitUntilExit()
-            
+
             let output = grepPipe.fileHandleForReading.readDataToEndOfFile()
             let outputString = String(data: output, encoding: .utf8) ?? ""
-            
+
             return outputString.components(separatedBy: .newlines)
                 .filter { !$0.isEmpty }
                 .map { URL(fileURLWithPath: $0) }
@@ -442,12 +448,12 @@ extension Velo {
 
         private func repairScriptFile(_ filePath: URL, pathHelper: PathHelper) async throws {
             let content = try String(contentsOf: filePath, encoding: .utf8)
-            
+
             // Replace Homebrew placeholders with actual Velo paths
             var newContent = content
             newContent = newContent.replacingOccurrences(of: "@@HOMEBREW_PREFIX@@", with: pathHelper.veloPrefix.path)
             newContent = newContent.replacingOccurrences(of: "@@HOMEBREW_CELLAR@@", with: pathHelper.cellarPath.path)
-            
+
             // Only write if content actually changed
             if newContent != content {
                 try newContent.write(to: filePath, atomically: true, encoding: .utf8)
@@ -457,17 +463,17 @@ extension Velo {
         private func repairPythonShebang(_ filePath: URL) async throws {
             let content = try String(contentsOf: filePath, encoding: .utf8)
             let lines = content.components(separatedBy: .newlines)
-            
+
             guard let firstLine = lines.first, firstLine.hasPrefix("#!") else {
                 return // No shebang to fix
             }
-            
+
             // Check if it's a hardcoded Python path
             let hardcodedPythonPatterns = [
                 "/Users/[^/]+/\\.velo/.*python",
                 "/.*\\.velo/.*python"
             ]
-            
+
             var needsFixing = false
             for pattern in hardcodedPythonPatterns {
                 if let regex = try? NSRegularExpression(pattern: pattern, options: []),
@@ -476,11 +482,11 @@ extension Velo {
                     break
                 }
             }
-            
+
             guard needsFixing else {
                 return // Shebang doesn't need fixing
             }
-            
+
             // Determine the appropriate portable shebang
             let portableShebang: String
             if firstLine.contains("python3") {
@@ -490,12 +496,12 @@ extension Velo {
             } else {
                 return // Not a Python shebang
             }
-            
+
             // Replace the first line with the portable shebang
             var newLines = lines
             newLines[0] = portableShebang
             let newContent = newLines.joined(separator: "\n")
-            
+
             // Only write if content actually changed
             if newContent != content {
                 try newContent.write(to: filePath, atomically: true, encoding: .utf8)
@@ -520,24 +526,24 @@ extension Velo {
 
             for filename in binContents {
                 let scriptPath = binPath.appendingPathComponent(filename)
-                
+
                 // Skip if not a regular file
                 guard let resourceValues = try? scriptPath.resourceValues(forKeys: [.isRegularFileKey]),
                       resourceValues.isRegularFile == true else {
                     continue
                 }
-                
+
                 // Check if it's a shell script or Python script
                 guard filename != "velo" && (isShellScript(scriptPath) || isPythonScript(scriptPath)) else {
                     continue
                 }
-                
+
                 wrapperScriptsChecked += 1
-                
+
                 if try hasHardcodedPaths(scriptPath: scriptPath, pathHelper: pathHelper) {
                     hardcodedPathsFound += 1
                     OSLogger.shared.info("  ⚠️  Found hardcoded paths in \(filename)")
-                    
+
                     if !dryRun {
                         if try await regenerateWrapperScript(scriptPath: scriptPath, pathHelper: pathHelper) {
                             scriptsFixed += 1
@@ -580,71 +586,71 @@ extension Velo {
 
         private func hasHardcodedPaths(scriptPath: URL, pathHelper: PathHelper) throws -> Bool {
             let content = try String(contentsOf: scriptPath, encoding: .utf8)
-            
+
             // Check for hardcoded paths that should be made portable
             let homeDir = FileManager.default.homeDirectoryForCurrentUser.path
             let hardcodedPatterns = [
                 "/Users/[^/]+/\\.velo/",
                 "\(homeDir)/.velo/"
             ]
-            
+
             for pattern in hardcodedPatterns {
                 if let regex = try? NSRegularExpression(pattern: pattern, options: []),
                    regex.firstMatch(in: content, options: [], range: NSRange(location: 0, length: content.count)) != nil {
                     return true
                 }
             }
-            
+
             return false
         }
 
         private func regenerateWrapperScript(scriptPath: URL, pathHelper: PathHelper) async throws -> Bool {
             let filename = scriptPath.lastPathComponent
-            
+
             // For now, we'll focus on the most common cases: Python framework wrappers
             if filename.hasPrefix("python") {
                 try regeneratePythonWrapper(scriptPath: scriptPath, pathHelper: pathHelper)
                 return true
             }
-            
+
             // For other scripts that use #!/usr/bin/env python3, we can make them portable
             if isPythonScript(scriptPath) {
                 try regenerateGenericPythonWrapper(scriptPath: scriptPath, pathHelper: pathHelper)
                 return true
             }
-            
+
             // For other wrapper scripts, we can't automatically regenerate them
             return false
         }
 
         private func regeneratePythonWrapper(scriptPath: URL, pathHelper: PathHelper) throws {
             let filename = scriptPath.lastPathComponent
-            
+
             // Generate portable Python wrapper
             let wrapperContent = """
             #!/bin/bash
             # Velo framework wrapper script - portable version
-            
+
             # Dynamically discover Velo installation root from script location
             SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
             VELO_ROOT="$(dirname "$SCRIPT_DIR")"
-            
+
             # Set framework path for dynamic library loading
             export DYLD_FRAMEWORK_PATH="$VELO_ROOT/Cellar/python@3.13/3.13.5/Frameworks:$DYLD_FRAMEWORK_PATH"
-            
+
             # For Python specifically, set PYTHONHOME to help find the standard library
             if [[ "\(filename)" == python* ]]; then
                 export PYTHONHOME="$VELO_ROOT/Cellar/python@3.13/3.13.5/Frameworks/Python.framework/Versions/3.13"
                 # Also set PYTHONPATH for extension modules
                 export PYTHONPATH="$VELO_ROOT/Cellar/python@3.13/3.13.5/Frameworks/Python.framework/Versions/3.13/lib/python3.13:$VELO_ROOT/Cellar/python@3.13/3.13.5/Frameworks/Python.framework/Versions/3.13/lib/python3.13/lib-dynload:$PYTHONPATH"
             fi
-            
+
             # Execute the actual binary using relative path
             exec "$VELO_ROOT/Cellar/python@3.13/3.13.5/Frameworks/Python.framework/Versions/3.13/bin/\(filename)" "$@"
             """
-            
+
             try wrapperContent.write(to: scriptPath, atomically: true, encoding: .utf8)
-            
+
             // Make executable
             let attributes = [FileAttributeKey.posixPermissions: 0o755]
             try FileManager.default.setAttributes(attributes, ofItemAtPath: scriptPath.path)
@@ -654,26 +660,26 @@ extension Velo {
             // For generic Python scripts, make them use #!/usr/bin/env python3 and dynamic path discovery
             let content = try String(contentsOf: scriptPath, encoding: .utf8)
             let lines = content.components(separatedBy: .newlines)
-            
+
             guard lines.count > 1 else { return }
-            
+
             // Update to portable version with dynamic site-packages discovery
             let portableContent = """
             #!/usr/bin/env python3
             # -*- coding: utf-8 -*-
             import sys
             import os
-            
+
             # Dynamically discover Velo packages
             script_dir = os.path.dirname(os.path.abspath(__file__))
             velo_root = os.path.dirname(script_dir)
-            
+
             # Add package-specific site-packages to Python path
             # This assumes the script is for a specific package with its own libexec
             package_name = os.path.basename(__file__)
             if package_name.endswith('.py'):
                 package_name = package_name[:-3]
-            
+
             # Try to find the package's site-packages directory
             for item in os.listdir(os.path.join(velo_root, 'Cellar')):
                 if package_name in item:
@@ -683,15 +689,81 @@ extension Velo {
                         if os.path.exists(site_packages) and site_packages not in sys.path:
                             sys.path.insert(0, site_packages)
                             break
-            
+
             \(lines.dropFirst().joined(separator: "\n"))
             """
-            
+
             try portableContent.write(to: scriptPath, atomically: true, encoding: .utf8)
-            
+
             // Make executable
             let attributes = [FileAttributeKey.posixPermissions: 0o755]
             try FileManager.default.setAttributes(attributes, ofItemAtPath: scriptPath.path)
+        }
+
+        // MARK: - Compatibility Symlinks Repair
+
+        private func repairCompatibilitySymlinks(for package: String, pathHelper: PathHelper) throws {
+            let packageBaseDir = pathHelper.cellarPath.appendingPathComponent(package)
+            let versions = pathHelper.installedVersions(for: package)
+
+            guard let latestVersion = versions.last else {
+                return // No versions installed
+            }
+
+            let versionDir = packageBaseDir.appendingPathComponent(latestVersion)
+
+            // Common directories that might need symlinks
+            let commonDirs = ["lib", "include", "share", "etc", "var"]
+            var symlinksRepaired = 0
+
+            for dirName in commonDirs {
+                let versionedDir = versionDir.appendingPathComponent(dirName)
+
+                // Check if the versioned directory exists
+                guard FileManager.default.fileExists(atPath: versionedDir.path) else {
+                    continue
+                }
+
+                let symlinkPath = packageBaseDir.appendingPathComponent(dirName)
+                let expectedTarget = "\(latestVersion)/\(dirName)"
+
+                // Check if symlink exists and is correct
+                if FileManager.default.fileExists(atPath: symlinkPath.path) {
+                    if let existingTarget = try? FileManager.default.destinationOfSymbolicLink(atPath: symlinkPath.path) {
+                        if existingTarget == expectedTarget {
+                            // Symlink is correct, skip
+                            continue
+                        } else {
+                            // Wrong target, fix it
+                            if !dryRun {
+                                try FileManager.default.removeItem(at: symlinkPath)
+                            } else {
+                                OSLogger.shared.info("  Would fix symlink: \(package)/\(dirName) -> \(expectedTarget)")
+                                symlinksRepaired += 1
+                                continue
+                            }
+                        }
+                    } else {
+                        // It's not a symlink, skip for safety
+                        OSLogger.shared.warning("  ⚠️ \(symlinkPath.path) exists but is not a symlink, skipping", category: OSLogger.shared.general)
+                        continue
+                    }
+                }
+
+                // Create the symlink
+                if !dryRun {
+                    try FileManager.default.createSymbolicLink(atPath: symlinkPath.path, withDestinationPath: expectedTarget)
+                    OSLogger.shared.info("  ✅ Created compatibility symlink: \(package)/\(dirName) -> \(expectedTarget)")
+                    symlinksRepaired += 1
+                } else {
+                    OSLogger.shared.info("  Would create symlink: \(package)/\(dirName) -> \(expectedTarget)")
+                    symlinksRepaired += 1
+                }
+            }
+
+            if symlinksRepaired > 0 && !dryRun {
+                OSLogger.shared.info("  ✅ Repaired \(symlinksRepaired) compatibility symlinks for \(package)")
+            }
         }
     }
 }
