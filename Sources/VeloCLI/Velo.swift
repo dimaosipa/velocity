@@ -7,7 +7,7 @@ public struct Velo: ParsableCommand {
     public static let configuration = CommandConfiguration(
         commandName: "velo",
         abstract: "A fast, modern package manager for macOS",
-        version: "0.1.0",
+        version: VeloVersion.currentString,
         subcommands: [
             Velo.Init.self,
             Velo.Install.self,

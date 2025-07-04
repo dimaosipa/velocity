@@ -203,7 +203,6 @@ public class GitHubReleaseManager {
     }
 
     private func getCurrentVersion() -> String {
-        // This should match the version in Velo.swift
-        return "0.1.0"
+        return VeloVersion.currentString
     }
 }

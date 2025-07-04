@@ -170,9 +170,7 @@ public class SelfUpdater {
     // MARK: - Private Helper Methods
 
     private func getCurrentVersion() -> SemanticVersion {
-        // Parse version from the main Velo configuration
-        // For now, return a hardcoded version that matches Velo.swift
-        return SemanticVersion(string: "0.1.0") ?? SemanticVersion(major: 0, minor: 1, patch: 0)
+        return VeloVersion.current
     }
 
     private func getCurrentBinaryPath() -> URL? {

@@ -141,7 +141,7 @@ public final class PerformanceOptimizer {
 
         // Optimize for large file downloads
         config.httpAdditionalHeaders = [
-            "User-Agent": "Velo/0.1.0",
+            "User-Agent": "Velo/\(VeloVersion.currentString)",
             "Accept-Encoding": "gzip, deflate, br"
         ]
 
