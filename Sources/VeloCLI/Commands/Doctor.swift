@@ -166,7 +166,7 @@ extension Velo {
 
             // Check PATH position
             let pathPosition = checkVeloPathPosition(veloPath: veloPath)
-            
+
             switch pathPosition {
             case .first:
                 print("  ✅ ~/.velo/bin is first in PATH")
@@ -183,37 +183,37 @@ extension Velo {
                 return 1
             }
         }
-        
+
         private enum PathPosition {
             case first
             case notFirst(Int)
             case notFound
         }
-        
+
         private func checkVeloPathPosition(veloPath: String) -> PathPosition {
             guard let pathEnv = ProcessInfo.processInfo.environment["PATH"] else {
                 return .notFound
             }
-            
+
             let pathComponents = pathEnv.components(separatedBy: ":")
                 .filter { !$0.isEmpty }
-            
+
             // Check for various Velo path representations
             let veloPathVariants = [
                 veloPath,
-                "$HOME/.velo/bin", 
+                "$HOME/.velo/bin",
                 "~/.velo/bin",
                 NSString(string: veloPath).expandingTildeInPath
             ]
-            
+
             for (index, component) in pathComponents.enumerated() {
                 let expandedComponent = NSString(string: component).expandingTildeInPath
-                
+
                 if veloPathVariants.contains(component) || veloPathVariants.contains(expandedComponent) {
                     return index == 0 ? .first : .notFirst(index + 1)
                 }
             }
-            
+
             return .notFound
         }
 
@@ -275,7 +275,7 @@ extension Velo {
                             // No receipt (legacy installation) - check symlinks by default
                             shouldCheckSymlinks = true
                         }
-                        
+
                         let status = try installer.verifyInstallation(formula: formula, checkSymlinks: shouldCheckSymlinks)
 
                         switch status {
@@ -342,10 +342,10 @@ extension Velo {
                 // Check each symlink
                 for symlink in symlinks {
                     let symlinkPath = pathHelper.binPath.appendingPathComponent(symlink)
-                    
+
                     do {
                         let targetPath = try FileManager.default.destinationOfSymbolicLink(atPath: symlinkPath.path)
-                        
+
                         // Check if target exists
                         if !FileManager.default.fileExists(atPath: targetPath) {
                             brokenSymlinks.append("\(symlink) → \(targetPath)")
@@ -415,7 +415,7 @@ extension Velo {
 
         private func checkForMissingSymlinks(pathHelper: PathHelper, receiptManager: ReceiptManager) -> Int {
             var issues = 0
-            
+
             do {
                 // Check all installed packages for missing symlinks
                 let packages = try FileManager.default.contentsOfDirectory(atPath: pathHelper.cellarPath.path)
@@ -425,7 +425,7 @@ extension Velo {
 
                 for package in packages {
                     let versions = pathHelper.installedVersions(for: package)
-                    
+
                     for version in versions {
                         // Check if this package should have symlinks
                         let shouldHaveSymlinks: Bool
@@ -435,18 +435,18 @@ extension Velo {
                             // No receipt - assume explicit installation for older packages
                             shouldHaveSymlinks = true
                         }
-                        
+
                         if shouldHaveSymlinks {
                             let packageDir = pathHelper.packagePath(for: package, version: version)
                             let binDir = packageDir.appendingPathComponent("bin")
-                            
+
                             if FileManager.default.fileExists(atPath: binDir.path) {
                                 let binaries = try FileManager.default.contentsOfDirectory(atPath: binDir.path)
                                     .filter { !$0.hasPrefix(".") }
-                                
+
                                 for binary in binaries {
                                     let symlinkPath = pathHelper.symlinkPath(for: binary)
-                                    
+
                                     if !FileManager.default.fileExists(atPath: symlinkPath.path) {
                                         missingSymlinks.append((package: package, version: version, binary: binary))
                                         issues += 1
@@ -483,12 +483,12 @@ extension Velo {
         private func extractPackageNameFromSymlinkTarget(_ targetPath: String) -> String? {
             // Extract package name from path like ~/.velo/Cellar/package-name/version/bin/binary
             let components = targetPath.components(separatedBy: "/")
-            
+
             if let cellarIndex = components.lastIndex(of: "Cellar"),
                cellarIndex + 1 < components.count {
                 return components[cellarIndex + 1]
             }
-            
+
             return nil
         }
 
@@ -538,7 +538,7 @@ extension Velo {
                 try await self.fixIssuesAsync()
             }
         }
-        
+
         private func fixIssuesAsync() async throws {
             print("Fixing detected issues...")
 
@@ -580,10 +580,10 @@ extension Velo {
 
                 for symlink in symlinks {
                     let symlinkPath = pathHelper.binPath.appendingPathComponent(symlink)
-                    
+
                     do {
                         let targetPath = try FileManager.default.destinationOfSymbolicLink(atPath: symlinkPath.path)
-                        
+
                         // Remove broken symlinks
                         if !FileManager.default.fileExists(atPath: targetPath) {
                             try FileManager.default.removeItem(at: symlinkPath)
@@ -609,7 +609,7 @@ extension Velo {
 
                 for package in packages {
                     let versions = pathHelper.installedVersions(for: package)
-                    
+
                     for version in versions {
                         // Check if this package should have symlinks
                         let shouldHaveSymlinks: Bool
@@ -619,10 +619,10 @@ extension Velo {
                             // No receipt - assume explicit installation for older packages
                             shouldHaveSymlinks = true
                         }
-                        
+
                         if shouldHaveSymlinks {
                             let packageDir = pathHelper.packagePath(for: package, version: version)
-                            
+
                             do {
                                 // Create a formula for symlink creation
                                 let formula = Formula(
@@ -633,7 +633,7 @@ extension Velo {
                                     sha256: "",
                                     version: version
                                 )
-                                
+
                                 // Use installer to recreate symlinks
                                 try await installer.createSymlinksForExistingPackage(formula: formula, packageDir: packageDir)
                                 print("    ✅ Recreated symlinks for \(package) \(version)")
@@ -801,7 +801,7 @@ extension Velo {
                     let scope = isLocal ? (resolvedPath.contains("/.velo/bin/") ? "global" : "local") : "system"
                     let status = (tool == "python3" && scope == "global") ? "✅" : ""
                     print("     \(tool) → \(scope): \(resolvedPath) \(status)")
-                    
+
                     // Special check for python3 resolution
                     if tool == "python3" && scope != "global" {
                         print("       ⚠️  python3 should resolve to Velo for #!/usr/bin/env python3 scripts")
@@ -832,6 +832,6 @@ extension Velo {
                 return nil
             }
         }
-        
+
     }
 }

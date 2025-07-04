@@ -45,15 +45,15 @@ public struct PathHelper {
     public var optPath: URL {
         veloHome.appendingPathComponent("opt")
     }
-    
+
     public var receiptsPath: URL {
         veloHome.appendingPathComponent("receipts")
     }
-    
+
     public var tapMetadataFile: URL {
         cachePath.appendingPathComponent("tap-metadata.json")
     }
-    
+
     public func searchIndexCacheFile(for tapName: String) -> URL {
         cachePath.appendingPathComponent("search-index-\(tapName.replacingOccurrences(of: "/", with: "-")).velocache")
     }
@@ -102,63 +102,63 @@ public struct PathHelper {
 
     public func isPackageInstalled(_ package: String) -> Bool {
         let packageDir = cellarPath.appendingPathComponent(package)
-        
+
         // Check if directory exists
         guard fileManager.fileExists(atPath: packageDir.path) else {
             return false
         }
-        
+
         // Check if directory has version subdirectories and they are not empty
         do {
             let versionDirs = try fileManager.contentsOfDirectory(atPath: packageDir.path)
                 .filter { !$0.hasPrefix(".") }
-            
+
             // If no version directories, this is not a valid installation
             guard !versionDirs.isEmpty else {
                 return false
             }
-            
+
             // Check if at least one version directory is properly installed
             for versionDir in versionDirs {
                 let versionPath = packageDir.appendingPathComponent(versionDir)
-                
+
                 // Check if version directory has content
                 let versionContents = try fileManager.contentsOfDirectory(atPath: versionPath.path)
                 if !versionContents.isEmpty {
                     return true
                 }
             }
-            
+
             return false
         } catch {
             return false
         }
     }
-    
+
     /// Check if any equivalent package is installed
     public func isEquivalentPackageInstalled(_ package: String) -> Bool {
         // First check the package itself
         if isPackageInstalled(package) {
             return true
         }
-        
+
         // Import PackageEquivalence here to avoid circular dependencies
         // This is a simplified check - in production we'd inject this dependency
         let equivalents = getEquivalentPackageNames(for: package)
         return equivalents.contains { isPackageInstalled($0) }
     }
-    
+
     /// Find any installed equivalent package
     public func findInstalledEquivalentPackage(for package: String) -> String? {
         // First check the package itself
         if isPackageInstalled(package) {
             return package
         }
-        
+
         let equivalents = getEquivalentPackageNames(for: package)
         return equivalents.first { isPackageInstalled($0) }
     }
-    
+
     /// Get equivalent package names (simplified version for PathHelper)
     private func getEquivalentPackageNames(for package: String) -> [String] {
         // Simplified equivalence mapping - ideally this would use PackageEquivalence
@@ -180,23 +180,23 @@ public struct PathHelper {
             "openssl@3": ["openssl3", "libssl3"],
             "openssl@1.1": ["openssl1.1", "libssl1.1"]
         ]
-        
+
         if let equivalents = commonEquivalencies[package] {
             return [package] + equivalents
         }
-        
+
         // Check if package is in any equivalency group
         for (canonical, equivalents) in commonEquivalencies {
             if equivalents.contains(package) {
                 return [canonical] + equivalents
             }
         }
-        
+
         return [package]
     }
-    
+
     // MARK: - File Removal Helpers
-    
+
     private func isSymlink(at url: URL) -> Bool {
         do {
             let resourceValues = try url.resourceValues(forKeys: [.isSymbolicLinkKey])
@@ -205,21 +205,21 @@ public struct PathHelper {
             return false
         }
     }
-    
+
     private func clearExtendedAttributes(at url: URL) throws {
         let xattrProcess = Process()
         xattrProcess.executableURL = URL(fileURLWithPath: "/usr/bin/xattr")
         xattrProcess.arguments = ["-c", url.path]
-        
+
         // Suppress all output to avoid noise
         xattrProcess.standardOutput = Pipe()
         xattrProcess.standardError = Pipe()
-        
+
         // Ignore errors - some files may not have extended attributes
         try? xattrProcess.run()
         xattrProcess.waitUntilExit()
     }
-    
+
     private func makeFileWritable(at url: URL) throws {
         var attributes = try fileManager.attributesOfItem(atPath: url.path)
         if let permissions = attributes[.posixPermissions] as? NSNumber {
@@ -228,20 +228,20 @@ public struct PathHelper {
             try fileManager.setAttributes(attributes, ofItemAtPath: url.path)
         }
     }
-    
+
     private func aggressiveFileRemoval(at url: URL) throws {
         // Try using rm command as a last resort
         let rmProcess = Process()
         rmProcess.executableURL = URL(fileURLWithPath: "/bin/rm")
         rmProcess.arguments = ["-f", url.path]
-        
+
         let pipe = Pipe()
         rmProcess.standardOutput = pipe
         rmProcess.standardError = pipe
-        
+
         try rmProcess.run()
         rmProcess.waitUntilExit()
-        
+
         if rmProcess.terminationStatus != 0 {
             let errorData = pipe.fileHandleForReading.readDataToEndOfFile()
             let errorOutput = String(data: errorData, encoding: .utf8) ?? "Unknown error"
@@ -272,27 +272,27 @@ public struct PathHelper {
 
         try fileManager.createSymbolicLink(at: destination, withDestinationURL: source)
     }
-    
+
     /// Result of symlink creation attempt
     public enum SymlinkResult {
         case created
         case skipped(reason: String)
         case failed(error: Error)
     }
-    
+
     /// Create symlink with conflict detection and resolution
     public func createSymlinkWithConflictDetection(
-        from source: URL, 
-        to destination: URL, 
+        from source: URL,
+        to destination: URL,
         packageName: String,
         force: Bool = false
     ) -> SymlinkResult {
         let destinationPath = destination.path
-        
+
         if force {
             OSLogger.shared.debug("🔧 Creating symlink with force=true: \(destination.lastPathComponent)", category: OSLogger.shared.general)
         }
-        
+
         // Check if destination already exists
         if fileManager.fileExists(atPath: destinationPath) {
             if force {
@@ -302,7 +302,7 @@ public struct PathHelper {
                 // Non-force mode - check package equivalence and skip conflicts (Homebrew-style)
                 if let existingTarget = try? fileManager.destinationOfSymbolicLink(atPath: destinationPath) {
                     let existingPackage = extractPackageFromPath(existingTarget)
-                    
+
                     if let existing = existingPackage {
                         // Check if packages are equivalent
                         let equivalents = getEquivalentPackageNames(for: packageName)
@@ -320,25 +320,25 @@ public struct PathHelper {
                     return .skipped(reason: "file already exists")
                 }
             }
-            
+
             // Remove existing symlink/file with robust cleanup
             OSLogger.shared.info("🔍 Attempting to remove existing file: \(destination.lastPathComponent)")
             do {
                 // Clear extended attributes that might prevent removal
                 try clearExtendedAttributes(at: destination)
-                
+
                 // Make the file writable if it's not a symlink
                 if !isSymlink(at: destination) {
                     OSLogger.shared.debug("📝 Making file writable: \(destination.lastPathComponent)", category: OSLogger.shared.general)
                     try makeFileWritable(at: destination)
                 }
-                
+
                 // Remove the file/symlink
                 try fileManager.removeItem(at: destination)
                 OSLogger.shared.info("🗑️ Successfully removed existing file/symlink: \(destination.lastPathComponent)")
             } catch {
                 OSLogger.shared.warning("⚠️ Failed to remove existing file: \(destination.lastPathComponent) - \(error.localizedDescription)")
-                
+
                 // In force mode, try harder to remove the file
                 if force {
                     OSLogger.shared.info("🔧 Force mode: attempting aggressive file removal")
@@ -359,7 +359,7 @@ public struct PathHelper {
                 }
             }
         }
-        
+
         do {
             try fileManager.createSymbolicLink(at: destination, withDestinationURL: source)
             OSLogger.shared.debug("✅ Created symlink: \(destination.lastPathComponent) -> \(source.path)", category: OSLogger.shared.general)
@@ -368,41 +368,41 @@ public struct PathHelper {
             // Double-check if the file still exists after our removal attempt
             let fileStillExists = fileManager.fileExists(atPath: destination.path)
             OSLogger.shared.warning("❌ Symlink creation failed. File still exists: \(fileStillExists)")
-            
+
             return .failed(error: VeloError.symlinkFailed(
                 from: source.path,
                 to: destination.path + " (\(error.localizedDescription))"
             ))
         }
     }
-    
+
     /// Extract package name from a file path
     private func extractPackageFromPath(_ path: String) -> String? {
         // Path format: ~/.velo/Cellar/package-name/version/bin/binary
         let components = path.components(separatedBy: "/")
-        
+
         // Find "Cellar" in the path
         if let cellarIndex = components.firstIndex(of: "Cellar"),
            cellarIndex + 1 < components.count {
             return components[cellarIndex + 1]
         }
-        
+
         return nil
     }
-    
+
     public func findConflictingPackage(for binary: String) -> String? {
         let symlinkPath = symlinkPath(for: binary)
-        
+
         // Check if symlink exists
         guard fileManager.fileExists(atPath: symlinkPath.path) else {
             return nil
         }
-        
+
         // If it's a symlink, find the target package
         if let target = try? fileManager.destinationOfSymbolicLink(atPath: symlinkPath.path) {
             return extractPackageFromPath(target)
         }
-        
+
         // If it's a regular file, we don't know which package it belongs to
         return "unknown"
     }
@@ -492,7 +492,7 @@ public struct PathHelper {
 
             // Update the default symlink to point to this version
             let result = createSymlinkWithConflictDetection(from: sourcePath, to: defaultSymlinkPath, packageName: package, force: false)
-            
+
             switch result {
             case .created:
                 OSLogger.shared.debug("✅ Updated default symlink for \(binary) -> \(package) \(version)", category: OSLogger.shared.general)

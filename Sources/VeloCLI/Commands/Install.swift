@@ -61,12 +61,12 @@ extension Velo {
                     seen.insert(pkg)
                 }
             }
-            
+
             if uniquePackages.count != packages.count {
                 let duplicates = packages.count - uniquePackages.count
                 print("ℹ️  Removed \(duplicates) duplicate package(s)")
             }
-            
+
             // Install each package sequentially
             let totalPackages = uniquePackages.count
             var successCount = 0
@@ -77,7 +77,7 @@ extension Velo {
                 if totalPackages > 1 {
                     print("\n[\(packageNumber)/\(totalPackages)] Installing \(packageInput)...")
                 }
-                
+
                 do {
                     try await installSinglePackage(packageInput, context: context)
                     successCount += 1
@@ -87,7 +87,7 @@ extension Velo {
                     // Continue with next package instead of stopping
                 }
             }
-            
+
             // Show final summary (only for multiple packages)
             if totalPackages > 1 {
                 print("\n" + String(repeating: "=", count: 50))
@@ -101,7 +101,7 @@ extension Velo {
                 }
             }
         }
-        
+
         /// Install a single package with all the existing logic
         private func installSinglePackage(_ packageInput: String, context: ProjectContext) async throws {
             // Parse package specification (supports package@version syntax)
@@ -110,7 +110,7 @@ extension Velo {
             let tapManager = TapManager(pathHelper: PathHelper.shared)
             let resolvedName: String
             let resolvedVersion: String?
-            
+
             if packageInput.contains("@"), let _ = try tapManager.findFormula(packageInput) {
                 // Full name exists as a formula (e.g., python@3.9)
                 resolvedName = packageInput
@@ -121,7 +121,7 @@ extension Velo {
                 guard packageSpec.isValid else {
                     throw VeloError.formulaNotFound(name: "Invalid package specification: \(packageInput)")
                 }
-                
+
                 resolvedName = packageSpec.name
                 resolvedVersion = packageSpec.version ?? version  // inline @version takes precedence
             }
@@ -136,7 +136,7 @@ extension Velo {
             if !force {
                 let tapManager = TapManager(pathHelper: pathHelper)
                 let receiptManager = ReceiptManager(pathHelper: pathHelper)
-                
+
                 // If version is specified, check for that specific version first
                 if let requestedVersion = resolvedVersion {
                     if let formula = try? tapManager.findFormula(resolvedName, version: requestedVersion) {
@@ -148,17 +148,17 @@ extension Velo {
                                receipt.installedAs == .dependency {
                                 // Convert from dependency to explicit installation
                                 print("✅ \(formula.name) \(formula.version) is already installed (as dependency of \(receipt.requestedBy.joined(separator: ", "))), creating symlinks...")
-                                
+
                                 // Create symlinks
                                 let packageDir = pathHelper.packagePath(for: formula.name, version: formula.version)
                                 try await installer.createSymlinksForExistingPackage(formula: formula, packageDir: packageDir)
-                                
+
                                 // Update receipt
                                 try receiptManager.updateReceipt(for: formula.name, version: formula.version) { receipt in
                                     receipt.installedAs = .explicit
                                     receipt.symlinksCreated = true
                                 }
-                                
+
                                 print("✓ \(formula.name) is now available in PATH")
                                 return
                             } else {
@@ -167,7 +167,7 @@ extension Velo {
                                 if !missingDeps.isEmpty {
                                     print("⚠️  \(formula.name) \(formula.version) is installed but missing dependencies: \(missingDeps.joined(separator: ", "))")
                                     print("Installing missing dependencies...")
-                                    
+
                                     // Install only the missing dependencies
                                     try await installMissingDependencies(missingDeps, context: context, pathHelper: pathHelper)
                                     print("✓ \(formula.name) dependencies restored")
@@ -189,31 +189,31 @@ extension Velo {
                                     // Get the formula for creating symlinks
                                     if let formula = try? tapManager.findFormula(installedEquivalent) {
                                         print("✅ \(resolvedName) is already installed (as dependency of \(receipt.requestedBy.joined(separator: ", "))), creating symlinks...")
-                                        
+
                                         // Create symlinks
                                         let installer = Installer(pathHelper: pathHelper)
                                         let packageDir = pathHelper.packagePath(for: formula.name, version: formula.version)
                                         try await installer.createSymlinksForExistingPackage(formula: formula, packageDir: packageDir)
-                                        
+
                                         // Update receipt
                                         try receiptManager.updateReceipt(for: formula.name, version: formula.version) { receipt in
                                             receipt.installedAs = .explicit
                                             receipt.symlinksCreated = true
                                         }
-                                        
+
                                         print("✓ \(formula.name) is now available in PATH")
                                         return
                                     }
                                 }
                             }
-                            
+
                             // No receipt or already explicit - check dependencies
                             if let formula = try? tapManager.findFormula(installedEquivalent) {
                                 let missingDeps = try await checkMissingDependencies(for: formula, tapManager: tapManager, pathHelper: pathHelper)
                                 if !missingDeps.isEmpty {
                                     print("⚠️  \(resolvedName) is installed but missing dependencies: \(missingDeps.joined(separator: ", "))")
                                     print("Installing missing dependencies...")
-                                    
+
                                     // Install only the missing dependencies
                                     try await installMissingDependencies(missingDeps, context: context, pathHelper: pathHelper)
                                     print("✓ \(resolvedName) dependencies restored")
@@ -237,7 +237,7 @@ extension Velo {
                             }
                         }
                     }
-                    
+
                     // Also check via formula if we can get it quickly
                     if let formula = try? tapManager.findFormula(resolvedName) {
                         let installer = Installer(pathHelper: pathHelper)
@@ -248,7 +248,7 @@ extension Velo {
                             if !missingDeps.isEmpty {
                                 print("⚠️  \(formula.name) \(formula.version) is installed but missing dependencies: \(missingDeps.joined(separator: ", "))")
                                 print("Installing missing dependencies...")
-                                
+
                                 // Install only the missing dependencies
                                 try await installMissingDependencies(missingDeps, context: context, pathHelper: pathHelper)
                                 print("✓ \(formula.name) dependencies restored")
@@ -264,7 +264,7 @@ extension Velo {
 
             // Start installation with timing
             let startTime = Date()
-            
+
             do {
                 try await installPackage(
                     name: resolvedName,
@@ -674,7 +674,7 @@ extension Velo {
 
             // Calculate total steps based on what we'll actually do
             let totalSteps = (skipTapUpdate ? 0 : 1) + (skipDeps ? 0 : 1) + 2 // +2 for download & install
-            
+
             // Update package database if needed
             var stepCount = 1
             if !skipTapUpdate {
@@ -712,13 +712,13 @@ extension Velo {
                 // Enhanced error handling for missing bottles
                 let availablePlatforms = formula.bottles.map { $0.platform.rawValue }.joined(separator: ", ")
                 let currentArch = Self.getCurrentArchitecture()
-                
+
                 var errorMessage = "No compatible bottle found for \(currentArch)"
                 var suggestions: [String] = []
-                
+
                 if !formula.bottles.isEmpty {
                     errorMessage += ". Available platforms: \(availablePlatforms)"
-                    
+
                     // Check for Rosetta compatibility
                     if formula.hasRosettaCompatibleBottle {
                         suggestions.append("x86_64 bottles are available but may require Rosetta 2")
@@ -727,18 +727,18 @@ extension Velo {
                     errorMessage += ". No bottles available for any platform"
                     suggestions.append("This package may need to be built from source")
                 }
-                
+
                 // Add helpful suggestions
                 if !suggestions.isEmpty {
                     errorMessage += ". Suggestions: " + suggestions.joined(separator: "; ")
                 }
-                
+
                 OSLogger.shared.error(errorMessage)
                 OSLogger.shared.info("You can:")
                 OSLogger.shared.info("1. Try installing with 'arch -x86_64' if running on Apple Silicon")
                 OSLogger.shared.info("2. Check if an alternative package exists")
                 OSLogger.shared.info("3. Build from source (future feature)")
-                
+
                 throw VeloError.installationFailed(package: name, reason: errorMessage)
             }
 
@@ -751,7 +751,7 @@ extension Velo {
 
             // Download main package  
             ProgressReporter.shared.startLiveStep("[\(stepCount)/\(totalSteps)] ⬇️ Downloading \(formula.name)")
-            
+
             let tempFile = PathHelper.shared.temporaryFile(prefix: "bottle-\(name)", extension: "tar.gz")
 
             // Retry download with exponential backoff for transient issues
@@ -792,13 +792,13 @@ extension Velo {
                     }
                 }
             }
-            
+
             ProgressReporter.shared.completeLiveStep("Downloaded \(formula.name)")
 
             // Install main package  
             stepCount += 1
             ProgressReporter.shared.startLiveStep("[\(stepCount)/\(totalSteps)] 🔧 Installing \(formula.name)")
-            
+
             // Install dependencies first if any (with progress)
             let depCount = try await installDependenciesWithProgress(
                 for: formula,
@@ -808,12 +808,12 @@ extension Velo {
                 stepCount: stepCount,
                 totalSteps: totalSteps
             )
-            
+
             // Now install the main package
             if depCount > 0 {
                 ProgressReporter.shared.updateLiveProgress("[\(stepCount)/\(totalSteps)] 🔧 Installing \(formula.name) (main package)")
             }
-            
+
             try await installer.install(
                 formula: formula,
                 from: tempFile,
@@ -821,7 +821,7 @@ extension Velo {
                 force: force,
                 shouldCreateSymlinks: true  // Main package gets symlinks
             )
-            
+
             // Create receipt for explicitly installed package
             let receiptManager = ReceiptManager(pathHelper: pathHelper)
             let receipt = InstallationReceipt(
@@ -832,7 +832,7 @@ extension Velo {
                 symlinksCreated: true
             )
             try receiptManager.saveReceipt(receipt)
-            
+
             if depCount > 0 {
                 ProgressReporter.shared.completeLiveStep("[\(stepCount)/\(totalSteps)] ✓ Installed \(formula.name) and \(depCount) dependencies")
             } else {
@@ -871,19 +871,19 @@ extension Velo {
             // Build dependency graph quietly
             let dependencyNames = runtimeDependencies.map { $0.name }
             let graph = DependencyGraph(pathHelper: pathHelper)
-            
+
             // Update progress with package count discovery
             ProgressReporter.shared.updateLiveProgress("Resolving dependencies... (\(dependencyNames.count) direct)")
-            
+
             try await graph.buildCompleteGraph(for: dependencyNames, tapManager: tapManager)
-            
+
             // Update with total resolved count
             ProgressReporter.shared.updateLiveProgress("Resolving dependencies... (\(graph.allPackages.count) total)")
 
             // Version conflicts are handled at the equivalence level
             // No additional conflict checking needed since Homebrew formulae
             // are designed to work together
-            
+
             return graph.installablePackages.count
         }
 
@@ -906,16 +906,16 @@ extension Velo {
             let dependencyNames = runtimeDependencies.map { $0.name }
             let graph = DependencyGraph(pathHelper: pathHelper)
             try await graph.buildCompleteGraph(for: dependencyNames, tapManager: tapManager)
-            
+
             let installablePackages = graph.installablePackages
-            
+
             if installablePackages.isEmpty {
                 return 0
             }
-            
+
             // Create install plan and execute installation with progress
             let installPlan = try InstallPlan(graph: graph, rootPackage: formula.name)
-            
+
             // Download all dependencies with progress
             ProgressReporter.shared.startLiveStep("Downloading dependencies")
             let downloadManager = ParallelDownloadManager(pathHelper: pathHelper)
@@ -923,9 +923,9 @@ extension Velo {
             let downloadProgress = VisualParallelDownloadProgress(tracker: downloadTracker)
             let downloads = try await downloadManager.downloadAll(packages: installablePackages, progress: downloadProgress)
             ProgressReporter.shared.completeLiveStep("Downloaded dependencies")
-            
+
             let installOrder = installPlan.installOrder
-            
+
             // Install with detailed progress
             try await installPackagesInOrder(
                 installOrder: installOrder,
@@ -939,7 +939,7 @@ extension Velo {
                 totalSteps: totalSteps,
                 requestedBy: formula.name  // Track parent package
             )
-            
+
             return installablePackages.count
         }
 
@@ -958,12 +958,12 @@ extension Velo {
             // Build dependency graph quietly
             let dependencyNames = runtimeDependencies.map { $0.name }
             let graph = DependencyGraph(pathHelper: pathHelper)
-            
+
             // Update progress with package count discovery
             ProgressReporter.shared.updateLiveProgress("Resolving dependencies... (\(dependencyNames.count) direct)")
-            
+
             try await graph.buildCompleteGraph(for: dependencyNames, tapManager: tapManager)
-            
+
             // Update with total resolved count
             ProgressReporter.shared.updateLiveProgress("Resolving dependencies... (\(graph.allPackages.count) total)")
 
@@ -975,11 +975,11 @@ extension Velo {
             let newPackages = graph.newPackages
             let installablePackages = graph.installablePackages
             let uninstallablePackages = graph.uninstallablePackages
-            
+
             if newPackages.isEmpty {
                 return 0
             }
-            
+
             // Handle uninstallable packages
             if !uninstallablePackages.isEmpty {
                 OSLogger.shared.warning("⚠️  Found \(uninstallablePackages.count) packages without compatible bottles:")
@@ -994,19 +994,19 @@ extension Velo {
                 OSLogger.shared.info("These packages will be skipped. The installation may not work correctly.")
                 OSLogger.shared.info("Consider building from source or finding alternative packages.")
             }
-            
+
             if installablePackages.isEmpty {
                 OSLogger.shared.error("No packages can be installed - all dependencies lack compatible bottles")
                 return 0
             }
-            
+
             // Create install plan and execute installation
             let installPlan = try InstallPlan(graph: graph, rootPackage: formula.name)
-            
+
             // Download and install packages quietly (they have their own progress)
             let downloadManager = ParallelDownloadManager(pathHelper: pathHelper)
             let downloads = try await downloadManager.downloadAll(packages: installablePackages, progress: nil)
-            
+
             let installOrder = installPlan.installOrder
             // Show progress during dependency installation if there are dependencies
             if !installOrder.isEmpty {
@@ -1014,12 +1014,12 @@ extension Velo {
                     guard let node = graph.getNode(for: packageName) else { return false }
                     return !node.isInstalled
                 }
-                
+
                 if hasUninstalled {
                     ProgressReporter.shared.updateLiveProgress("Installing dependencies...")
                 }
             }
-            
+
             try await installPackagesInOrder(
                 installOrder: installOrder,
                 downloads: downloads,
@@ -1029,7 +1029,7 @@ extension Velo {
                 force: force,
                 showProgress: false  // Keep quiet for dependencies to avoid noise
             )
-            
+
             return installablePackages.count
         }
 
@@ -1048,45 +1048,45 @@ extension Velo {
         ) async throws {
             let installer = Installer(pathHelper: pathHelper)
             installTracker?.startInstallation()
-            
+
             var currentIndex = 0
             let totalPackages = installOrder.filter { packageName in
                 guard let node = graph.getNode(for: packageName) else { return false }
                 return !node.isInstalled
             }.count
-            
+
             for packageName in installOrder {
                 guard let node = graph.getNode(for: packageName) else { continue }
-                
+
                 // Skip if already installed
                 if node.isInstalled {
                     continue
                 }
-                
+
                 currentIndex += 1
-                
+
                 // Show progress if requested
                 if showProgress {
                     ProgressReporter.shared.updateLiveProgress("[\(stepCount)/\(totalSteps)] 🔧 Installing dependencies (\(currentIndex)/\(totalPackages)): \(packageName)")
                 }
-                
+
                 guard let downloadResult = downloads[packageName] else {
                     throw VeloError.installationFailed(
                         package: packageName,
                         reason: "Download result not found"
                     )
                 }
-                
+
                 guard downloadResult.success else {
                     throw VeloError.installationFailed(
                         package: packageName,
                         reason: downloadResult.error?.localizedDescription ?? "Download failed"
                     )
                 }
-                
+
                 // Track installation progress
                 installTracker?.startPackageInstallation(packageName)
-                
+
                 // Install from pre-downloaded bottle
                 let visualProgress: InstallationProgress? = installTracker != nil ? VisualInstallationProgress(tracker: installTracker!, packageName: packageName) : nil
                 try await installer.install(
@@ -1096,7 +1096,7 @@ extension Velo {
                     force: force,
                     shouldCreateSymlinks: false  // Dependencies don't get symlinks
                 )
-                
+
                 // Create receipt for dependency
                 let receiptManager = ReceiptManager(pathHelper: pathHelper)
                 let receipt = InstallationReceipt(
@@ -1107,24 +1107,24 @@ extension Velo {
                     symlinksCreated: false
                 )
                 try receiptManager.saveReceipt(receipt)
-                
+
                 // Update parent's receipt to add this dependency
                 if requestedBy != nil {
                     // The parent might not have a receipt yet if we're installing its dependencies first
                     // So we'll handle this gracefully
                 }
-                
+
                 installTracker?.completePackageInstallation(packageName)
-                
+
                 // Clean up downloaded file
                 try? FileManager.default.removeItem(at: downloadResult.downloadPath)
             }
-            
+
             installTracker?.completeAllInstallations()
         }
-        
+
         // MARK: - Architecture Detection
-        
+
         private static func getCurrentArchitecture() -> String {
             #if arch(arm64)
             return "Apple Silicon (arm64)"
@@ -1134,65 +1134,65 @@ extension Velo {
             return "Unknown architecture"
             #endif
         }
-        
+
         // MARK: - Formula Not Found Handling
-        
+
         /// Handle formula not found errors by showing search-based alternatives
         private func handleFormulaNotFound(name: String, tapManager: TapManager) async throws {
             print("Error: Formula '\(name)' not found.")
             print("")
-            
+
             // Try to build the search index if it hasn't been built yet
             try await tapManager.buildFullIndex()
-            
+
             // Search for similar packages
             let searchResults = tapManager.searchFormulae(name, includeDescriptions: false)
-            
+
             // For common generic names, also search for versioned packages
             let versionedSearchResults = searchForVersionedPackages(name: name, tapManager: tapManager)
             let allResults = Array(Set(searchResults + versionedSearchResults))
-            
+
             if !allResults.isEmpty {
                 print("Did you mean one of these?")
-                
+
                 // Show up to 8 results, prioritizing versioned packages and latest versions
                 let sortedResults = allResults.prefix(8).sorted { result1, result2 in
                     let name1 = result1.lowercased()
                     let name2 = result2.lowercased()
                     let searchTerm = name.lowercased()
-                    
+
                     // Check if these are versioned packages of the search term
                     let isVersioned1 = name1.hasPrefix("\(searchTerm)@")
                     let isVersioned2 = name2.hasPrefix("\(searchTerm)@")
-                    
+
                     // Prefer versioned packages for generic names
                     if isVersioned1 && !isVersioned2 { return true }
                     if !isVersioned1 && isVersioned2 { return false }
-                    
+
                     // If both are versioned packages, sort by version (descending)
                     if isVersioned1 && isVersioned2 {
                         return result1 > result2 // String comparison works for most version formats
                     }
-                    
+
                     // Otherwise prefer results that start with the search term
                     let starts1 = name1.hasPrefix(searchTerm)
                     let starts2 = name2.hasPrefix(searchTerm)
-                    
+
                     if starts1 && !starts2 { return true }
                     if !starts1 && starts2 { return false }
-                    
+
                     // Then prefer shorter names (more specific)
                     if name1.count != name2.count {
                         return name1.count < name2.count
                     }
-                    
+
                     return name1 < name2
                 }
-                
+
                 for result in sortedResults {
                     print("  \(result)")
                 }
-                
+
                 // Show specific suggestion for common generic names
                 let suggestion = getSuggestionForGenericName(name, from: Array(sortedResults))
                 if let suggestion = suggestion {
@@ -1210,38 +1210,38 @@ extension Velo {
             }
             print("")
         }
-        
+
         /// Search for versioned packages when looking for common generic names
         private func searchForVersionedPackages(name: String, tapManager: TapManager) -> [String] {
             let commonGenericNames = ["python", "node", "mysql", "postgresql", "postgres", "openssl"]
-            
+
             guard commonGenericNames.contains(name.lowercased()) else {
                 return []
             }
-            
+
             // Search for versioned packages using the @ symbol
             let versionedSearchTerm = "\(name)@"
             return tapManager.searchFormulae(versionedSearchTerm, includeDescriptions: false)
         }
-        
+
         /// Get a specific suggestion for common generic package names
         private func getSuggestionForGenericName(_ name: String, from results: [String]) -> String? {
             let genericMappings: [String: String] = [
                 "python": "python@",
-                "node": "node@", 
+                "node": "node@",
                 "mysql": "mysql@",
                 "postgresql": "postgresql@",
                 "postgres": "postgresql@",
                 "openssl": "openssl@"
             ]
-            
+
             guard let prefix = genericMappings[name.lowercased()] else {
                 return results.first // Default to first result
             }
-            
+
             // Find the latest version of the requested package type
             let versionedResults = results.filter { $0.lowercased().hasPrefix(prefix) }
-            
+
             // Sort by version (latest first) - this is a simple string sort which works for most cases
             let sortedVersions = versionedResults.sorted { version1, version2 in
                 // Extract version numbers for basic comparison
@@ -1249,10 +1249,10 @@ extension Velo {
                 let v2 = version2.replacingOccurrences(of: prefix, with: "")
                 return v1 > v2 // Latest first
             }
-            
+
             return sortedVersions.first ?? results.first
         }
-        
+
         /// Check if any dependencies are missing for the given formula
         private func checkMissingDependencies(
             for formula: Formula,
@@ -1260,10 +1260,10 @@ extension Velo {
             pathHelper: PathHelper
         ) async throws -> [String] {
             var missingDeps: [String] = []
-            
+
             // Only check runtime dependencies
             let runtimeDependencies = formula.dependencies.filter { $0.type == .required }
-            
+
             for dep in runtimeDependencies {
                 // Check if this dependency is installed
                 if !pathHelper.isPackageInstalled(dep.name) {
@@ -1273,10 +1273,10 @@ extension Velo {
                     }
                 }
             }
-            
+
             return missingDeps
         }
-        
+
         /// Install only the missing dependencies for a package
         private func installMissingDependencies(
             _ missingDeps: [String],
@@ -1285,7 +1285,7 @@ extension Velo {
         ) async throws {
             for depName in missingDeps {
                 print("🔧 Installing missing dependency: \(depName)")
-                
+
                 // Install the dependency directly using the existing installation logic
                 try await installPackage(
                     name: depName,
@@ -1391,27 +1391,27 @@ private class CLIProgress: DownloadProgress, InstallationProgress {
 
 private class VisualParallelDownloadProgress: ParallelDownloadProgress {
     private let tracker: DownloadProgressTracker
-    
+
     init(tracker: DownloadProgressTracker) {
         self.tracker = tracker
     }
-    
+
     func downloadDidStart(totalPackages: Int, totalSize: Int64?) {
         tracker.startDownloads()
     }
-    
+
     func packageDownloadDidStart(package: String, size: Int64?) {
         tracker.startPackageDownload(package, totalSize: size)
     }
-    
+
     func packageDownloadDidUpdate(package: String, bytesDownloaded: Int64, totalBytes: Int64?) {
         tracker.updatePackageDownload(package, bytesDownloaded: bytesDownloaded, totalBytes: totalBytes)
     }
-    
+
     func packageDownloadDidComplete(package: String, success: Bool, error: Error?) {
         tracker.completePackageDownload(package, success: success)
     }
-    
+
     func allDownloadsDidComplete(successful: Int, failed: Int) {
         tracker.completeAllDownloads()
     }
@@ -1420,38 +1420,38 @@ private class VisualParallelDownloadProgress: ParallelDownloadProgress {
 private class VisualInstallationProgress: InstallationProgress {
     private let tracker: InstallationProgressTracker
     private let packageName: String
-    
+
     init(tracker: InstallationProgressTracker, packageName: String) {
         self.tracker = tracker
         self.packageName = packageName
     }
-    
+
     func installationDidStart(package: String, version: String) {
         // Already handled by InstallationProgressTracker
     }
-    
+
     func extractionDidStart(totalFiles: Int?) {
         tracker.updatePhase("Extracting \(packageName)")
     }
-    
+
     func extractionDidUpdate(filesExtracted: Int, totalFiles: Int?) {
         if let total = totalFiles {
             tracker.updatePhase("Extracting \(packageName) (\(filesExtracted)/\(total))")
         }
     }
-    
+
     func linkingDidStart(binariesCount: Int) {
         tracker.updatePhase("Linking \(packageName) (\(binariesCount) binaries)")
     }
-    
+
     func linkingDidUpdate(binariesLinked: Int, totalBinaries: Int) {
         tracker.updatePhase("Linking \(packageName) (\(binariesLinked)/\(totalBinaries))")
     }
-    
+
     func installationDidComplete(package: String) {
         // Handled by InstallationProgressTracker
     }
-    
+
     func installationDidFail(package: String, error: Error) {
         tracker.updatePhase("Failed to install \(packageName): \(error.localizedDescription)")
     }

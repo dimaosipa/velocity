@@ -38,16 +38,16 @@ public struct Formula: Codable, Equatable {
             case arm64_ventura
             case arm64_sonoma
             case arm64_sequoia
-            
+
             // Intel (x86_64) platforms - for Rosetta compatibility
             case monterey
-            case ventura 
+            case ventura
             case sonoma
             case sequoia
             case big_sur
             case catalina
             case mojave
-            
+
             // Universal platforms
             case all
 
@@ -63,7 +63,7 @@ public struct Formula: Codable, Equatable {
                 case .all: return "all"
                 }
             }
-            
+
             var architecture: String {
                 switch self {
                 case .arm64_monterey, .arm64_ventura, .arm64_sonoma, .arm64_sequoia:
@@ -80,14 +80,14 @@ public struct Formula: Codable, Equatable {
                 if self == .all {
                     return true
                 }
-                
+
                 // Check if current macOS version is compatible
                 let currentVersion = ProcessInfo.processInfo.operatingSystemVersion
                 let requiredMajor = Int(osVersion.split(separator: ".").first.map(String.init) ?? "12") ?? 12
-                
+
                 // macOS version compatibility
                 let isVersionCompatible = currentVersion.majorVersion >= requiredMajor
-                
+
                 // Architecture compatibility
                 #if arch(arm64)
                 // Apple Silicon can run both arm64 and x86_64 (via Rosetta)
@@ -100,7 +100,7 @@ public struct Formula: Codable, Equatable {
                 return isVersionCompatible && architecture == "universal"
                 #endif
             }
-            
+
             /// Priority for bottle selection (higher is better)
             public var priority: Int {
                 #if arch(arm64)
@@ -170,7 +170,7 @@ public struct Formula: Codable, Equatable {
     public var preferredBottle: Bottle? {
         // Filter compatible bottles
         let compatible = bottles.filter { $0.platform.isCompatible }
-        
+
         // If no compatible bottles, return nil
         guard !compatible.isEmpty else {
             return nil
@@ -184,12 +184,12 @@ public struct Formula: Codable, Equatable {
             return bottle1.platform.osVersion > bottle2.platform.osVersion
         }.first
     }
-    
+
     /// Get the best available bottle (may include Rosetta compatibility)
     public var bestAvailableBottle: Bottle? {
         return preferredBottle
     }
-    
+
     /// Check if we can run this package via Rosetta (x86_64 on Apple Silicon)
     public var hasRosettaCompatibleBottle: Bool {
         #if arch(arm64)

@@ -46,7 +46,7 @@ public enum VeloError: LocalizedError {
 
     // Update errors
     case updateCheckFailed(reason: String)
-    
+
     // Receipt errors
     case receiptNotFound(package: String, version: String)
 

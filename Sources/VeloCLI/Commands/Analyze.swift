@@ -37,40 +37,40 @@ extension Velo.Analyze {
         private func runAsync() async throws {
             let context = ProjectContext()
             let pathHelper = context.getPathHelper(preferLocal: false) // Always use global for analysis
-            
+
             OSLogger.shared.info("🔍 Analyzing post_install scripts from installed packages...")
-            
+
             // Ensure analysis directory exists
             let analysisDir = pathHelper.veloHome.appendingPathComponent("analysis")
             let postInstallDir = analysisDir.appendingPathComponent("post-install")
             try pathHelper.ensureDirectoryExists(at: analysisDir)
             try pathHelper.ensureDirectoryExists(at: postInstallDir)
-            
+
             // Get all installed packages
             guard FileManager.default.fileExists(atPath: pathHelper.cellarPath.path) else {
                 OSLogger.shared.info("No packages installed to analyze")
                 return
             }
-            
+
             var packages = try FileManager.default.contentsOfDirectory(atPath: pathHelper.cellarPath.path)
                 .filter { !$0.hasPrefix(".") }
                 .sorted()
-            
+
             // Apply limit if specified
             if let limit = limit {
                 packages = Array(packages.prefix(limit))
             }
-            
+
             if packages.isEmpty {
                 OSLogger.shared.info("No packages installed to analyze")
                 return
             }
-            
+
             OSLogger.shared.info("📦 Found \(packages.count) installed packages")
-            
+
             var analysisResults: [PackageAnalysis] = []
             let formulaCache = FormulaCache(pathHelper: pathHelper)
-            
+
             for (index, packageName) in packages.enumerated() {
                 if verbose {
                     OSLogger.shared.info("Analyzing \(index + 1)/\(packages.count): \(packageName)")
@@ -78,7 +78,7 @@ extension Velo.Analyze {
                 do {
                     if let analysis = try await analyzePackage(packageName, formulaCache: formulaCache, postInstallDir: postInstallDir) {
                         analysisResults.append(analysis)
-                        
+
                         if verbose {
                             OSLogger.shared.info("✅ \(packageName): \(analysis.hasPostInstall ? "has post_install" : "no post_install")")
                             if analysis.hasPostInstall && verbose {
@@ -90,20 +90,20 @@ extension Velo.Analyze {
                     OSLogger.shared.warning("⚠️ Failed to analyze \(packageName): \(error.localizedDescription)")
                 }
             }
-            
+
             // Generate summary report
             try generateSummaryReport(results: analysisResults, outputDir: analysisDir)
-            
+
             // Show results
             let withPostInstall = analysisResults.filter { $0.hasPostInstall }
             let withoutPostInstall = analysisResults.filter { !$0.hasPostInstall }
-            
+
             OSLogger.shared.info("")
             OSLogger.shared.info("📊 Analysis Results:")
             OSLogger.shared.info("   📄 Packages with post_install: \(withPostInstall.count)")
             OSLogger.shared.info("   📄 Packages without post_install: \(withoutPostInstall.count)")
             OSLogger.shared.info("   📄 Total analyzed: \(analysisResults.count)")
-            
+
             if !withPostInstall.isEmpty {
                 OSLogger.shared.info("")
                 OSLogger.shared.info("📝 Packages with post_install scripts:")
@@ -114,7 +114,7 @@ extension Velo.Analyze {
                     OSLogger.shared.info("   ... and \(withPostInstall.count - 10) more")
                 }
             }
-            
+
             if includeEmpty && !withoutPostInstall.isEmpty {
                 OSLogger.shared.info("")
                 OSLogger.shared.info("📝 Packages without post_install scripts:")
@@ -125,22 +125,22 @@ extension Velo.Analyze {
                     OSLogger.shared.info("   ... and \(withoutPostInstall.count - 10) more")
                 }
             }
-            
+
             OSLogger.shared.info("")
             OSLogger.shared.info("💾 Analysis saved to: \(postInstallDir.path)")
             OSLogger.shared.info("📋 Summary report: \(analysisDir.appendingPathComponent("post-install-summary.txt").path)")
         }
-        
+
         private func analyzePackage(_ packageName: String, formulaCache: FormulaCache, postInstallDir: URL) async throws -> PackageAnalysis? {
             // Try to load formula from cache first
             if let formula = try formulaCache.get(packageName) {
                 return createAnalysis(for: packageName, formula: formula, postInstallDir: postInstallDir)
             }
-            
+
             // If not in cache, try to load from tap files directly
             let pathHelper = PathHelper.shared
             let tapsDir = pathHelper.tapsPath
-            
+
             // Look for formula file in taps (homebrew/core format with letter directories)
             let firstLetter = String(packageName.lowercased().prefix(1))
             let possiblePaths = [
@@ -150,17 +150,17 @@ extension Velo.Analyze {
                 tapsDir.appendingPathComponent("homebrew/core/Formula/\(packageName).rb"),
                 tapsDir.appendingPathComponent("homebrew/core/Formula/\(packageName.lowercased()).rb")
             ]
-            
+
             for formulaPath in possiblePaths {
                 if FileManager.default.fileExists(atPath: formulaPath.path) {
                     do {
                         let formulaContent = try String(contentsOf: formulaPath, encoding: String.Encoding.utf8)
                         let parser = FormulaParser()
                         let formula = try parser.parse(rubyContent: formulaContent, formulaName: packageName)
-                        
+
                         // Cache the parsed formula for future use
                         try formulaCache.set(formula)
-                        
+
                         return createAnalysis(for: packageName, formula: formula, postInstallDir: postInstallDir)
                     } catch {
                         // Continue to next path
@@ -168,10 +168,10 @@ extension Velo.Analyze {
                     }
                 }
             }
-            
+
             return nil
         }
-        
+
         private func createAnalysis(for packageName: String, formula: Formula, postInstallDir: URL) -> PackageAnalysis? {
             let analysis = PackageAnalysis(
                 packageName: packageName,
@@ -180,7 +180,7 @@ extension Velo.Analyze {
                 scriptLines: formula.postInstallScript?.components(separatedBy: CharacterSet.newlines).count ?? 0,
                 scriptPreview: String((formula.postInstallScript ?? "").prefix(200))
             )
-            
+
             // Save script to file if it exists
             if let script = formula.postInstallScript, !script.isEmpty {
                 do {
@@ -197,16 +197,16 @@ extension Velo.Analyze {
                     // Continue even if we can't write the file
                 }
             }
-            
+
             return analysis
         }
-        
+
         private func generateSummaryReport(results: [PackageAnalysis], outputDir: URL) throws {
             let summaryFile = outputDir.appendingPathComponent("post-install-summary.txt")
-            
+
             let withPostInstall = results.filter { $0.hasPostInstall }
             let withoutPostInstall = results.filter { !$0.hasPostInstall }
-            
+
             var summary = """
 # Post-Install Script Analysis Report
 Generated on: \(Date())
@@ -219,7 +219,7 @@ Generated on: \(Date())
 ## Packages with post_install scripts:
 
 """
-            
+
             for result in withPostInstall.sorted(by: { $0.scriptLines > $1.scriptLines }) {
                 summary += "- \(result.packageName): \(result.scriptLines) lines\n"
                 if !result.scriptPreview.isEmpty {
@@ -227,14 +227,14 @@ Generated on: \(Date())
                 }
                 summary += "\n"
             }
-            
+
             if !withoutPostInstall.isEmpty {
                 summary += "\n## Packages without post_install scripts:\n\n"
                 for result in withoutPostInstall {
                     summary += "- \(result.packageName)\n"
                 }
             }
-            
+
             summary += """
 
 ## Analysis Notes
@@ -244,7 +244,7 @@ Generated on: \(Date())
 - Common patterns: directory creation, symlinks, service setup, database initialization
 
 """
-            
+
             try summary.write(to: summaryFile, atomically: true, encoding: String.Encoding.utf8)
         }
     }

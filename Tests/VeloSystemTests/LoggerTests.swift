@@ -59,7 +59,7 @@ final class LoggerTests: XCTestCase {
         // OSLogger filtering is handled by the system
         // Just verify all methods work
         logger.verbose("Verbose message")
-        logger.info("Info message") 
+        logger.info("Info message")
         logger.warning("Warning message")
         logger.error("Error message")
         XCTAssertTrue(true)

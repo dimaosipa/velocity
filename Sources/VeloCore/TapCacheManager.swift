@@ -6,7 +6,7 @@ public struct TapCacheMetadata: Codable {
     public let lastCommit: String?
     public let updateDuration: TimeInterval
     public let searchIndexBuilt: Date?
-    
+
     public init(lastUpdated: Date = Date(), lastCommit: String? = nil, updateDuration: TimeInterval = 0, searchIndexBuilt: Date? = nil) {
         self.lastUpdated = lastUpdated
         self.lastCommit = lastCommit
@@ -18,31 +18,31 @@ public struct TapCacheMetadata: Codable {
 public class TapCacheManager {
     private let pathHelper: PathHelper
     private var cache: [String: TapCacheMetadata] = [:]
-    
+
     public init(pathHelper: PathHelper = PathHelper.shared) {
         self.pathHelper = pathHelper
         loadCacheMetadata()
     }
-    
+
     // MARK: - Public Interface
-    
+
     public func isCacheFresh(for tapName: String, maxAge: TimeInterval) -> Bool {
         guard let metadata = cache[tapName] else {
             return false // No cache = not fresh
         }
-        
+
         let age = Date().timeIntervalSince(metadata.lastUpdated)
         return age < maxAge
     }
-    
+
     public func getCacheAge(for tapName: String) -> TimeInterval? {
         guard let metadata = cache[tapName] else {
             return nil
         }
-        
+
         return Date().timeIntervalSince(metadata.lastUpdated)
     }
-    
+
     public func updateCacheMetadata(for tapName: String, lastCommit: String? = nil, updateDuration: TimeInterval = 0) {
         let currentMetadata = cache[tapName]
         let metadata = TapCacheMetadata(
@@ -51,47 +51,47 @@ public class TapCacheManager {
             updateDuration: updateDuration,
             searchIndexBuilt: currentMetadata?.searchIndexBuilt  // Preserve existing search index timestamp
         )
-        
+
         cache[tapName] = metadata
         saveCacheMetadata()
-        
+
         OSLogger.shared.verbose("Updated cache metadata for \(tapName)", category: OSLogger.shared.parser)
     }
-    
+
     public func getCacheStatus(for tapName: String) -> String {
         guard let metadata = cache[tapName] else {
             return "No cache data"
         }
-        
+
         let age = Date().timeIntervalSince(metadata.lastUpdated)
         let ageMinutes = Int(age / 60)
         let ageHours = Int(age / 3600)
-        
+
         if ageHours > 0 {
             return "Updated \(ageHours) hours ago"
         } else {
             return "Updated \(ageMinutes) minutes ago"
         }
     }
-    
+
     public func clearCache() {
         cache.removeAll()
         saveCacheMetadata()
         OSLogger.shared.verbose("Cleared tap cache metadata", category: OSLogger.shared.parser)
     }
-    
+
     // MARK: - Search Index Cache Management
-    
+
     public func isSearchIndexFresh(for tapName: String) -> Bool {
         guard let metadata = cache[tapName],
               let searchIndexBuilt = metadata.searchIndexBuilt else {
             return false  // No search index built yet
         }
-        
+
         // Search index is fresh if it was built after the tap was last updated
         return searchIndexBuilt >= metadata.lastUpdated
     }
-    
+
     public func updateSearchIndexTimestamp(for tapName: String) {
         guard let currentMetadata = cache[tapName] else {
             // Create new metadata entry if tap doesn't exist
@@ -100,29 +100,29 @@ public class TapCacheManager {
             saveCacheMetadata()
             return
         }
-        
+
         let metadata = TapCacheMetadata(
             lastUpdated: currentMetadata.lastUpdated,
             lastCommit: currentMetadata.lastCommit,
             updateDuration: currentMetadata.updateDuration,
             searchIndexBuilt: Date()
         )
-        
+
         cache[tapName] = metadata
         saveCacheMetadata()
-        
+
         OSLogger.shared.verbose("Updated search index timestamp for \(tapName)", category: OSLogger.shared.parser)
     }
-    
+
     // MARK: - Private Methods
-    
+
     private func loadCacheMetadata() {
         let metadataFile = pathHelper.tapMetadataFile
-        
+
         guard FileManager.default.fileExists(atPath: metadataFile.path) else {
             return
         }
-        
+
         do {
             let data = try Data(contentsOf: metadataFile)
             let decoder = JSONDecoder()
@@ -135,18 +135,18 @@ public class TapCacheManager {
             cache = [:]
         }
     }
-    
+
     private func saveCacheMetadata() {
         let metadataFile = pathHelper.tapMetadataFile
-        
+
         do {
             // Ensure cache directory exists
             try pathHelper.ensureDirectoryExists(at: pathHelper.cachePath)
-            
+
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .iso8601
             encoder.outputFormatting = .prettyPrinted
-            
+
             let data = try encoder.encode(cache)
             try data.write(to: metadataFile)
         } catch {

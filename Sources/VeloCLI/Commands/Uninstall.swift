@@ -33,7 +33,7 @@ extension Velo {
                 print("❌ No packages specified for uninstall")
                 throw ExitCode.failure
             }
-            
+
             // Remove duplicates while preserving order
             var uniquePackages: [String] = []
             var seen = Set<String>()
@@ -43,7 +43,7 @@ extension Velo {
                     seen.insert(pkg)
                 }
             }
-            
+
             if uniquePackages.count != packages.count {
                 let duplicates = packages.count - uniquePackages.count
                 print("ℹ️  Removed \(duplicates) duplicate package(s)")
@@ -65,7 +65,7 @@ extension Velo {
                 if totalPackages > 1 {
                     print("\n[\(packageNumber)/\(totalPackages)] Uninstalling \(packageName)...")
                 }
-                
+
                 do {
                     try await uninstallSinglePackage(packageName)
                     successCount += 1
@@ -75,7 +75,7 @@ extension Velo {
                     // Continue with next package instead of stopping
                 }
             }
-            
+
             // Show final summary (only for multiple packages)
             if totalPackages > 1 {
                 print("\n" + String(repeating: "=", count: 50))
@@ -89,7 +89,7 @@ extension Velo {
                 }
             }
         }
-        
+
         /// Uninstall a single package with all the existing logic
         private func uninstallSinglePackage(_ package: String) async throws {
             let installer = Installer()
@@ -105,26 +105,26 @@ extension Velo {
                     OSLogger.shared.error("Package '\(package)' version '\(specificVersion)' is not installed")
                     throw ExitCode.failure
                 }
-                
+
                 // Check receipt to see if other packages depend on this
                 if let receipt = try? receiptManager.loadReceipt(for: package, version: specificVersion),
                    !receipt.requestedBy.isEmpty {
                     // This package is a dependency of others
                     print("ℹ️  \(package) is a dependency of: \(receipt.requestedBy.joined(separator: ", "))")
-                    
+
                     if receipt.symlinksCreated {
                         print("Removing symlinks only...")
-                        
+
                         // Remove symlinks
                         let packageDir = pathHelper.packagePath(for: package, version: specificVersion)
                         try installer.removeSymlinksForPackage(package: package, version: specificVersion, packageDir: packageDir)
-                        
+
                         // Update receipt
                         try receiptManager.updateReceipt(for: package, version: specificVersion) { receipt in
                             receipt.installedAs = .dependency
                             receipt.symlinksCreated = false
                         }
-                        
+
                         OSLogger.shared.success("Removed symlinks for \(package) v\(specificVersion). Package remains installed as dependency.")
                         return
                     } else {
@@ -153,10 +153,10 @@ extension Velo {
 
                 do {
                     try installer.uninstallVersion(package: package, version: specificVersion)
-                    
+
                     // Delete receipt
                     try? receiptManager.deleteReceipt(for: package, version: specificVersion)
-                    
+
                     OSLogger.shared.success("\(package) v\(specificVersion) uninstalled successfully!")
 
                 } catch {
@@ -176,11 +176,11 @@ extension Velo {
 
                 // Get installed versions
                 let versions = pathHelper.installedVersions(for: package)
-                
+
                 // Check receipts for all versions to see if any are dependencies
                 var isDependency = false
                 var dependents: Set<String> = []
-                
+
                 for version in versions {
                     if let receipt = try? receiptManager.loadReceipt(for: package, version: version),
                        !receipt.requestedBy.isEmpty {
@@ -188,10 +188,10 @@ extension Velo {
                         dependents = dependents.union(receipt.requestedBy)
                     }
                 }
-                
+
                 if isDependency {
                     print("ℹ️  \(package) is a dependency of: \(dependents.sorted().joined(separator: ", "))")
-                    
+
                     // Check if any version has symlinks
                     var hasSymlinks = false
                     for version in versions {
@@ -201,22 +201,22 @@ extension Velo {
                             break
                         }
                     }
-                    
+
                     if hasSymlinks {
                         print("Removing symlinks only...")
-                        
+
                         // Remove symlinks for all versions
                         for version in versions {
                             let packageDir = pathHelper.packagePath(for: package, version: version)
                             try installer.removeSymlinksForPackage(package: package, version: version, packageDir: packageDir)
-                            
+
                             // Update receipt
                             try? receiptManager.updateReceipt(for: package, version: version) { receipt in
                                 receipt.installedAs = .dependency
                                 receipt.symlinksCreated = false
                             }
                         }
-                        
+
                         OSLogger.shared.success("Removed symlinks for \(package). Package remains installed as dependency.")
                         return
                     } else {
@@ -242,12 +242,12 @@ extension Velo {
 
                 do {
                     try installer.uninstall(package: package)
-                    
+
                     // Delete all receipts
                     for version in versions {
                         try? receiptManager.deleteReceipt(for: package, version: version)
                     }
-                    
+
                     OSLogger.shared.success("\(package) uninstalled successfully!")
 
                 } catch {

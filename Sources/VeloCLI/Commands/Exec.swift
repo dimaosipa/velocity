@@ -94,7 +94,7 @@ extension Velo {
             process.standardInput = FileHandle.standardInput
             process.standardOutput = FileHandle.standardOutput
             process.standardError = FileHandle.standardError
-            
+
             // Ensure the process runs in its own process group for better signal handling
             // This helps with interactive commands and proper terminal control
             process.qualityOfService = .userInteractive
@@ -106,7 +106,7 @@ extension Velo {
             do {
                 try process.run()
                 process.waitUntilExit()
-                
+
                 // Clean up signal handling
                 signalForwarder.cleanupSignalHandling()
 
@@ -132,47 +132,47 @@ extension Velo {
 private class SignalForwarder {
     private let process: Process
     private var signalSources: [DispatchSourceSignal] = []
-    
+
     init(process: Process) {
         self.process = process
     }
-    
+
     func setupSignalHandling() {
         // Handle common signals that should be forwarded to the child process
         let signalsToForward = [SIGINT, SIGTERM, SIGUSR1, SIGUSR2]
-        
+
         for signal in signalsToForward {
             let signalSource = DispatchSource.makeSignalSource(signal: signal, queue: .main)
-            
+
             signalSource.setEventHandler { [weak self] in
                 self?.forwardSignal(signal)
             }
-            
+
             signalSource.resume()
             signalSources.append(signalSource)
-            
+
             // Ignore the signal in the parent process so we can handle it manually
             Darwin.signal(signal, SIG_IGN)
         }
     }
-    
+
     func cleanupSignalHandling() {
         // Cancel all signal sources
         for signalSource in signalSources {
             signalSource.cancel()
         }
         signalSources.removeAll()
-        
+
         // Restore default signal handling
         Darwin.signal(SIGINT, SIG_DFL)
         Darwin.signal(SIGTERM, SIG_DFL)
         Darwin.signal(SIGUSR1, SIG_DFL)
         Darwin.signal(SIGUSR2, SIG_DFL)
     }
-    
+
     private func forwardSignal(_ signal: Int32) {
         guard process.isRunning else { return }
-        
+
         // Forward the signal to the child process
         // Use negative PID to send signal to the process group
         kill(-process.processIdentifier, signal)

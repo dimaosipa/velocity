@@ -274,26 +274,26 @@ public final class FormulaIndex {
             return nameIndex[name.lowercased()]
         }
     }
-    
+
     // MARK: - Cache Management
-    
+
     public func loadIndexFromCache(for tapName: String) -> Bool {
         return queue.sync {
             let cacheFile = pathHelper.searchIndexCacheFile(for: tapName)
-            
+
             guard FileManager.default.fileExists(atPath: cacheFile.path) else {
                 OSLogger.shared.verbose("No search index cache found for \(tapName)", category: OSLogger.shared.parser)
                 return false
             }
-            
+
             do {
                 let data = try Data(contentsOf: cacheFile)
                 let searchData = try JSONDecoder().decode(SearchIndexData.self, from: data)
-                
+
                 // Convert back from [String] to Set<String>
                 nameIndex = searchData.nameIndex
                 descriptionIndex = searchData.descriptionIndex.mapValues { Set($0) }
-                
+
                 OSLogger.shared.info("Loaded search index from cache for \(tapName)", category: OSLogger.shared.parser)
                 return true
             } catch {
@@ -304,28 +304,28 @@ public final class FormulaIndex {
             }
         }
     }
-    
+
     public func saveIndexToCache(for tapName: String) {
         queue.sync {
             let cacheFile = pathHelper.searchIndexCacheFile(for: tapName)
-            
+
             do {
                 // Ensure cache directory exists
                 try pathHelper.ensureDirectoryExists(at: pathHelper.cachePath)
-                
+
                 // Convert Set<String> to [String] for Codable
                 let searchData = SearchIndexData(
                     nameIndex: nameIndex,
                     descriptionIndex: descriptionIndex.mapValues { Array($0) },
                     buildTimestamp: Date()
                 )
-                
+
                 let data = try JSONEncoder().encode(searchData)
                 try data.write(to: cacheFile)
-                
+
                 // Update the tap cache manager with search index timestamp
                 tapCacheManager.updateSearchIndexTimestamp(for: tapName)
-                
+
                 OSLogger.shared.info("Saved search index to cache for \(tapName)", category: OSLogger.shared.parser)
             } catch {
                 OSLogger.shared.parserWarning("Failed to save search index cache: \(error)")
@@ -341,7 +341,7 @@ public final class TapManager {
     private let cache: FormulaCacheProtocol
     private let index: FormulaIndex
     private let cacheManager: TapCacheManager
-    
+
     // Static flag to prevent concurrent tap updates
     private static var isUpdatingTaps = false
     private static let updateQueue = DispatchQueue(label: "com.velo.tap-update", attributes: .concurrent)
@@ -362,12 +362,12 @@ public final class TapManager {
             TapManager.isUpdatingTaps = true
             return true
         }
-        
+
         if !shouldUpdate {
             OSLogger.shared.info("Tap update already in progress, skipping")
             return
         }
-        
+
         defer {
             TapManager.updateQueue.sync {
                 TapManager.isUpdatingTaps = false
@@ -400,14 +400,14 @@ public final class TapManager {
     public func buildFullIndex() async throws {
         // Check if we can load from cache for the primary tap (homebrew/core)
         let primaryTapName = "homebrew/core"
-        
+
         if cacheManager.isSearchIndexFresh(for: primaryTapName) {
             if index.loadIndexFromCache(for: primaryTapName) {
                 OSLogger.shared.info("Search index loaded from cache for \(primaryTapName)")
                 return
             }
         }
-        
+
         OSLogger.shared.info("Building full formula index")
 
         let parser = FormulaParser()
@@ -451,7 +451,7 @@ public final class TapManager {
         // Update cache and index
         try cache.preload(formulae: formulae)
         try index.buildIndex(from: formulae)
-        
+
         // Save the search index to cache
         index.saveIndexToCache(for: primaryTapName)
 
@@ -618,7 +618,7 @@ public final class TapManager {
 
     private func gitPullWithTimeout(at path: URL, timeoutSeconds: Int) async throws {
         OSLogger.shared.info("Downloading tap updates (this may take up to \(timeoutSeconds) seconds)")
-        
+
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
         process.arguments = ["pull", "--ff-only"]
@@ -634,20 +634,20 @@ public final class TapManager {
         let start = Date()
         var lastProgressTime = start
         let progressReporter = ProgressReporter.shared
-        
+
         while process.isRunning {
             let elapsed = Date().timeIntervalSince(start)
-            
+
             // Update progress every 2 seconds
             if Date().timeIntervalSince(lastProgressTime) > 2 {
                 let progress = min(elapsed / Double(timeoutSeconds), 0.95) // Cap at 95% until completion
                 progressReporter.updateProgress(progress, message: "📥 Updating package database (\(Int(elapsed))s)")
                 lastProgressTime = Date()
             }
-            
+
             // Sleep briefly to avoid busy-waiting
             try await Task.sleep(nanoseconds: 100_000_000) // 0.1 seconds
-            
+
             if elapsed > TimeInterval(timeoutSeconds) {
                 process.terminate()
                 // Give it a moment to terminate gracefully
@@ -746,7 +746,7 @@ public final class TapManager {
     public func findFormula(_ name: String) throws -> Formula? {
         return try findFormula(name, version: nil)
     }
-    
+
     public func findFormula(_ name: String, version: String?) throws -> Formula? {
         // If version is specified, first try to find a version-specific formula (e.g., python@3.11)
         if let version = version {
@@ -755,12 +755,12 @@ public final class TapManager {
                 return formula
             }
         }
-        
+
         // Try to find the main formula
         guard let formula = try findExactFormula(name) else {
             return nil
         }
-        
+
         // If version was specified, validate that it matches
         if let requestedVersion = version {
             if !isVersionCompatible(formula.version, with: requestedVersion) {
@@ -771,10 +771,10 @@ public final class TapManager {
                 )
             }
         }
-        
+
         return formula
     }
-    
+
     private func findExactFormula(_ name: String) throws -> Formula? {
         // Try exact name first from cache
         if let formula = try cache.get(name) {
@@ -791,7 +791,7 @@ public final class TapManager {
         // If not in cache, try to parse it directly from the tap
         return try parseFormulaDirectly(name)
     }
-    
+
     private func isVersionCompatible(_ availableVersion: String, with requestedVersion: String) -> Bool {
         // For now, do exact string matching
         // This could be enhanced to support semantic versioning logic

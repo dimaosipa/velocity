@@ -158,10 +158,10 @@ extension Velo {
             for (displayName, profilePath) in profileFiles {
                 if FileManager.default.fileExists(atPath: profilePath.path) {
                     let content = try String(contentsOf: profilePath)
-                    
+
                     // Parse and update PATH more intelligently
                     let updatedContent = try updatePathInShellProfile(content: content, veloPath: veloPath)
-                    
+
                     if updatedContent != content {
                         try updatedContent.write(to: profilePath, atomically: true, encoding: .utf8)
                         profilesUpdated.append(displayName)
@@ -190,40 +190,40 @@ extension Velo {
             let lines = content.components(separatedBy: .newlines)
             var updatedLines: [String] = []
             var foundVeloPath = false
-            
+
             // First pass: analyze existing PATH exports and remove old Velo entries
             for line in lines {
                 let trimmedLine = line.trimmingCharacters(in: .whitespaces)
-                
+
                 // Skip Velo installer comment lines
                 if trimmedLine.contains("# Added by Velo installer") {
                     continue
                 }
-                
+
                 // Check for PATH export lines
                 if trimmedLine.hasPrefix("export PATH=") || trimmedLine.hasPrefix("PATH=") {
                     // Parse PATH to see if it contains Velo path
                     if let pathValue = extractPathValue(from: trimmedLine) {
                         let pathComponents = pathValue.components(separatedBy: ":")
-                        
+
                         // Check if Velo path is present
                         let veloPathVariants = [veloPath, "$HOME/.velo/bin", "~/.velo/bin"]
                         let hasVeloPath = pathComponents.contains { component in
                             veloPathVariants.contains(component)
                         }
-                        
+
                         if hasVeloPath {
                             foundVeloPath = true
-                            
+
                             // Remove existing Velo paths and reconstruct
                             let filteredComponents = pathComponents.filter { component in
                                 !veloPathVariants.contains(component)
                             }
-                            
+
                             // Add Velo path at the beginning
                             let newPathComponents = [veloPath] + filteredComponents
                             let newPathValue = newPathComponents.joined(separator: ":")
-                            
+
                             // Reconstruct the export line
                             if trimmedLine.hasPrefix("export PATH=") {
                                 updatedLines.append("export PATH=\"\(newPathValue)\"")
@@ -243,7 +243,7 @@ extension Velo {
                     updatedLines.append(line)
                 }
             }
-            
+
             // If no PATH export with Velo was found, add it
             if !foundVeloPath {
                 var newContent = updatedLines.joined(separator: "\n")
@@ -253,14 +253,14 @@ extension Velo {
                 newContent += "\n# Added by Velo installer\nexport PATH=\"\(veloPath):$PATH\"\n"
                 return newContent
             }
-            
+
             // If Velo path was found and properly positioned, return updated content
             return updatedLines.joined(separator: "\n")
         }
-        
+
         private func extractPathValue(from line: String) -> String? {
             let trimmedLine = line.trimmingCharacters(in: .whitespaces)
-            
+
             // Handle both export PATH="..." and PATH="..." formats
             let patterns = [
                 #"^export PATH="(.+)"$"#,
@@ -268,7 +268,7 @@ extension Velo {
                 #"^PATH="(.+)"$"#,
                 #"^PATH=(.+)$"#
             ]
-            
+
             for pattern in patterns {
                 if let regex = try? NSRegularExpression(pattern: pattern, options: []),
                    let match = regex.firstMatch(in: trimmedLine, options: [], range: NSRange(location: 0, length: trimmedLine.count)) {
@@ -277,7 +277,7 @@ extension Velo {
                     }
                 }
             }
-            
+
             return nil
         }
 

@@ -52,14 +52,14 @@ public struct FormulaParser {
         // For single quotes: desc 'content with "quotes" inside'
         let doubleQuotePattern = #"desc\s+"([^"]*)\""#
         let singleQuotePattern = #"desc\s+'([^']*)'"#
-        
+
         if let match = extractFirstMatch(pattern: doubleQuotePattern, from: content) {
             return match
         }
         if let match = extractFirstMatch(pattern: singleQuotePattern, from: content) {
             return match
         }
-        
+
         throw VeloError.formulaParseError(formula: formulaName, details: "Could not find description")
     }
 
@@ -67,14 +67,14 @@ public struct FormulaParser {
         // Handle both double and single quoted homepages
         let doubleQuotePattern = #"homepage\s+"([^"]*)\""#
         let singleQuotePattern = #"homepage\s+'([^']*)'"#
-        
+
         if let match = extractFirstMatch(pattern: doubleQuotePattern, from: content) {
             return match
         }
         if let match = extractFirstMatch(pattern: singleQuotePattern, from: content) {
             return match
         }
-        
+
         throw VeloError.formulaParseError(formula: formulaName, details: "Could not find homepage")
     }
 
@@ -131,7 +131,7 @@ public struct FormulaParser {
         if content.contains("git") && (content.contains("tag:") || content.contains("revision:")) {
             return "0000000000000000000000000000000000000000000000000000000000000000"
         }
-        
+
         // Handle SVN, Mercurial, and other VCS checkouts
         if content.contains("revision:") || content.contains("hg ") || content.contains("svn.") {
             return "0000000000000000000000000000000000000000000000000000000000000000"
@@ -142,7 +142,7 @@ public struct FormulaParser {
 
     private func extractVersion(from content: String, url: String, formulaName: String) throws -> String {
         var baseVersion: String?
-        
+
         // First try to find explicit version
         let versionPattern = #"version\s+["']([^"']+)["']"#
         if let match = extractFirstMatch(pattern: versionPattern, from: content) {
@@ -185,7 +185,7 @@ public struct FormulaParser {
                 }
             }
         }
-        
+
         guard let version = baseVersion else {
             throw VeloError.formulaParseError(formula: formulaName, details: "Could not determine version")
         }
@@ -210,7 +210,7 @@ public struct FormulaParser {
 
         for line in lines {
             let trimmedLine = line.trimmingCharacters(in: .whitespacesAndNewlines)
-            
+
             // Skip comment lines
             if trimmedLine.hasPrefix("#") {
                 continue
@@ -220,7 +220,7 @@ public struct FormulaParser {
             if trimmedLine.starts(with: "on_linux do") {
                 blockStack.append("linux")
                 continue
-            } else if trimmedLine.contains("on_bsd do") || trimmedLine.contains("on_freebsd do") || 
+            } else if trimmedLine.contains("on_bsd do") || trimmedLine.contains("on_freebsd do") ||
                       trimmedLine.contains("on_openbsd do") || trimmedLine.contains("on_netbsd do") {
                 blockStack.append("other_platform")
                 continue
@@ -263,12 +263,12 @@ public struct FormulaParser {
     /// Check if a line contains a platform-specific dependency that should be skipped on macOS
     private func shouldSkipPlatformDependency(line: String) -> Bool {
         let trimmedLine = line.trimmingCharacters(in: .whitespacesAndNewlines)
-        
+
         // Skip Linux-only dependencies
         if trimmedLine.contains("depends_on :linux") {
             return true
         }
-        
+
         // Skip other non-macOS platform dependencies
         let nonMacOSPlatforms = [":bsd", ":freebsd", ":openbsd", ":netbsd"]
         for platform in nonMacOSPlatforms {
@@ -276,7 +276,7 @@ public struct FormulaParser {
                 return true
             }
         }
-        
+
         // Keep macOS dependencies and regular string dependencies
         return false
     }
@@ -299,16 +299,16 @@ public struct FormulaParser {
         // - sha256 arm64_sonoma: "hash"
         // - sha256 cellar: :any_skip_relocation, all: "hash"
         // - sha256 sonoma: "hash" (x86_64)
-        
+
         let platformPatterns = [
             // ARM64 platforms
             #"sha256\s+(arm64_\w+):\s*["']([a-fA-F0-9]{64})["']"#,
             #"sha256\s+[^,]*,\s*(arm64_\w+):\s*["']([a-fA-F0-9]{64})["']"#,
-            
+
             // x86_64 platforms (without arm64_ prefix)
             #"sha256\s+(monterey|ventura|sonoma|sequoia|big_sur|catalina|mojave):\s*["']([a-fA-F0-9]{64})["']"#,
             #"sha256\s+[^,]*,\s*(monterey|ventura|sonoma|sequoia|big_sur|catalina|mojave):\s*["']([a-fA-F0-9]{64})["']"#,
-            
+
             // Universal/all platforms
             #"sha256\s+(all):\s*["']([a-fA-F0-9]{64})["']"#,
             #"sha256\s+[^,]*,\s*(all):\s*["']([a-fA-F0-9]{64})["']"#
@@ -427,18 +427,18 @@ public struct FormulaParser {
     private func extractPostInstall(from content: String) -> String? {
         // Look for post_install method definitions using manual parsing
         // to handle Ruby block structure properly
-        
+
         let lines = content.components(separatedBy: .newlines)
         var inPostInstall = false
         var postInstallLines: [String] = []
         var depth = 0
-        
+
         for line in lines {
             let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-            
+
             // Check for start of post_install block
             if !inPostInstall {
-                if trimmed.starts(with: "def post_install") || 
+                if trimmed.starts(with: "def post_install") ||
                    trimmed.starts(with: "post_install do") ||
                    trimmed == "post_install do" {
                     inPostInstall = true
@@ -456,16 +456,16 @@ public struct FormulaParser {
                         break
                     }
                 }
-                
+
                 // Add line to post_install content
                 postInstallLines.append(line)
             }
         }
-        
+
         if postInstallLines.isEmpty {
             return nil
         }
-        
+
         // Join lines and clean up indentation
         let script = postInstallLines.joined(separator: "\n")
         return script.trimmingCharacters(in: .whitespacesAndNewlines)
