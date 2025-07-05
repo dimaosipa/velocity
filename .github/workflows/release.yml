@@ -82,3 +82,16 @@ jobs:
             release/velo-${{ steps.get_version.outputs.VERSION }}-arm64.tar.gz.sha256
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Update Homebrew Tap
+        uses: mislav/bump-homebrew-formula-action@v2
+        with:
+          formula-name: velo
+          homebrew-tap: dimaosipa/brew
+          download-url: https://github.com/dimaosipa/velocity/releases/download/${{ steps.get_version.outputs.VERSION }}/velo-${{ steps.get_version.outputs.VERSION }}-arm64.tar.gz
+          commit-message: |
+            velo ${{ steps.get_version.outputs.VERSION }}
+            
+            Automated update from dimaosipa/velocity release
+        env:
+          COMMITTER_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}

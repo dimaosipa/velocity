@@ -383,3 +383,52 @@ jobs:
         name: velo-macos-arm64
         path: dist/velo-macos-arm64.tar.gz
         retention-days: 30
+    
+    - name: Calculate SHA256
+      id: sha256
+      run: |
+        SHA=$(shasum -a 256 dist/velo-macos-arm64.tar.gz | awk '{print $1}')
+        echo "sha256=$SHA" >> $GITHUB_OUTPUT
+        echo "SHA256: $SHA"
+    
+    # Create or update nightly pre-release for development builds
+    - name: Create/Update Nightly Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: nightly
+        name: Nightly Build
+        body: |
+          ## Nightly Build
+          
+          **⚠️ This is a development build from the main branch.**
+          
+          - Version: `${{ needs.build.outputs.version }}`
+          - Commit: ${{ github.sha }}
+          - Date: ${{ github.event.head_commit.timestamp }}
+          
+          This release is automatically updated with the latest build from the main branch.
+          For stable releases, please use the [latest release](https://github.com/dimaosipa/velocity/releases/latest).
+        prerelease: true
+        files: |
+          dist/velo-macos-arm64.tar.gz
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    
+    # Note: Updating Homebrew tap for development builds is optional
+    # Uncomment the following if you want dev builds in Homebrew
+    # This will make the dev version available via: brew install dimaosipa/brew/velo
+    
+    # - name: Update Homebrew Tap (Development)
+    #   uses: mislav/bump-homebrew-formula-action@v2
+    #   with:
+    #     formula-name: velo
+    #     homebrew-tap: dimaosipa/brew
+    #     download-url: https://github.com/dimaosipa/velocity/releases/download/nightly/velo-macos-arm64.tar.gz
+    #     commit-message: |
+    #       velo (nightly build)
+    #       
+    #       Automated update from main branch
+    #       Version: ${{ needs.build.outputs.version }}
+    #       Commit: ${{ github.sha }}
+    #   env:
+    #     COMMITTER_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
