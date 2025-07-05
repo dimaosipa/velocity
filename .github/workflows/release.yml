@@ -91,7 +91,7 @@ jobs:
         with:
           formula-name: velo
           homebrew-tap: dimaosipa/brew
-          base-branch: main
+          formula-path: Formula/velo.rb
           download-url: https://github.com/dimaosipa/velocity/releases/download/${{ steps.get_version.outputs.VERSION }}/velo-${{ steps.get_version.outputs.VERSION }}-arm64.tar.gz
           commit-message: |
             velo ${{ steps.get_version.outputs.VERSION }}
