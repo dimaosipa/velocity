@@ -20,6 +20,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Xcode
         uses: maxim-lobanov/setup-xcode@v1
@@ -34,6 +36,14 @@ jobs:
           else
             echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
           fi
+          
+          # Get previous tag for changelog
+          PREVIOUS_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          if [ -z "$PREVIOUS_TAG" ]; then
+            # If no previous tag, use the initial commit
+            PREVIOUS_TAG=$(git rev-list --max-parents=0 HEAD)
+          fi
+          echo "PREVIOUS_TAG=${PREVIOUS_TAG}" >> $GITHUB_OUTPUT
 
       - name: Build release binary
         run: |
@@ -63,9 +73,14 @@ jobs:
           body: |
             Release ${{ steps.get_version.outputs.VERSION }}
             
+            ## What's Changed
+            
+            **Full Changelog**: https://github.com/dimaosipa/velocity/compare/${{ steps.get_version.outputs.PREVIOUS_TAG }}...${{ steps.get_version.outputs.VERSION }}
+            
             ## Installation via Homebrew
             ```bash
-            brew install dimaosipa/brew/velo
+            brew tap dimaosipa/brew
+            brew install velo
             ```
             
             ## Manual Installation
@@ -78,7 +93,7 @@ jobs:
             
             ## Requirements
             - macOS 12.0 or later
-            - Apple Silicon (M1/M2/M3) Mac
+            - Apple Silicon Mac
             
           files: |
             release/velo-${{ steps.get_version.outputs.VERSION }}-arm64.tar.gz
