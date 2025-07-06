@@ -1,0 +1,58 @@
+name: 'Update Homebrew Tap'
+description: 'Updates a Homebrew tap formula with new release information'
+inputs:
+  formula-name:
+    description: 'Name of the formula to update'
+    required: true
+  homebrew-tap:
+    description: 'The tap repository (e.g., user/repo)'
+    required: true
+  formula-path:
+    description: 'Path to the formula file in the tap'
+    required: true
+    default: 'Formula/${{ inputs.formula-name }}.rb'
+  download-url:
+    description: 'URL to download the release'
+    required: true
+  version:
+    description: 'Version being released'
+    required: true
+  sha256-file:
+    description: 'Path to file containing SHA256 checksum'
+    required: true
+  commit-message:
+    description: 'Commit message for the update'
+    required: false
+    default: '${{ inputs.formula-name }} ${{ inputs.version }}'
+  token:
+    description: 'GitHub token with write access to the tap repository'
+    required: true
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Update Homebrew Formula
+      shell: bash
+      run: |
+        # Clone the tap repository
+        git clone https://x-access-token:${{ inputs.token }}@github.com/${{ inputs.homebrew-tap }}.git tap-repo
+        cd tap-repo
+        
+        # Extract SHA256 from file
+        SHA256=$(cat ${{ inputs.sha256-file }} | awk '{print $1}')
+        
+        # Update the formula
+        sed -i '' "s|url \".*\"|url \"${{ inputs.download-url }}\"|" ${{ inputs.formula-path }}
+        sed -i '' "s|sha256 \".*\"|sha256 \"${SHA256}\"|" ${{ inputs.formula-path }}
+        
+        # Configure git
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        
+        # Commit and push
+        git add ${{ inputs.formula-path }}
+        git commit -m "${{ inputs.commit-message }}" || {
+          echo "No changes to commit"
+          exit 0
+        }
+        git push
