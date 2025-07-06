@@ -37,8 +37,8 @@ runs:
         git clone https://x-access-token:${{ inputs.token }}@github.com/${{ inputs.homebrew-tap }}.git tap-repo
         cd tap-repo
         
-        # Extract SHA256 from file
-        SHA256=$(cat ${{ inputs.sha256-file }} | awk '{print $1}')
+        # Extract SHA256 from file (go back to workspace root)
+        SHA256=$(cat ${{ github.workspace }}/${{ inputs.sha256-file }} | awk '{print $1}')
         
         # Update the formula
         sed -i '' "s|url \".*\"|url \"${{ inputs.download-url }}\"|" ${{ inputs.formula-path }}
