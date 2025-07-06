@@ -9,8 +9,8 @@ inputs:
     required: true
   formula-path:
     description: 'Path to the formula file in the tap'
-    required: true
-    default: 'Formula/${{ inputs.formula-name }}.rb'
+    required: false
+    default: 'Formula'
   download-url:
     description: 'URL to download the release'
     required: true
@@ -23,7 +23,6 @@ inputs:
   commit-message:
     description: 'Commit message for the update'
     required: false
-    default: '${{ inputs.formula-name }} ${{ inputs.version }}'
   token:
     description: 'GitHub token with write access to the tap repository'
     required: true
@@ -49,9 +48,15 @@ runs:
         git config user.name "github-actions[bot]"
         git config user.email "github-actions[bot]@users.noreply.github.com"
         
+        # Set default commit message if not provided
+        COMMIT_MSG="${{ inputs.commit-message }}"
+        if [ -z "$COMMIT_MSG" ]; then
+          COMMIT_MSG="${{ inputs.formula-name }} ${{ inputs.version }}"
+        fi
+        
         # Commit and push
         git add ${{ inputs.formula-path }}
-        git commit -m "${{ inputs.commit-message }}" || {
+        git commit -m "$COMMIT_MSG" || {
           echo "No changes to commit"
           exit 0
         }
