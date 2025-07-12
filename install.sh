@@ -32,9 +32,14 @@ if ! ./Scripts/build.sh --release; then
     exit 1
 fi
 
-# Run install-self to complete installation
+
+# Run install-self to complete installation, optionally with --symlink
 echo "📦 Installing to ~/.velo/bin..."
-.build/release/velo install-self
+if [[ "${1:-}" == "--symlink" ]]; then
+    .build/release/velo install-self --symlink
+else
+    .build/release/velo install-self
+fi
 
 # Clean up build artifacts
 echo "🧹 Cleaning up build artifacts..."
