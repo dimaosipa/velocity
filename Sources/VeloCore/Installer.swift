@@ -42,9 +42,15 @@ public protocol InstallationProgress {
 public final class Installer {
     private let pathHelper: PathHelper
     private let fileManager = FileManager.default
+    private var lastRuntimeInfo: RuntimeReceiptInfo?
 
     public init(pathHelper: PathHelper = PathHelper.shared) {
         self.pathHelper = pathHelper
+    }
+    
+    /// Get runtime information from the last installation
+    public func getLastRuntimeInfo() -> RuntimeReceiptInfo? {
+        return lastRuntimeInfo
     }
 
     public func install(
@@ -218,6 +224,14 @@ public final class Installer {
         progress: InstallationProgress?,
         force: Bool = false
     ) async throws {
+        // Detect runtime environment for isolation
+        let runtimeDetector = RuntimePackageDetector()
+        let runtimeEnvironment = runtimeDetector.detectRuntime(packageDir: packageDir, packageName: formula.name)
+        
+        if let runtime = runtimeEnvironment {
+            OSLogger.shared.debug("Detected runtime environment: \(runtime.type) for \(formula.name)", category: OSLogger.shared.installer)
+        }
+        
         // Performance optimization: Single-pass directory collection
         struct BinaryLocation {
             let directory: URL
@@ -322,38 +336,62 @@ public final class Installer {
                         }
                     }
                 } else {
-                    // Standard symlink creation for non-framework binaries
-                    // Create versioned symlink
-                    let versionedPath = pathHelper.versionedSymlinkPath(for: binary, package: formula.name, version: formula.version)
-                    let versionedResult = pathHelper.createSymlinkWithConflictDetection(from: sourcePath, to: versionedPath, packageName: formula.name, force: force)
-
-                    switch versionedResult {
-                    case .created:
+                    // Check if this binary should use wrapper scripts for runtime isolation
+                    let wrapperGenerator = WrapperScriptGenerator(pathHelper: pathHelper)
+                    let shouldUseWrapper = wrapperGenerator.shouldUseWrapper(
+                        packageName: formula.name,
+                        binary: binary,
+                        runtime: runtimeEnvironment
+                    )
+                    
+                    
+                    if shouldUseWrapper, let runtime = runtimeEnvironment {
+                        // Use wrapper script for runtime isolation
+                        OSLogger.shared.debug("Creating wrapper script for \(binary) (\(runtime.type))", category: OSLogger.shared.installer)
+                        
+                        try wrapperGenerator.generateWrapperScripts(
+                            packageDir: packageDir,
+                            packageName: formula.name,
+                            runtime: runtime,
+                            binaries: [binary]
+                        )
+                        
                         createdSymlinks += 1
-                    case .skipped(let reason):
-                        skippedSymlinks.append("\(binary)@\(formula.version) (\(reason))")
-                    case .failed(let error):
-                        if force {
-                            throw error // In force mode, failures should still throw
-                        } else {
-                            failedSymlinks.append("\(binary)@\(formula.version)")
+                        OSLogger.shared.debug("Created wrapper script for \(binary)", category: OSLogger.shared.installer)
+                    } else {
+                        // Standard symlink creation for non-framework, non-runtime binaries
+                        // Create versioned symlink
+                        let versionedPath = pathHelper.versionedSymlinkPath(for: binary, package: formula.name, version: formula.version)
+                        let versionedResult = pathHelper.createSymlinkWithConflictDetection(from: sourcePath, to: versionedPath, packageName: formula.name, force: force)
+
+                        switch versionedResult {
+                        case .created:
+                            createdSymlinks += 1
+                        case .skipped(let reason):
+                            skippedSymlinks.append("\(binary)@\(formula.version) (\(reason))")
+                        case .failed(let error):
+                            if force {
+                                throw error // In force mode, failures should still throw
+                            } else {
+                                failedSymlinks.append("\(binary)@\(formula.version)")
+                            }
                         }
-                    }
 
-                    // Create or update default symlink
-                    let defaultPath = pathHelper.symlinkPath(for: binary)
-                    let defaultResult = pathHelper.createSymlinkWithConflictDetection(from: sourcePath, to: defaultPath, packageName: formula.name, force: force)
+                        // Create or update default symlink
+                        let defaultPath = pathHelper.symlinkPath(for: binary)
+                        let defaultResult = pathHelper.createSymlinkWithConflictDetection(from: sourcePath, to: defaultPath, packageName: formula.name, force: force)
 
-                    switch defaultResult {
-                    case .created:
-                        createdSymlinks += 1
-                    case .skipped(let reason):
-                        skippedSymlinks.append("\(binary) (\(reason))")
-                    case .failed(let error):
-                        if force {
-                            throw error // In force mode, failures should still throw
-                        } else {
-                            failedSymlinks.append(binary)
+                        switch defaultResult {
+                        case .created:
+                            createdSymlinks += 1
+                        case .skipped(let reason):
+                            skippedSymlinks.append("\(binary) (\(reason))")
+                        case .failed(let error):
+                            if force {
+                                throw error // In force mode, failures should still throw
+                            } else {
+                                failedSymlinks.append(binary)
+                            }
                         }
                     }
                 }
@@ -374,6 +412,27 @@ public final class Installer {
         }
 
         OSLogger.shared.info("✅ Created \(createdSymlinks) symlinks for \(formula.name)", category: OSLogger.shared.installer)
+
+        // Store runtime information for receipt
+        if let runtime = runtimeEnvironment {
+            let wrapperGenerator = WrapperScriptGenerator(pathHelper: pathHelper)
+            let allBinaries = binaryLocations.flatMap { $0.binaries }
+            let wrapperBinaries = allBinaries.filter { binary in
+                wrapperGenerator.shouldUseWrapper(packageName: formula.name, binary: binary, runtime: runtime)
+            }
+            
+            lastRuntimeInfo = RuntimeReceiptInfo(
+                runtimeType: "\(runtime.type)",
+                interpreterPath: runtime.interpreterPath,
+                environmentVariables: runtime.environmentVariables,
+                usesWrapperScripts: !wrapperBinaries.isEmpty,
+                wrapperScriptBinaries: wrapperBinaries
+            )
+            
+            OSLogger.shared.debug("Stored runtime info for \(formula.name): \(runtime.type), \(wrapperBinaries.count) wrapper scripts", category: OSLogger.shared.installer)
+        } else {
+            lastRuntimeInfo = nil
+        }
 
         if totalBinaries == 0 {
             progress?.linkingDidStart(binariesCount: 0)

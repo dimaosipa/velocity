@@ -824,12 +824,14 @@ extension Velo {
 
             // Create receipt for explicitly installed package
             let receiptManager = ReceiptManager(pathHelper: pathHelper)
+            let runtimeInfo = installer.getLastRuntimeInfo()
             let receipt = InstallationReceipt(
                 package: formula.name,
                 version: formula.version,
                 installedAs: .explicit,
                 requestedBy: [],
-                symlinksCreated: true
+                symlinksCreated: true,
+                runtimeInfo: runtimeInfo
             )
             try receiptManager.saveReceipt(receipt)
 
@@ -1099,12 +1101,14 @@ extension Velo {
 
                 // Create receipt for dependency
                 let receiptManager = ReceiptManager(pathHelper: pathHelper)
+                let runtimeInfo = installer.getLastRuntimeInfo()
                 let receipt = InstallationReceipt(
                     package: node.formula.name,
                     version: node.formula.version,
                     installedAs: .dependency,
                     requestedBy: requestedBy != nil ? [requestedBy!] : [],
-                    symlinksCreated: false
+                    symlinksCreated: false,
+                    runtimeInfo: runtimeInfo
                 )
                 try receiptManager.saveReceipt(receipt)
 

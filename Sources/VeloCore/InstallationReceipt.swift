@@ -1,6 +1,23 @@
 import Foundation
 import VeloSystem
 
+/// Runtime environment information for receipts
+public struct RuntimeReceiptInfo: Codable, Equatable {
+    public let runtimeType: String  // Store as string for Codable compatibility
+    public let interpreterPath: String
+    public let environmentVariables: [String: String]
+    public let usesWrapperScripts: Bool
+    public let wrapperScriptBinaries: [String]
+    
+    public init(runtimeType: String, interpreterPath: String, environmentVariables: [String: String], usesWrapperScripts: Bool, wrapperScriptBinaries: [String]) {
+        self.runtimeType = runtimeType
+        self.interpreterPath = interpreterPath
+        self.environmentVariables = environmentVariables
+        self.usesWrapperScripts = usesWrapperScripts
+        self.wrapperScriptBinaries = wrapperScriptBinaries
+    }
+}
+
 /// Tracks how and why a package was installed
 public struct InstallationReceipt: Codable, Equatable {
     public enum InstallationType: String, Codable {
@@ -14,6 +31,7 @@ public struct InstallationReceipt: Codable, Equatable {
     public var installedAs: InstallationType
     public var requestedBy: [String]  // Packages that depend on this
     public var symlinksCreated: Bool
+    public var runtimeInfo: RuntimeReceiptInfo?  // Runtime environment information
 
     public init(
         package: String,
@@ -21,7 +39,8 @@ public struct InstallationReceipt: Codable, Equatable {
         installedAt: Date = Date(),
         installedAs: InstallationType,
         requestedBy: [String] = [],
-        symlinksCreated: Bool
+        symlinksCreated: Bool,
+        runtimeInfo: RuntimeReceiptInfo? = nil
     ) {
         self.package = package
         self.version = version
@@ -29,6 +48,7 @@ public struct InstallationReceipt: Codable, Equatable {
         self.installedAs = installedAs
         self.requestedBy = requestedBy
         self.symlinksCreated = symlinksCreated
+        self.runtimeInfo = runtimeInfo
     }
 }
 
