@@ -2,6 +2,31 @@ import Foundation
 import VeloSystem
 import VeloFormula
 
+// MARK: - Progress Tracking Actor
+
+/// Thread-safe progress tracking for parallel file processing
+@available(macOS 10.15, *)
+actor ProgressTracker {
+    private var processedFiles: Int = 0
+    private let totalFiles: Int
+    private let updateInterval: Int
+
+    init(totalFiles: Int, updateInterval: Int = 50) {
+        self.totalFiles = totalFiles
+        self.updateInterval = updateInterval
+    }
+
+    func incrementProgress() -> (processed: Int, total: Int, shouldUpdate: Bool) {
+        processedFiles += 1
+        let shouldUpdate = processedFiles % updateInterval == 0 || processedFiles == totalFiles
+        return (processedFiles, totalFiles, shouldUpdate)
+    }
+
+    func getCurrentProgress() -> (processed: Int, total: Int) {
+        return (processedFiles, totalFiles)
+    }
+}
+
 public protocol InstallationProgress {
     func installationDidStart(package: String, version: String)
     func extractionDidStart(totalFiles: Int?)
@@ -439,27 +464,88 @@ public final class Installer {
     private func rewriteLibraryPaths(for formula: Formula, packageDir: URL) async throws {
         // Use recursive discovery to process ALL files in the package
         let allFiles = try findAllProcessableFiles(in: packageDir)
-
-        var processedFiles = 0
         let totalFiles = allFiles.count
 
-        for filePath in allFiles {
-            processedFiles += 1
+        guard totalFiles > 0 else {
+            OSLogger.shared.debug("No files to process for library path rewriting", category: OSLogger.shared.installer)
+            return
+        }
 
-            // Give a progress heartbeat every 50 files for large packages
-            if processedFiles % 50 == 0 {
-                OSLogger.shared.debug("Processing binaries: \(processedFiles)/\(totalFiles)", category: OSLogger.shared.installer)
+        // Calculate optimal concurrency based on CPU cores, with reasonable limits
+        let processorCount = ProcessInfo.processInfo.processorCount
+        let maxConcurrency = 8 // Limit to prevent overwhelming the system
+        let concurrency = min(processorCount, maxConcurrency, totalFiles)
+
+        OSLogger.shared.debug("Processing \(totalFiles) files with concurrency \(concurrency) (CPU cores: \(processorCount))", category: OSLogger.shared.installer)
+
+        // Create progress tracker for thread-safe progress updates
+        let progressTracker = ProgressTracker(totalFiles: totalFiles, updateInterval: max(1, totalFiles / 20))
+
+        // Process files in parallel using TaskGroup
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            var fileIndex = 0
+
+            // Submit initial batch of tasks
+            for _ in 0..<concurrency {
+                if fileIndex < allFiles.count {
+                    let filePath = allFiles[fileIndex]
+                    fileIndex += 1
+
+                    group.addTask { [weak self] in
+                        await self?.processFileForLibraryPaths(filePath: filePath, progressTracker: progressTracker)
+                    }
+                }
             }
+
+            // Continue submitting tasks as previous ones complete
+            while let _ = try await group.next() {
+                if fileIndex < allFiles.count {
+                    let filePath = allFiles[fileIndex]
+                    fileIndex += 1
+
+                    group.addTask { [weak self] in
+                        await self?.processFileForLibraryPaths(filePath: filePath, progressTracker: progressTracker)
+                    }
+                }
+            }
+        }
+
+        // Log final progress
+        let (processed, total) = await progressTracker.getCurrentProgress()
+        OSLogger.shared.debug("Completed processing \(processed)/\(total) files for library path rewriting", category: OSLogger.shared.installer)
+    }
+
+    private func processFileForLibraryPaths(filePath: URL, progressTracker: ProgressTracker) async {
+        do {
             // Skip symlinks to avoid duplicate processing
             let attributes = try? fileManager.attributesOfItem(atPath: filePath.path)
             if let fileType = attributes?[.type] as? FileAttributeType, fileType == .typeSymbolicLink {
-                continue
+                let (processed, total, shouldUpdate) = await progressTracker.incrementProgress()
+                if shouldUpdate {
+                    OSLogger.shared.debug("Processing files: \(processed)/\(total) (skipped symlink: \(filePath.lastPathComponent))", category: OSLogger.shared.installer)
+                }
+                return
             }
 
             if try await isMachOBinary(at: filePath) {
                 try await rewriteBinaryLibraryPaths(binaryPath: filePath)
             } else if try await isTextScript(at: filePath) {
                 try await rewriteTextScript(at: filePath)
+            }
+
+            // Update progress after processing each file
+            let (processed, total, shouldUpdate) = await progressTracker.incrementProgress()
+            if shouldUpdate {
+                OSLogger.shared.debug("Processing files: \(processed)/\(total)", category: OSLogger.shared.installer)
+            }
+        } catch {
+            // Log error but don't stop processing other files
+            OSLogger.shared.installerWarning("Failed to process file \(filePath.lastPathComponent): \(error.localizedDescription)")
+
+            // Still update progress counter for failed files
+            let (processed, total, shouldUpdate) = await progressTracker.incrementProgress()
+            if shouldUpdate {
+                OSLogger.shared.debug("Processing files: \(processed)/\(total) (failed: \(filePath.lastPathComponent))", category: OSLogger.shared.installer)
             }
         }
     }
