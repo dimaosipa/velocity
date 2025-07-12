@@ -22,6 +22,7 @@ extension Velo {
         }
 
         private func runAsync() async throws {
+            let startTime = Date()
             let context = ProjectContext()
 
             // Check if we're in a project context
@@ -40,7 +41,7 @@ extension Velo {
                 throw ExitCode.failure
             }
 
-            print("🔍 Verifying installed packages against velo.lock...")
+            print("Verifying installed packages against velo.lock...")
             print("")
 
             let pathHelper = context.getPathHelper(preferLocal: !global)
@@ -69,7 +70,8 @@ extension Velo {
                 installedPackages: installedPackages,
                 mismatches: mismatches,
                 extraPackages: Array(extraPackages),
-                verbose: verbose
+                verbose: verbose,
+                startTime: startTime
             )
         }
 
@@ -101,14 +103,15 @@ extension Velo {
             installedPackages: [String: String],
             mismatches: [String],
             extraPackages: [String],
-            verbose: Bool
+            verbose: Bool,
+            startTime: Date
         ) throws {
             var hasIssues = false
 
             // Report mismatches
             if !mismatches.isEmpty {
                 hasIssues = true
-                print("❌ Mismatches found:")
+                print("Mismatches found:")
                 for mismatch in mismatches {
                     print("  • \(mismatch)")
                 }
@@ -118,7 +121,7 @@ extension Velo {
             // Report extra packages
             if !extraPackages.isEmpty {
                 hasIssues = true
-                print("⚠️  Extra packages (not in velo.lock):")
+                print("Extra packages (not in velo.lock):")
                 for package in extraPackages.sorted() {
                     if let version = installedPackages[package] {
                         print("  • \(package): \(version)")
@@ -140,7 +143,7 @@ extension Velo {
                 }
 
                 if !matchingPackages.isEmpty {
-                    print("✅ Matching packages:")
+                    print("Matching packages:")
                     for package in matchingPackages.sorted() {
                         let lockEntry = lockFile.dependencies[package]!
                         print("  • \(package): \(lockEntry.version) (from \(lockEntry.tap))")
@@ -150,8 +153,9 @@ extension Velo {
             }
 
             // Summary
+            let duration = Date().timeIntervalSince(startTime)
             if !hasIssues {
-                OSLogger.shared.success("All packages match velo.lock! (\(lockFile.dependencies.count) packages)")
+                print("✓ Verified \(lockFile.dependencies.count) packages in \(String(format: "%.1f", duration))s")
             } else {
                 let issueCount = mismatches.count + extraPackages.count
                 OSLogger.shared.error("Found \(issueCount) issue(s). Run 'velo install' to fix mismatches.")

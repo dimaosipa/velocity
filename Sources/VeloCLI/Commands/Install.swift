@@ -92,9 +92,9 @@ extension Velo {
             if totalPackages > 1 {
                 print("\n" + String(repeating: "=", count: 50))
                 if successCount == totalPackages {
-                    print("✅ Successfully installed all \(totalPackages) package(s)")
+                    print("✓ Successfully installed all \(totalPackages) package(s)")
                 } else {
-                    print("✅ Successfully installed \(successCount)/\(totalPackages) package(s)")
+                    print("✓ Successfully installed \(successCount)/\(totalPackages) package(s)")
                     if !failedPackages.isEmpty {
                         print("❌ Failed to install: \(failedPackages.joined(separator: ", "))")
                     }
@@ -147,7 +147,7 @@ extension Velo {
                             if let receipt = try? receiptManager.loadReceipt(for: formula.name, version: formula.version),
                                receipt.installedAs == .dependency {
                                 // Convert from dependency to explicit installation
-                                print("✅ \(formula.name) \(formula.version) is already installed (as dependency of \(receipt.requestedBy.joined(separator: ", "))), creating symlinks...")
+                                print("✓ \(formula.name) \(formula.version) is already installed (as dependency of \(receipt.requestedBy.joined(separator: ", "))), creating symlinks...")
 
                                 // Create symlinks
                                 let packageDir = pathHelper.packagePath(for: formula.name, version: formula.version)
@@ -173,7 +173,7 @@ extension Velo {
                                     print("✓ \(formula.name) dependencies restored")
                                     return
                                 } else {
-                                    print("✅ \(formula.name) \(formula.version) is already installed")
+                                    print("✓ \(formula.name) \(formula.version) is already installed")
                                     return
                                 }
                             }
@@ -188,7 +188,7 @@ extension Velo {
                                 if receipt.installedAs == .dependency {
                                     // Get the formula for creating symlinks
                                     if let formula = try? tapManager.findFormula(installedEquivalent) {
-                                        print("✅ \(resolvedName) is already installed (as dependency of \(receipt.requestedBy.joined(separator: ", "))), creating symlinks...")
+                                        print("✓ \(resolvedName) is already installed (as dependency of \(receipt.requestedBy.joined(separator: ", "))), creating symlinks...")
 
                                         // Create symlinks
                                         let installer = Installer(pathHelper: pathHelper)
@@ -220,18 +220,18 @@ extension Velo {
                                     return
                                 } else {
                                     if installedEquivalent == resolvedName {
-                                        print("✅ \(resolvedName) is already installed")
+                                        print("✓ \(resolvedName) is already installed")
                                     } else {
-                                        print("✅ \(resolvedName) is already installed (via \(installedEquivalent))")
+                                        print("✓ \(resolvedName) is already installed (via \(installedEquivalent))")
                                     }
                                     return
                                 }
                             } else {
                                 // Can't load formula, just report it's installed
                                 if installedEquivalent == resolvedName {
-                                    print("✅ \(resolvedName) is already installed")
+                                    print("✓ \(resolvedName) is already installed")
                                 } else {
-                                    print("✅ \(resolvedName) is already installed (via \(installedEquivalent))")
+                                    print("✓ \(resolvedName) is already installed (via \(installedEquivalent))")
                                 }
                                 return
                             }
@@ -254,7 +254,7 @@ extension Velo {
                                 print("✓ \(formula.name) dependencies restored")
                                 return
                             } else {
-                                print("✅ \(formula.name) \(formula.version) is already installed")
+                                print("✓ \(formula.name) \(formula.version) is already installed")
                                 return
                             }
                         }
@@ -358,7 +358,7 @@ extension Velo {
                 try updateLockFile(installedPackages: installedPackages, lockFilePath: lockFilePath)
             }
 
-            print("✅ All packages installed successfully!")
+            print("✓ All packages installed successfully!")
         }
 
         private func installPackageWithTracking(
@@ -533,7 +533,7 @@ extension Velo {
                 )
             }
 
-            print("✅ All packages installed from velo.lock successfully!")
+            print("✓ All packages installed from velo.lock successfully!")
         }
 
         private func ensureRequiredTaps(_ requiredTaps: [String], pathHelper: PathHelper) async throws {

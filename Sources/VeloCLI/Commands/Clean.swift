@@ -28,6 +28,7 @@ extension Velo {
         }
 
         private func runAsync() async throws {
+            let startTime = Date()
             let pathHelper = PathHelper.shared
             let fileManager = FileManager.default
 
@@ -64,7 +65,8 @@ extension Velo {
                 cleanedItems.append("cache")
             }
 
-            OSLogger.shared.success("Cleaned \(cleanedItems.joined(separator: " and ")) successfully!")
+            let duration = Date().timeIntervalSince(startTime)
+            print("✓ Cleaned \(cleanedItems.joined(separator: " and ")) in \(String(format: "%.1f", duration))s")
 
             if shouldCleanPackages {
                 print("")
@@ -78,7 +80,7 @@ extension Velo {
             print("")
 
             if cleanPackages {
-                print("📦 All installed packages and their receipts:")
+                print("All installed packages and their receipts:")
                 let pathHelper = PathHelper.shared
                 if FileManager.default.fileExists(atPath: pathHelper.cellarPath.path) {
                     let packages = try FileManager.default.contentsOfDirectory(atPath: pathHelper.cellarPath.path)
@@ -98,7 +100,7 @@ extension Velo {
             }
 
             if cleanCache {
-                print("🗄️ Download cache")
+                print("Download cache")
                 let pathHelper = PathHelper.shared
                 if FileManager.default.fileExists(atPath: pathHelper.cachePath.path) {
                     let cacheSize = try pathHelper.totalSize(of: pathHelper.cachePath)

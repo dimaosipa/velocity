@@ -25,6 +25,8 @@ extension Velo {
         }
 
         private func runAsync() async throws {
+            let startTime = Date()
+            
             // Ensure velo directories exist
             try PathHelper.shared.ensureVeloDirectories()
 
@@ -46,7 +48,7 @@ extension Velo {
 
             if uniquePackages.count != packages.count {
                 let duplicates = packages.count - uniquePackages.count
-                print("ℹ️  Removed \(duplicates) duplicate package(s)")
+                print("Info: Removed \(duplicates) duplicate package(s)")
             }
 
             // Handle version flag validation
@@ -78,11 +80,12 @@ extension Velo {
 
             // Show final summary (only for multiple packages)
             if totalPackages > 1 {
+                let duration = Date().timeIntervalSince(startTime)
                 print("\n" + String(repeating: "=", count: 50))
                 if successCount == totalPackages {
-                    print("✅ Successfully uninstalled all \(totalPackages) package(s)")
+                    print("✓ Successfully uninstalled all \(totalPackages) package(s) in \(String(format: "%.1f", duration))s")
                 } else {
-                    print("✅ Successfully uninstalled \(successCount)/\(totalPackages) package(s)")
+                    print("✓ Successfully uninstalled \(successCount)/\(totalPackages) package(s) in \(String(format: "%.1f", duration))s")
                     if !failedPackages.isEmpty {
                         print("❌ Failed to uninstall: \(failedPackages.joined(separator: ", "))")
                     }
@@ -92,6 +95,7 @@ extension Velo {
 
         /// Uninstall a single package with all the existing logic
         private func uninstallSinglePackage(_ package: String) async throws {
+            let startTime = Date()
             let installer = Installer()
             let pathHelper = PathHelper.shared
             let receiptManager = ReceiptManager(pathHelper: pathHelper)
@@ -110,7 +114,7 @@ extension Velo {
                 if let receipt = try? receiptManager.loadReceipt(for: package, version: specificVersion),
                    !receipt.requestedBy.isEmpty {
                     // This package is a dependency of others
-                    print("ℹ️  \(package) is a dependency of: \(receipt.requestedBy.joined(separator: ", "))")
+                    print("Info: \(package) is a dependency of: \(receipt.requestedBy.joined(separator: ", "))")
 
                     if receipt.symlinksCreated {
                         print("Removing symlinks only...")
@@ -157,7 +161,8 @@ extension Velo {
                     // Delete receipt
                     try? receiptManager.deleteReceipt(for: package, version: specificVersion)
 
-                    OSLogger.shared.success("\(package) v\(specificVersion) uninstalled successfully!")
+                    let duration = Date().timeIntervalSince(startTime)
+                    print("✓ \(package)@\(specificVersion) uninstalled in \(String(format: "%.1f", duration))s")
 
                 } catch {
                     OSLogger.shared.error("Uninstallation failed: \(error.localizedDescription)")
@@ -190,7 +195,7 @@ extension Velo {
                 }
 
                 if isDependency {
-                    print("ℹ️  \(package) is a dependency of: \(dependents.sorted().joined(separator: ", "))")
+                    print("Info: \(package) is a dependency of: \(dependents.sorted().joined(separator: ", "))")
 
                     // Check if any version has symlinks
                     var hasSymlinks = false
@@ -248,7 +253,8 @@ extension Velo {
                         try? receiptManager.deleteReceipt(for: package, version: version)
                     }
 
-                    OSLogger.shared.success("\(package) uninstalled successfully!")
+                    let duration = Date().timeIntervalSince(startTime)
+                    print("✓ \(package) uninstalled in \(String(format: "%.1f", duration))s")
 
                 } catch {
                     OSLogger.shared.error("Uninstallation failed: \(error.localizedDescription)")

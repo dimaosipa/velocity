@@ -25,6 +25,8 @@ extension Velo {
         }
 
         private func runAsync() async throws {
+            let startTime = Date()
+            
             // Ensure velo directories exist
             try PathHelper.shared.ensureVeloDirectories()
 
@@ -34,14 +36,15 @@ extension Velo {
                 if dryRun {
                     try await showUpdates()
                 } else {
-                    try await performUpdates()
+                    try await performUpdates(startTime: startTime)
                 }
             } else {
-                try await updateRepositories()
+                try await updateRepositories(startTime: startTime)
             }
         }
 
-        private func updateRepositories() async throws {
+        private func updateRepositories(startTime: Date? = nil) async throws {
+            let operationStartTime = startTime ?? Date()
             OSLogger.shared.info("Updating formula repositories...")
 
             let tapManager = TapManager()
@@ -51,7 +54,8 @@ extension Velo {
             let cache = FormulaCache()
             try cache.clear()
 
-            OSLogger.shared.success("Formula repositories updated!")
+            let duration = Date().timeIntervalSince(operationStartTime)
+            print("✓ Formula repositories updated in \(String(format: "%.1f", duration))s")
         }
 
         private func showUpdates() async throws {
@@ -78,16 +82,16 @@ extension Velo {
                 do {
                     if let formula = try tapManager.findFormula(package) {
                         if formula.version != currentVersion {
-                            print("🔄 \(package): \(currentVersion) -> \(formula.version)")
+                            print("Update available: \(package): \(currentVersion) -> \(formula.version)")
                             hasUpdates = true
                         } else {
-                            print("✅ \(package): \(currentVersion) (up to date)")
+                            print("✓ \(package): \(currentVersion) (up to date)")
                         }
                     } else {
-                        print("❓ \(package): \(currentVersion) (formula not found)")
+                        print("Unknown: \(package): \(currentVersion) (formula not found)")
                     }
                 } catch {
-                    print("⚠️  \(package): \(currentVersion) (error checking: \(error.localizedDescription))")
+                    print("Warning: \(package): \(currentVersion) (error checking: \(error.localizedDescription))")
                 }
             }
 
@@ -100,7 +104,8 @@ extension Velo {
             }
         }
 
-        private func performUpdates() async throws {
+        private func performUpdates(startTime: Date? = nil) async throws {
+            let operationStartTime = startTime ?? Date()
             OSLogger.shared.info("Upgrading packages...")
 
             // Update repositories first
@@ -136,12 +141,12 @@ extension Velo {
 
                 do {
                     guard let formula = try tapManager.findFormula(package) else {
-                        print("⚠️  \(package): formula not found, skipping")
+                        print("Warning: \(package): formula not found, skipping")
                         continue
                     }
 
                     if formula.version == currentVersion {
-                        print("✅ \(package) \(currentVersion) is already up to date")
+                        print("✓ \(package) \(currentVersion) is already up to date")
                         continue
                     }
 
@@ -190,10 +195,11 @@ extension Velo {
                 }
             }
 
+            let duration = Date().timeIntervalSince(operationStartTime)
             if upgradeCount == 0 {
-                OSLogger.shared.success("All packages are up to date!")
+                print("✓ All packages are up to date in \(String(format: "%.1f", duration))s")
             } else {
-                OSLogger.shared.success("Upgraded \(upgradeCount) package(s)")
+                print("✓ Upgraded \(upgradeCount) package(s) in \(String(format: "%.1f", duration))s")
             }
         }
 

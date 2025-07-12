@@ -29,6 +29,7 @@ extension Velo {
         }
 
         private func runAsync() async throws {
+            let startTime = Date()
             let context = ProjectContext()
             let pathHelper = context.getPathHelper(preferLocal: false) // Always use global for repair
 
@@ -42,14 +43,14 @@ extension Velo {
 
             if let packageName = package {
                 // Repair specific package
-                try await repairPackage(packageName, pathHelper: pathHelper)
+                try await repairPackage(packageName, pathHelper: pathHelper, startTime: startTime)
             } else {
                 // Repair all packages
-                try await repairAllPackages(pathHelper: pathHelper)
+                try await repairAllPackages(pathHelper: pathHelper, startTime: startTime)
             }
         }
 
-        private func repairPackage(_ packageName: String, pathHelper: PathHelper) async throws {
+        private func repairPackage(_ packageName: String, pathHelper: PathHelper, startTime: Date) async throws {
             guard pathHelper.isPackageInstalled(packageName) else {
                 OSLogger.shared.error("Package '\(packageName)' is not installed")
                 throw ExitCode.failure
@@ -68,7 +69,7 @@ extension Velo {
             OSLogger.shared.success("\(packageName) repair completed!")
         }
 
-        private func repairAllPackages(pathHelper: PathHelper) async throws {
+        private func repairAllPackages(pathHelper: PathHelper, startTime: Date) async throws {
             let cellarPath = pathHelper.cellarPath
             guard FileManager.default.fileExists(atPath: cellarPath.path) else {
                 OSLogger.shared.info("No packages installed to repair")
@@ -112,12 +113,14 @@ extension Velo {
             }
 
             if issuesFound == 0 {
-                OSLogger.shared.success("✅ All packages are healthy - no repairs needed!")
+                let duration = Date().timeIntervalSince(startTime)
+                print("✓ All packages are healthy - no repairs needed in \(String(format: "%.1f", duration))s")
             } else {
                 if dryRun {
                     OSLogger.shared.info("Found \(issuesFound) packages with issues that could be repaired")
                 } else {
-                    OSLogger.shared.success("✅ Repair completed: \(repairedCount)/\(issuesFound) packages fixed")
+                    let duration = Date().timeIntervalSince(startTime)
+                    print("✓ Repair completed: \(repairedCount)/\(issuesFound) packages fixed in \(String(format: "%.1f", duration))s")
                 }
             }
         }
@@ -178,7 +181,7 @@ extension Velo {
             }
 
             if fixedCount == filesToRepair.count {
-                OSLogger.shared.info("  ✅ \(packageDisplayName): All \(fixedCount) files repaired successfully")
+                OSLogger.shared.info("  ✓ \(packageDisplayName): All \(fixedCount) files repaired successfully")
                 return (hasIssues: true, fixed: true)
             } else {
                 OSLogger.shared.warning("  ⚠️ \(packageDisplayName): \(fixedCount)/\(filesToRepair.count) files repaired")
@@ -312,7 +315,7 @@ extension Velo {
 
             switch pathPosition {
             case .first:
-                OSLogger.shared.info("  ✅ ~/.velo/bin is correctly positioned first in PATH")
+                OSLogger.shared.info("  ✓ ~/.velo/bin is correctly positioned first in PATH")
             case .notFirst(let position):
                 OSLogger.shared.warning("  ⚠️  ~/.velo/bin is in PATH but not first (position \(position))")
                 if dryRun {
@@ -547,7 +550,7 @@ extension Velo {
                     if !dryRun {
                         if try await regenerateWrapperScript(scriptPath: scriptPath, pathHelper: pathHelper) {
                             scriptsFixed += 1
-                            OSLogger.shared.info("    ✅ Regenerated \(filename) with portable paths")
+                            OSLogger.shared.info("    ✓ Regenerated \(filename) with portable paths")
                         } else {
                             OSLogger.shared.warning("    ❌ Could not regenerate \(filename)")
                         }
@@ -558,7 +561,7 @@ extension Velo {
             if wrapperScriptsChecked == 0 {
                 OSLogger.shared.info("  ℹ️  No wrapper scripts found to check")
             } else if hardcodedPathsFound == 0 {
-                OSLogger.shared.info("  ✅ All \(wrapperScriptsChecked) wrapper scripts use portable paths")
+                OSLogger.shared.info("  ✓ All \(wrapperScriptsChecked) wrapper scripts use portable paths")
             } else {
                 if dryRun {
                     OSLogger.shared.info("  📊 Found \(hardcodedPathsFound) wrapper scripts with hardcoded paths")
@@ -753,7 +756,7 @@ extension Velo {
                 // Create the symlink
                 if !dryRun {
                     try FileManager.default.createSymbolicLink(atPath: symlinkPath.path, withDestinationPath: expectedTarget)
-                    OSLogger.shared.info("  ✅ Created compatibility symlink: \(package)/\(dirName) -> \(expectedTarget)")
+                    OSLogger.shared.info("  ✓ Created compatibility symlink: \(package)/\(dirName) -> \(expectedTarget)")
                     symlinksRepaired += 1
                 } else {
                     OSLogger.shared.info("  Would create symlink: \(package)/\(dirName) -> \(expectedTarget)")
@@ -762,7 +765,7 @@ extension Velo {
             }
 
             if symlinksRepaired > 0 && !dryRun {
-                OSLogger.shared.info("  ✅ Repaired \(symlinksRepaired) compatibility symlinks for \(package)")
+                OSLogger.shared.info("  ✓ Repaired \(symlinksRepaired) compatibility symlinks for \(package)")
             }
         }
     }

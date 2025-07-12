@@ -79,7 +79,7 @@ extension Velo {
 
                 switch result {
                 case .upToDate(let current):
-                    OSLogger.shared.success("✅ Velo is up to date! (v\(current.description))")
+                    print("✓ Velo is up to date! (v\(current.description))")
 
                 case .updateAvailable(let current, let latest):
                     guard let latestVersion = latest.version else {
@@ -161,15 +161,17 @@ extension Velo {
                 return
             }
 
-            print("📦 Starting update process...")
+            print("Starting update process...")
+            let startTime = Date()
 
             do {
                 try await updater.performUpdate(to: release, config: config) { message in
                     print("  \(message)")
                 }
 
+                let duration = Date().timeIntervalSince(startTime)
                 print("")
-                OSLogger.shared.success("🎉 Velo has been updated to v\(latestVersion.description)!")
+                print("✓ Velo updated to v\(latestVersion.description) in \(String(format: "%.1f", duration))s!")
                 print("")
                 print("The update is complete. You can now use the new version of Velo.")
 
