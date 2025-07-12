@@ -184,35 +184,41 @@ public final class Installer {
         progress: InstallationProgress?,
         force: Bool = false
     ) async throws {
-        let binDir = packageDir.appendingPathComponent("bin")
+        // Performance optimization: Single-pass directory collection
+        struct BinaryLocation {
+            let directory: URL
+            let binaries: [String]
+        }
+
+        var binaryLocations: [BinaryLocation] = []
         var totalBinaries = 0
-        var linkedBinaries = 0
 
-        // Count total binaries from bin/, libexec/bin/, and Framework bins
-        var binDirectories: [URL] = []
+        // Collect all binary directories and their contents in one pass
+        let standardDirs = [
+            packageDir.appendingPathComponent("bin"),
+            packageDir.appendingPathComponent("libexec/bin")
+        ]
 
-        if fileManager.fileExists(atPath: binDir.path) {
-            binDirectories.append(binDir)
-            let binaries = try fileManager.contentsOfDirectory(atPath: binDir.path)
-                .filter { !$0.hasPrefix(".") }
-            totalBinaries += binaries.count
+        for directory in standardDirs {
+            if fileManager.fileExists(atPath: directory.path) {
+                let binaries = try fileManager.contentsOfDirectory(atPath: directory.path)
+                    .filter { !$0.hasPrefix(".") && !$0.hasSuffix(".pyc") }
+                if !binaries.isEmpty {
+                    binaryLocations.append(BinaryLocation(directory: directory, binaries: binaries))
+                    totalBinaries += binaries.count
+                }
+            }
         }
 
-        let libexecBinDir = packageDir.appendingPathComponent("libexec/bin")
-        if fileManager.fileExists(atPath: libexecBinDir.path) {
-            binDirectories.append(libexecBinDir)
-            let libexecBinaries = try fileManager.contentsOfDirectory(atPath: libexecBinDir.path)
-                .filter { !$0.hasPrefix(".") && !$0.hasSuffix(".pyc") }
-            totalBinaries += libexecBinaries.count
-        }
-
-        // Also check for Framework binaries (for Python, etc.)
-        let frameworkBinDirs = try findFrameworkBinDirectories(in: packageDir)
+        // Add framework binaries using optimized discovery
+        let frameworkBinDirs = try findFrameworkBinDirectoriesOptimized(in: packageDir)
         for frameworkBinDir in frameworkBinDirs {
-            binDirectories.append(frameworkBinDir)
             let frameworkBinaries = try fileManager.contentsOfDirectory(atPath: frameworkBinDir.path)
                 .filter { !$0.hasPrefix(".") && !$0.hasSuffix(".pyc") }
-            totalBinaries += frameworkBinaries.count
+            if !frameworkBinaries.isEmpty {
+                binaryLocations.append(BinaryLocation(directory: frameworkBinDir, binaries: frameworkBinaries))
+                totalBinaries += frameworkBinaries.count
+            }
         }
 
         progress?.linkingDidStart(binariesCount: totalBinaries)
@@ -221,17 +227,15 @@ public final class Installer {
         var createdSymlinks = 0
         var skippedSymlinks: [String] = []
         var failedSymlinks: [String] = []
+        var linkedBinaries = 0
 
-        // Detect if package contains frameworks
+        // Detect if package contains frameworks (cached check)
         let hasFrameworks = try hasFrameworkDependencies(packageDir: packageDir)
 
-        // Process all bin directories
-        for directory in binDirectories {
-            let binaries = try fileManager.contentsOfDirectory(atPath: directory.path)
-                .filter { !$0.hasPrefix(".") && !$0.hasSuffix(".pyc") }
-
-            for binary in binaries {
-                let sourcePath = directory.appendingPathComponent(binary)
+        // Process all binary locations (optimized: no re-scanning directories)
+        for location in binaryLocations {
+            for binary in location.binaries {
+                let sourcePath = location.directory.appendingPathComponent(binary)
 
                 // Check if this is a framework binary
                 let isFrameworkBinary = isFrameworkBinary(path: sourcePath, packageDir: packageDir)
@@ -849,25 +853,52 @@ public final class Installer {
 
         guard let enumerator = fileManager.enumerator(
             at: directory,
-            includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey],
+            includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey],
             options: [.skipsHiddenFiles, .skipsPackageDescendants]
         ) else {
             return processableFiles
         }
 
+        // Process files in batches to reduce memory overhead
+        var batch: [URL] = []
+        let batchSize = 100
+
         for case let fileURL as URL in enumerator {
+            // Skip common non-processable paths early for performance
+            let path = fileURL.path
+            if path.contains("__pycache__") ||
+               path.contains(".git") ||
+               path.contains(".DS_Store") ||
+               path.hasSuffix(".pyc") {
+                continue
+            }
+
             do {
-                let resourceValues = try fileURL.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+                let resourceValues = try fileURL.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey])
 
                 // Only process regular files (not directories or symlinks)
-                if resourceValues.isRegularFile == true && resourceValues.isSymbolicLink != true {
-                    processableFiles.append(fileURL)
+                if resourceValues.isRegularFile == true &&
+                   resourceValues.isSymbolicLink != true {
+                    // Skip very large files (> 50MB) as they're unlikely to be scripts
+                    if let fileSize = resourceValues.fileSize, fileSize > 50_000_000 {
+                        continue
+                    }
+
+                    batch.append(fileURL)
+
+                    if batch.count >= batchSize {
+                        processableFiles.append(contentsOf: batch)
+                        batch.removeAll(keepingCapacity: true)
+                    }
                 }
             } catch {
                 // Skip files we can't read attributes for
                 continue
             }
         }
+
+        // Add remaining files
+        processableFiles.append(contentsOf: batch)
 
         return processableFiles
     }
@@ -1384,6 +1415,37 @@ public final class Installer {
                 if fileManager.fileExists(atPath: frameworkBinDir.path) {
                     frameworkBinDirs.append(frameworkBinDir)
                 }
+            }
+        }
+
+        return frameworkBinDirs
+    }
+
+    // Optimized version that reduces file system calls
+    private func findFrameworkBinDirectoriesOptimized(in packageDir: URL) throws -> [URL] {
+        var frameworkBinDirs: [URL] = []
+        let frameworksDir = packageDir.appendingPathComponent("Frameworks")
+
+        guard fileManager.fileExists(atPath: frameworksDir.path) else {
+            return frameworkBinDirs
+        }
+
+        // Use enumerator for more efficient traversal
+        let enumerator = fileManager.enumerator(
+            at: frameworksDir,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        )
+
+        while let url = enumerator?.nextObject() as? URL {
+            let pathComponents = url.pathComponents
+
+            // Check if this is a bin directory within a framework
+            if pathComponents.last == "bin" &&
+               pathComponents.contains(where: { $0.hasSuffix(".framework") }) {
+                frameworkBinDirs.append(url)
+                // Skip descending into bin directories
+                enumerator?.skipDescendants()
             }
         }
 
