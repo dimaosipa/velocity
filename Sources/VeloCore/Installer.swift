@@ -6,6 +6,8 @@ public protocol InstallationProgress {
     func installationDidStart(package: String, version: String)
     func extractionDidStart(totalFiles: Int?)
     func extractionDidUpdate(filesExtracted: Int, totalFiles: Int?)
+    func processingDidStart(phase: String)
+    func processingDidUpdate(phase: String, progress: Double)
     func linkingDidStart(binariesCount: Int)
     func linkingDidUpdate(binariesLinked: Int, totalBinaries: Int)
     func installationDidComplete(package: String)
@@ -60,17 +62,24 @@ public final class Installer {
             // Small delay to avoid file system race conditions during heavy I/O
             try await Task.sleep(nanoseconds: 100_000_000) // 100ms
 
-            // Rewrite library paths for Homebrew bottle compatibility
+            // Report processing phases with progress for better user feedback
+            progress?.processingDidStart(phase: "Processing package files")
+
+            // Rewrite library paths for Homebrew bottle compatibility (CPU intensive)
+            progress?.processingDidUpdate(phase: "Rewriting library paths", progress: 0.2)
             try await rewriteLibraryPaths(for: formula, packageDir: packageDir)
 
-            // Rewrite script files with Homebrew placeholders
+            // Rewrite script files with Homebrew placeholders (I/O intensive)
+            progress?.processingDidUpdate(phase: "Updating script files", progress: 0.5)
             try await rewriteScriptFiles(packageDir: packageDir)
 
-            // Fix hardcoded Python shebangs
+            // Fix hardcoded Python shebangs (quick)
+            progress?.processingDidUpdate(phase: "Fixing Python shebangs", progress: 0.8)
             try await fixPythonShebangs(packageDir: packageDir)
 
             // Create symlinks (only if requested)
             if shouldCreateSymlinks {
+                progress?.processingDidUpdate(phase: "Preparing symlinks", progress: 1.0)
                 try await createSymlinks(for: formula, packageDir: packageDir, progress: progress, force: force)
             }
 
@@ -232,10 +241,20 @@ public final class Installer {
         // Detect if package contains frameworks (cached check)
         let hasFrameworks = try hasFrameworkDependencies(packageDir: packageDir)
 
+        // Log for debugging packages with many binaries
+        if totalBinaries > 50 {
+            OSLogger.shared.info("Creating symlinks for \(totalBinaries) binaries in \(formula.name)", category: OSLogger.shared.installer)
+        }
+
         // Process all binary locations (optimized: no re-scanning directories)
         for location in binaryLocations {
             for binary in location.binaries {
                 let sourcePath = location.directory.appendingPathComponent(binary)
+
+                // Update progress more frequently for packages with many binaries
+                if linkedBinaries % 10 == 0 || linkedBinaries < 10 {
+                    progress?.linkingDidUpdate(binariesLinked: linkedBinaries, totalBinaries: totalBinaries)
+                }
 
                 // Check if this is a framework binary
                 let isFrameworkBinary = isFrameworkBinary(path: sourcePath, packageDir: packageDir)
@@ -419,7 +438,16 @@ public final class Installer {
         // Use recursive discovery to process ALL files in the package
         let allFiles = try findAllProcessableFiles(in: packageDir)
 
+        var processedFiles = 0
+        let totalFiles = allFiles.count
+
         for filePath in allFiles {
+            processedFiles += 1
+
+            // Give a progress heartbeat every 50 files for large packages
+            if processedFiles % 50 == 0 {
+                OSLogger.shared.debug("Processing binaries: \(processedFiles)/\(totalFiles)", category: OSLogger.shared.installer)
+            }
             // Skip symlinks to avoid duplicate processing
             let attributes = try? fileManager.attributesOfItem(atPath: filePath.path)
             if let fileType = attributes?[.type] as? FileAttributeType, fileType == .typeSymbolicLink {

@@ -1349,25 +1349,46 @@ private class CLIProgress: DownloadProgress, InstallationProgress {
     }
 
     func extractionDidStart(totalFiles: Int?) {
-        ProgressReporter.shared.updateProgress(0.1, message: "Extracting package")
+        if let total = totalFiles {
+            ProgressReporter.shared.updateProgress(0.1, message: "Extracting \(total) files")
+        } else {
+            ProgressReporter.shared.updateProgress(0.1, message: "Extracting package")
+        }
     }
 
     func extractionDidUpdate(filesExtracted: Int, totalFiles: Int?) {
         if let total = totalFiles {
-            let progress = 0.1 + (0.7 * Double(filesExtracted) / Double(total))
+            let progress = 0.1 + (0.4 * Double(filesExtracted) / Double(total))
             ProgressReporter.shared.updateProgress(progress, message: "Extracting (\(filesExtracted)/\(total))")
+        } else {
+            ProgressReporter.shared.updateProgress(0.3, message: "Extracting (\(filesExtracted) files)")
         }
+    }
+
+    func processingDidStart(phase: String) {
+        ProgressReporter.shared.updateProgress(0.5, message: phase)
+    }
+
+    func processingDidUpdate(phase: String, progress: Double) {
+        let overallProgress = 0.5 + (0.2 * progress)
+        ProgressReporter.shared.updateProgress(overallProgress, message: phase)
     }
 
     func linkingDidStart(binariesCount: Int) {
         if binariesCount > 0 {
-            ProgressReporter.shared.updateProgress(0.8, message: "Creating \(binariesCount) symlinks")
+            ProgressReporter.shared.updateProgress(0.7, message: "Creating \(binariesCount) symlinks")
+        } else {
+            ProgressReporter.shared.updateProgress(0.7, message: "Processing package")
         }
     }
 
     func linkingDidUpdate(binariesLinked: Int, totalBinaries: Int) {
-        let progress = 0.8 + (0.2 * Double(binariesLinked) / Double(totalBinaries))
-        ProgressReporter.shared.updateProgress(progress, message: "Linking (\(binariesLinked)/\(totalBinaries))")
+        if totalBinaries > 0 {
+            let progress = 0.7 + (0.3 * Double(binariesLinked) / Double(totalBinaries))
+            ProgressReporter.shared.updateProgress(progress, message: "Linking (\(binariesLinked)/\(totalBinaries))")
+        } else {
+            ProgressReporter.shared.updateProgress(0.85, message: "Finalizing installation")
+        }
     }
 
     func installationDidComplete(package: String) {
@@ -1438,6 +1459,14 @@ private class VisualInstallationProgress: InstallationProgress {
         if let total = totalFiles {
             tracker.updatePhase("Extracting \(packageName) (\(filesExtracted)/\(total))")
         }
+    }
+
+    func processingDidStart(phase: String) {
+        tracker.updatePhase("\(phase) (\(packageName))")
+    }
+
+    func processingDidUpdate(phase: String, progress: Double) {
+        tracker.updatePhase("\(phase) (\(packageName))")
     }
 
     func linkingDidStart(binariesCount: Int) {
