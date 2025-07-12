@@ -244,6 +244,8 @@ public final class Installer {
         // Log for debugging packages with many binaries
         if totalBinaries > 50 {
             OSLogger.shared.info("Creating symlinks for \(totalBinaries) binaries in \(formula.name)", category: OSLogger.shared.installer)
+            // Also trigger immediate progress update
+            progress?.linkingDidStart(binariesCount: totalBinaries)
         }
 
         // Process all binary locations (optimized: no re-scanning directories)
@@ -252,7 +254,7 @@ public final class Installer {
                 let sourcePath = location.directory.appendingPathComponent(binary)
 
                 // Update progress more frequently for packages with many binaries
-                if linkedBinaries % 10 == 0 || linkedBinaries < 10 {
+                if linkedBinaries % 5 == 0 || linkedBinaries < 20 {
                     progress?.linkingDidUpdate(binariesLinked: linkedBinaries, totalBinaries: totalBinaries)
                 }
 

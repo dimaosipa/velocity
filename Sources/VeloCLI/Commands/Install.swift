@@ -1345,54 +1345,53 @@ private class CLIProgress: DownloadProgress, InstallationProgress {
     // MARK: - InstallationProgress
 
     func installationDidStart(package: String, version: String) {
-        ProgressReporter.shared.startStep("Installing \(package) \(version)")
+        // Don't start a new step - we're already in a live step
+        ProgressReporter.shared.updateLiveProgress("Installing \(package) \(version)")
     }
 
     func extractionDidStart(totalFiles: Int?) {
         if let total = totalFiles {
-            ProgressReporter.shared.updateProgress(0.1, message: "Extracting \(total) files")
+            ProgressReporter.shared.updateLiveProgress("Extracting \(total) files")
         } else {
-            ProgressReporter.shared.updateProgress(0.1, message: "Extracting package")
+            ProgressReporter.shared.updateLiveProgress("Extracting package")
         }
     }
 
     func extractionDidUpdate(filesExtracted: Int, totalFiles: Int?) {
         if let total = totalFiles {
-            let progress = 0.1 + (0.4 * Double(filesExtracted) / Double(total))
-            ProgressReporter.shared.updateProgress(progress, message: "Extracting (\(filesExtracted)/\(total))")
+            ProgressReporter.shared.updateLiveProgress("Extracting (\(filesExtracted)/\(total))")
         } else {
-            ProgressReporter.shared.updateProgress(0.3, message: "Extracting (\(filesExtracted) files)")
+            ProgressReporter.shared.updateLiveProgress("Extracting (\(filesExtracted) files)")
         }
     }
 
     func processingDidStart(phase: String) {
-        ProgressReporter.shared.updateProgress(0.5, message: phase)
+        ProgressReporter.shared.updateLiveProgress(phase)
     }
 
     func processingDidUpdate(phase: String, progress: Double) {
-        let overallProgress = 0.5 + (0.2 * progress)
-        ProgressReporter.shared.updateProgress(overallProgress, message: phase)
+        ProgressReporter.shared.updateLiveProgress(phase)
     }
 
     func linkingDidStart(binariesCount: Int) {
         if binariesCount > 0 {
-            ProgressReporter.shared.updateProgress(0.7, message: "Creating \(binariesCount) symlinks")
+            ProgressReporter.shared.updateLiveProgress("Creating \(binariesCount) symlinks")
         } else {
-            ProgressReporter.shared.updateProgress(0.7, message: "Processing package")
+            ProgressReporter.shared.updateLiveProgress("Processing package")
         }
     }
 
     func linkingDidUpdate(binariesLinked: Int, totalBinaries: Int) {
         if totalBinaries > 0 {
-            let progress = 0.7 + (0.3 * Double(binariesLinked) / Double(totalBinaries))
-            ProgressReporter.shared.updateProgress(progress, message: "Linking (\(binariesLinked)/\(totalBinaries))")
+            ProgressReporter.shared.updateLiveProgress("Linking (\(binariesLinked)/\(totalBinaries))")
         } else {
-            ProgressReporter.shared.updateProgress(0.85, message: "Finalizing installation")
+            ProgressReporter.shared.updateLiveProgress("Finalizing installation")
         }
     }
 
     func installationDidComplete(package: String) {
-        ProgressReporter.shared.completeStep("\(package) installed")
+        // Don't complete step here - let the main flow handle it
+        ProgressReporter.shared.updateLiveProgress("\(package) installed")
     }
 
     func installationDidFail(package: String, error: Error) {
