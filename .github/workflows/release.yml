@@ -105,7 +105,7 @@ jobs:
         uses: ./.github/actions/update-homebrew-tap
         with:
           formula-name: velo
-          homebrew-tap: dimaosipa/brew
+          homebrew-tap: dimaosipa/homebrew-brew
           formula-path: Formula/velo.rb
           download-url: https://github.com/dimaosipa/velocity/releases/download/${{ steps.get_version.outputs.VERSION }}/velo-${{ steps.get_version.outputs.VERSION }}-arm64.tar.gz
           version: ${{ steps.get_version.outputs.VERSION }}
