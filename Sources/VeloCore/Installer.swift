@@ -297,8 +297,17 @@ public final class Installer {
                     progress?.linkingDidUpdate(binariesLinked: linkedBinaries, totalBinaries: totalBinaries)
                 }
 
-                // Check if this is a framework binary
+                // Check if this is a framework binary or app bundle binary
                 let isFrameworkBinary = isFrameworkBinary(path: sourcePath, packageDir: packageDir)
+                let isAppBundle = isAppBundleBinary(path: sourcePath, packageDir: packageDir)
+                
+                // Skip .app bundle binaries - they should not be symlinked directly
+                if isAppBundle {
+                    OSLogger.shared.debug("Skipping .app bundle binary: \(binary) (app bundles should not be symlinked)", category: OSLogger.shared.installer)
+                    skippedSymlinks.append("\(binary) (app bundle executable)")
+                    linkedBinaries += 1
+                    continue
+                }
 
                 if isFrameworkBinary && hasFrameworks {
                     // Use wrapper script for framework binaries
@@ -1637,6 +1646,11 @@ public final class Installer {
     private func isFrameworkBinary(path: URL, packageDir: URL) -> Bool {
         let relativePath = path.path.replacingOccurrences(of: packageDir.path, with: "")
         return relativePath.contains("/Frameworks/") && relativePath.contains(".framework/")
+    }
+    
+    private func isAppBundleBinary(path: URL, packageDir: URL) -> Bool {
+        let relativePath = path.path.replacingOccurrences(of: packageDir.path, with: "")
+        return relativePath.contains(".app/Contents/MacOS/")
     }
 
     private func createFrameworkSymlinks(
