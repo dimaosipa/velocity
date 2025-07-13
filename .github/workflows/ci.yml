@@ -108,6 +108,11 @@ jobs:
         .build/debug/velo --version
         .build/release/velo --version
 
+    - name: Generate Version for Tests
+      run: |
+        echo "=== Generating version information for tests ==="
+        ./Scripts/generate-version.sh
+
     - name: Run Unit Tests
       run: |
         echo "=== Running Unit Tests ==="
