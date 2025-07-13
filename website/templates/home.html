@@ -85,21 +85,6 @@
                     <span>{{CTA_SECONDARY_TEXT}}</span>
                 </a>
             </div>
-            
-            <div class="hero-terminal">
-                <div class="terminal">
-                    <div class="terminal-header">
-                        <div class="terminal-buttons">
-                            <span class="terminal-button terminal-button-red"></span>
-                            <span class="terminal-button terminal-button-yellow"></span>
-                            <span class="terminal-button terminal-button-green"></span>
-                        </div>
-                        <div class="terminal-title">Terminal</div>
-                    </div>
-                    <div class="terminal-body">{{TERMINAL_OUTPUT}}
-                    </div>
-                </div>
-            </div>
         </div>
     </section>
 
@@ -219,14 +204,6 @@
                 }
             });
         });
-        
-        // Terminal animation
-        const terminalCursor = document.querySelector('.terminal-cursor');
-        if (terminalCursor) {
-            setInterval(() => {
-                terminalCursor.style.opacity = terminalCursor.style.opacity === '0' ? '1' : '0';
-            }, 800);
-        }
         
         // Intersection Observer for animations
         const observerOptions = {

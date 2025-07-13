@@ -11,11 +11,6 @@ cta_primary_url: "./docs/installation"
 cta_secondary_text: "View on GitHub"
 cta_secondary_url: "https://github.com/dimaosipa/velocity"
 cta_note: "<strong>Note:</strong> Velocity is experimental software. Please test thoroughly before using in production environments."
-terminal_command: "velo install imagemagick"
-terminal_output: |
-  🚀 Installing imagemagick@7.1.1-40...
-  ⬇️  Downloading bottle (8 streams)...
-  ✅ Installed in 12.3s
 ---
 
 # Velocity 🚀

@@ -5,11 +5,12 @@
   "private": true,
   "scripts": {
     "build": "node build.js",
-    "dev": "node build.js && python3 -m http.server 8080 -d dist",
+    "dev": "node build.js && npx serve dist",
+    "serve": "npx serve dist",
     "clean": "rm -rf dist",
     "test": "node test.js",
     "test:serve": "node test.js --serve",
-    "start": "npm run build && npm run dev",
+    "start": "npm run build && npm run serve",
     "deploy": "npm run build && npm run test"
   },
   "engines": {

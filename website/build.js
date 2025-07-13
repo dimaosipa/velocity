@@ -25,7 +25,20 @@ const CONFIG = {
     // Site info
     title: 'Velocity - Lightning-fast Package Manager for Apple Silicon',
     description: 'Native speed. Modern architecture. Zero sudo required. A lightning-fast package manager built exclusively for M1/M2/M3 Macs.',
-    baseUrl: process.env.GITHUB_PAGES_URL || 'https://dimaosipa.github.io/velocity'
+    baseUrl: process.env.GITHUB_PAGES_URL || 'https://dimaosipa.github.io/velocity',
+    
+    // Default fallback content
+    defaultHeroContent: {
+        badge_icon: '⚠️',
+        badge_text: 'Experimental Software - Use with caution',
+        hero_title: 'Velocity: The Fastest<br>Package Manager for<br><span class="hero-title-accent">Apple Silicon</span>',
+        hero_subtitle: 'Native speed. Modern architecture. Zero sudo required.',
+        cta_primary_text: 'Get Started',
+        cta_primary_url: './docs/installation',
+        cta_secondary_text: 'View on GitHub',
+        cta_secondary_url: 'https://github.com/dimaosipa/velocity',
+        cta_note: '<strong>Note:</strong> Velocity is experimental software. Please test thoroughly before using in production environments.'
+    }
 };
 
 /**
@@ -250,11 +263,7 @@ async function discoverDocsStructure() {
                 const { frontmatter } = parseFrontmatter(content);
                 
                 // Generate title from filename if not in frontmatter
-                const defaultTitle = file
-                    .replace('.md', '')
-                    .split('-')
-                    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-                    .join(' ');
+                const defaultTitle = utils.parseTitle(file);
                 
                 const docInfo = {
                     file: file,
@@ -310,16 +319,60 @@ const md = new MarkdownIt({
     })
 });
 
-/**
- * Generate slug from text
- */
-function generateSlug(text) {
-    return text
-        .toLowerCase()
-        .replace(/[^\w\s-]/g, '')
-        .replace(/\s+/g, '-')
-        .trim();
-}
+// Utility functions
+const utils = {
+    /**
+     * Generate slug from text
+     */
+    generateSlug(text) {
+        return text
+            .toLowerCase()
+            .replace(/[^\w\s-]/g, '')
+            .replace(/\s+/g, '-')
+            .trim();
+    },
+
+    /**
+     * Parse title from filename
+     */
+    parseTitle(filename) {
+        return filename
+            .replace('.md', '')
+            .split('-')
+            .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+            .join(' ');
+    },
+
+    /**
+     * Generate path prefix for different page depths
+     */
+    getPathPrefix(pageDepth) {
+        return pageDepth === 0 ? './' : '../'.repeat(pageDepth);
+    },
+
+    /**
+     * Apply template replacements
+     */
+    applyTemplateReplacements(template, replacements) {
+        let result = template;
+        for (const [key, value] of Object.entries(replacements)) {
+            result = result.replace(new RegExp(`{{${key}}}`, 'g'), value || '');
+        }
+        return result;
+    },
+
+    /**
+     * Fix relative paths for different page depths
+     */
+    fixRelativePaths(html, pageDepth) {
+        if (pageDepth === 0) return html;
+        
+        const pathPrefix = '../'.repeat(pageDepth);
+        return html
+            .replace(/href="\.\.\/([^"]+)"/g, `href="${pathPrefix}$1"`)
+            .replace(/src="\.\.\/([^"]+)"/g, `src="${pathPrefix}$1"`);
+    }
+};
 
 /**
  * Extract table of contents from markdown content
@@ -336,13 +389,9 @@ function generateTableOfContents(content) {
             
             if (nextToken && nextToken.type === 'inline') {
                 const text = nextToken.content;
-                const slug = generateSlug(text);
+                const slug = utils.generateSlug(text);
                 
-                headings.push({
-                    level,
-                    text,
-                    slug
-                });
+                headings.push({ level, text, slug });
             }
         }
     }
@@ -371,6 +420,27 @@ function generateNavigation(headings, isMainNav = false) {
 }
 
 /**
+ * Process markdown content and add proper heading IDs
+ */
+function processMarkdown(content) {
+    // First pass: generate headings to get proper slugs
+    const headings = generateTableOfContents(content);
+    let processedContent = content;
+    
+    // Replace heading markdown with HTML that includes proper IDs
+    for (const heading of headings) {
+        const headingRegex = new RegExp(
+            `^#{${heading.level}}\\s+${heading.text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 
+            'm'
+        );
+        const replacement = `${'#'.repeat(heading.level)} <span id="${heading.slug}">${heading.text}</span>`;
+        processedContent = processedContent.replace(headingRegex, replacement);
+    }
+    
+    return md.render(processedContent);
+}
+
+/**
  * Generate sidebar navigation based on page depth and discovered docs
  */
 function generateSidebarNavigation(currentPagePath, docsStructure) {
@@ -379,9 +449,9 @@ function generateSidebarNavigation(currentPagePath, docsStructure) {
     let overviewHref, itemHref;
     
     if (isRootDocs) {
-        // From /docs/ page - use relative paths
-        overviewHref = './';
-        itemHref = (path) => `./${path}/`;
+        // From /docs/ page - use absolute paths to avoid relative path resolution issues
+        overviewHref = '/docs/';
+        itemHref = (path) => `/docs/${path}/`;
     } else {
         // From /docs/subpage/ page - calculate proper relative paths
         overviewHref = '../';
@@ -413,25 +483,174 @@ function generateSidebarNavigation(currentPagePath, docsStructure) {
 }
 
 /**
- * Process markdown content and add proper heading IDs
+ * Content generators
  */
-function processMarkdown(content) {
-    // First pass: generate headings to get proper slugs
-    const headings = generateTableOfContents(content);
-    let processedContent = content;
-    
-    // Replace heading markdown with HTML that includes proper IDs
-    for (const heading of headings) {
-        const headingRegex = new RegExp(
-            `^#{${heading.level}}\\s+${heading.text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 
-            'm'
-        );
-        const replacement = `${'#'.repeat(heading.level)} <span id="${heading.slug}">${heading.text}</span>`;
-        processedContent = processedContent.replace(headingRegex, replacement);
+const generators = {
+    /**
+     * Generate features grid HTML from HOME.md configuration
+     */
+    featuresGrid(featuresSection) {
+        if (!featuresSection || Object.keys(featuresSection).length === 0) {
+            return this.getDefaultFeatures();
+        }
+        
+        let featuresHtml = '';
+        
+        Object.keys(featuresSection).forEach(key => {
+            if (key === 'subtitle') return; // Skip subtitle
+            
+            const content = featuresSection[key];
+            const lines = content.split('\n').filter(line => line.trim()); // Remove empty lines
+            const description = lines.join('\n').trim();
+            
+            // Extract emoji from the key (e.g., "⚡ Blazing-fast installs" -> "⚡" and "Blazing-fast installs")
+            const iconMatch = key.match(/^([^\w\s]+)\s*(.+)$/);
+            const icon = iconMatch ? iconMatch[1].trim() : '🔧';
+            const title = iconMatch ? iconMatch[2].trim() : key;
+            
+            featuresHtml += `
+                <div class="feature-card">
+                    <div class="feature-icon">${icon}</div>
+                    <h3 class="feature-title">${title}</h3>
+                    <p class="feature-description">${description}</p>
+                </div>`;
+        });
+        
+        return featuresHtml;
+    },
+
+    /**
+     * Generate performance grid HTML from HOME.md configuration
+     */
+    performanceGrid(performanceSection) {
+        if (!performanceSection || Object.keys(performanceSection).length === 0) {
+            return this.getDefaultPerformance();
+        }
+        
+        let performanceHtml = '';
+        
+        Object.keys(performanceSection).forEach(key => {
+            if (key === 'subtitle') return; // Skip subtitle
+            
+            const content = performanceSection[key];
+            const lines = content.split('\n').filter(line => line.trim()); // Remove empty lines
+            const description = lines.join('\n').trim();
+            
+            performanceHtml += `
+                <div class="performance-item">
+                    <h3 class="performance-title">${key}</h3>
+                    <p class="performance-description">${description}</p>
+                </div>`;
+        });
+        
+        return performanceHtml;
+    },
+
+    /**
+     * Generate dynamic footer HTML from FOOTER.md configuration
+     */
+    dynamicFooter(footerConfig, pageDepth = 0) {
+        if (Object.keys(footerConfig).length === 0) {
+            return '';
+        }
+        
+        const pathPrefix = utils.getPathPrefix(pageDepth);
+        let footerHtml = '';
+        
+        Object.keys(footerConfig).forEach(sectionName => {
+            const links = footerConfig[sectionName];
+            if (links.length === 0) return;
+            
+            footerHtml += `
+                    <div class="footer-section">
+                        <h4 class="footer-section-title">${sectionName}</h4>`;
+            
+            links.forEach(link => {
+                // Adjust relative paths for different page depths
+                let linkUrl = link.url;
+                if (linkUrl.startsWith('./') && pageDepth > 0) {
+                    linkUrl = linkUrl.replace('./', pathPrefix);
+                }
+                
+                footerHtml += `
+                        <a href="${linkUrl}" class="footer-link"${link.url.startsWith('http') ? ' target="_blank"' : ''}>${link.title}</a>`;
+            });
+            
+            footerHtml += `
+                    </div>`;
+        });
+        
+        return footerHtml;
+    },
+
+    /**
+     * Default features fallback
+     */
+    getDefaultFeatures() {
+        return `
+                <div class="feature-card">
+                    <div class="feature-icon">⚡</div>
+                    <h3 class="feature-title">Blazing-fast installs</h3>
+                    <p class="feature-description">Parallel downloads with 8-16 concurrent streams and smart caching for instant-feeling package management.</p>
+                </div>
+                
+                <div class="feature-card">
+                    <div class="feature-icon">🛡️</div>
+                    <h3 class="feature-title">Runs entirely in user space</h3>
+                    <p class="feature-description">Everything lives in ~/.velo/. Never requires sudo or writes to system directories.</p>
+                </div>
+                
+                <div class="feature-card">
+                    <div class="feature-icon">🚀</div>
+                    <h3 class="feature-title">CI Ready</h3>
+                    <p class="feature-description">Built-in GitHub Actions support with automated testing, continuous deployment, and comprehensive CI/CD workflows.</p>
+                </div>
+                
+                <div class="feature-card">
+                    <div class="feature-icon">🔁</div>
+                    <h3 class="feature-title">Compatible with Homebrew</h3>
+                    <p class="feature-description">Uses existing .rb formulae from Homebrew core tap. Drop-in replacement with zero migration needed.</p>
+                </div>
+                
+                <div class="feature-card">
+                    <div class="feature-icon">💼</div>
+                    <h3 class="feature-title">Project-local dependencies</h3>
+                    <p class="feature-description">Like npm for system packages. Each project can have its own tool versions with velo.json manifests.</p>
+                </div>
+                
+                <div class="feature-card">
+                    <div class="feature-icon">🔒</div>
+                    <h3 class="feature-title">Security-first design</h3>
+                    <p class="feature-description">SHA256 verification, code signing, and advanced security measures built into every operation.</p>
+                </div>`;
+    },
+
+    /**
+     * Default performance fallback
+     */
+    getDefaultPerformance() {
+        return `
+                <div class="performance-item">
+                    <h3 class="performance-title">Swift-native Formula Parsing</h3>
+                    <p class="performance-description">10x faster than Ruby interpretation with regex optimization and binary caching.</p>
+                </div>
+                
+                <div class="performance-item">
+                    <h3 class="performance-title">Parallel Downloads</h3>
+                    <p class="performance-description">Multi-stream concurrent downloads with intelligent retry logic and progress reporting.</p>
+                </div>
+                
+                <div class="performance-item">
+                    <h3 class="performance-title">Smart Caching</h3>
+                    <p class="performance-description">Memory + disk layers with automatic invalidation and predictive prefetching.</p>
+                </div>
+                
+                <div class="performance-item">
+                    <h3 class="performance-title">Memory Optimization</h3>
+                    <p class="performance-description">Lazy loading, memory-mapped files, and automatic cleanup for minimal resource usage.</p>
+                </div>`;
     }
-    
-    return md.render(processedContent);
-}
+};
 
 /**
  * Copy and optimize assets
@@ -483,358 +702,6 @@ async function copyAssets() {
 }
 
 /**
- * Generate features grid HTML from HOME.md configuration
- */
-function generateFeaturesGrid(featuresSection) {
-    if (!featuresSection || Object.keys(featuresSection).length === 0) {
-        return '';
-    }
-    
-    let featuresHtml = '';
-    
-    Object.keys(featuresSection).forEach(key => {
-        if (key === 'subtitle') return; // Skip subtitle
-        
-        const content = featuresSection[key];
-        const lines = content.split('\n').filter(line => line.trim()); // Remove empty lines
-        const description = lines.join('\n').trim();
-        
-        // Extract emoji from the key (e.g., "⚡ Blazing-fast installs" -> "⚡" and "Blazing-fast installs")
-        const iconMatch = key.match(/^([^\w\s]+)\s*(.+)$/);
-        const icon = iconMatch ? iconMatch[1].trim() : '🔧';
-        const title = iconMatch ? iconMatch[2].trim() : key;
-        
-        featuresHtml += `
-                <div class="feature-card">
-                    <div class="feature-icon">${icon}</div>
-                    <h3 class="feature-title">${title}</h3>
-                    <p class="feature-description">${description}</p>
-                </div>`;
-    });
-    
-    return featuresHtml;
-}
-
-/**
- * Generate performance grid HTML from HOME.md configuration
- */
-function generatePerformanceGrid(performanceSection) {
-    if (!performanceSection || Object.keys(performanceSection).length === 0) {
-        return '';
-    }
-    
-    let performanceHtml = '';
-    
-    Object.keys(performanceSection).forEach(key => {
-        if (key === 'subtitle') return; // Skip subtitle
-        
-        const content = performanceSection[key];
-        const lines = content.split('\n').filter(line => line.trim()); // Remove empty lines
-        const description = lines.join('\n').trim();
-        
-        performanceHtml += `
-                <div class="performance-item">
-                    <h3 class="performance-title">${key}</h3>
-                    <p class="performance-description">${description}</p>
-                </div>`;
-    });
-    
-    return performanceHtml;
-}
-
-/**
- * Generate terminal output HTML from HOME.md configuration
- */
-function generateTerminalOutput(terminalOutput, command) {
-    if (!terminalOutput) return '';
-    
-    const lines = terminalOutput.trim().split('\n');
-    let terminalHtml = `
-                        <div class="terminal-line">
-                            <span class="terminal-prompt">$ </span>
-                            <span class="terminal-command">${command || 'velo install imagemagick'}</span>
-                        </div>`;
-    
-    lines.forEach(line => {
-        if (line.trim()) {
-            terminalHtml += `
-                        <div class="terminal-line terminal-output">
-                            <span>${line.trim()}</span>
-                        </div>`;
-        }
-    });
-    
-    terminalHtml += `
-                        <div class="terminal-line">
-                            <span class="terminal-prompt">$ </span>
-                            <span class="terminal-cursor">█</span>
-                        </div>`;
-    
-    return terminalHtml;
-}
-
-/**
- * Generate dynamic footer HTML from FOOTER.md configuration
- */
-function generateDynamicFooter(footerConfig, pageDepth = 0) {
-    if (Object.keys(footerConfig).length === 0) {
-        // Fallback to current hardcoded structure if no FOOTER.md
-        return '';
-    }
-    
-    // Determine path prefix based on page depth:
-    // 0 = home page (./)
-    // 1 = docs root (../)  
-    // 2 = docs subdirectory (../../)
-    const pathPrefix = pageDepth === 0 ? './' : '../'.repeat(pageDepth);
-    
-    let footerHtml = '';
-    
-    Object.keys(footerConfig).forEach(sectionName => {
-        const links = footerConfig[sectionName];
-        if (links.length === 0) return;
-        
-        footerHtml += `
-                    <div class="footer-section">
-                        <h4 class="footer-section-title">${sectionName}</h4>`;
-        
-        links.forEach(link => {
-            // Adjust relative paths for different page depths
-            let linkUrl = link.url;
-            if (linkUrl.startsWith('./') && pageDepth > 0) {
-                linkUrl = linkUrl.replace('./', pathPrefix);
-            }
-            
-            footerHtml += `
-                        <a href="${linkUrl}" class="footer-link"${link.url.startsWith('http') ? ' target="_blank"' : ''}>${link.title}</a>`;
-        });
-        
-        footerHtml += `
-                    </div>`;
-    });
-    
-    return footerHtml;
-}
-
-/**
- * Generate home page
- */
-async function generateHomePage() {
-    console.log('🏠 Generating home page...');
-    
-    const template = await fs.readFile(CONFIG.homeTemplate, 'utf8');
-    const footerConfig = await parseFooterConfig();
-    const homeConfig = await parseHomeConfig();
-    
-    // Generate dynamic footer if available
-    const dynamicFooter = generateDynamicFooter(footerConfig, 0);
-    
-    // Use HOME.md configuration if available, otherwise fall back to CONFIG defaults
-    let title, description, keywords;
-    let featuresHtml = '';
-    let performanceHtml = '';
-    let terminalHtml = '';
-    let heroContent = {};
-    
-    if (homeConfig) {
-        const { frontmatter, sections } = homeConfig;
-        
-        // Extract metadata from frontmatter
-        title = frontmatter.title || CONFIG.title;
-        description = frontmatter.description || CONFIG.description;
-        keywords = frontmatter.keywords || 'velocity, velo, package manager';
-        
-        // Extract hero content
-        heroContent = {
-            badge_icon: frontmatter.badge_icon || '⚠️',
-            badge_text: frontmatter.badge_text || 'Experimental Software',
-            hero_title: frontmatter.hero_title || 'Velocity',
-            hero_subtitle: frontmatter.hero_subtitle || 'Fast package manager',
-            cta_primary_text: frontmatter.cta_primary_text || 'Get Started',
-            cta_primary_url: frontmatter.cta_primary_url || './docs',
-            cta_secondary_text: frontmatter.cta_secondary_text || 'GitHub',
-            cta_secondary_url: frontmatter.cta_secondary_url || 'https://github.com/dimaosipa/velocity',
-            cta_note: frontmatter.cta_note || '',
-            terminal_command: frontmatter.terminal_command || 'velo install imagemagick',
-            terminal_output: frontmatter.terminal_output || ''
-        };
-        
-        // Generate content sections
-        if (sections.Features) {
-            featuresHtml = generateFeaturesGrid(sections.Features);
-        }
-        
-        if (sections.Performance) {
-            performanceHtml = generatePerformanceGrid(sections.Performance);
-        }
-        
-        if (frontmatter.terminal_output && frontmatter.terminal_output.trim()) {
-            terminalHtml = generateTerminalOutput(frontmatter.terminal_output, frontmatter.terminal_command);
-        } else {
-            // Use fallback terminal output when HOME.md exists but terminal_output is not set
-            terminalHtml = `
-                        <div class="terminal-line">
-                            <span class="terminal-prompt">$ </span>
-                            <span class="terminal-command">${frontmatter.terminal_command || 'velo install imagemagick'}</span>
-                        </div>
-                        <div class="terminal-line terminal-output">
-                            <span>🚀 Installing imagemagick@7.1.1-40...</span>
-                        </div>
-                        <div class="terminal-line terminal-output">
-                            <span>⬇️  Downloading bottle (8 streams)...</span>
-                        </div>
-                        <div class="terminal-line terminal-output">
-                            <span>✅ Installed in 12.3s</span>
-                        </div>
-                        <div class="terminal-line">
-                            <span class="terminal-prompt">$ </span>
-                            <span class="terminal-cursor">█</span>
-                        </div>`;
-        }
-    } else {
-        // Fallback for hardcoded terminal output
-        terminalHtml = `
-                        <div class="terminal-line">
-                            <span class="terminal-prompt">$ </span>
-                            <span class="terminal-command">velo install imagemagick</span>
-                        </div>
-                        <div class="terminal-line terminal-output">
-                            <span>🚀 Installing imagemagick@7.1.1-40...</span>
-                        </div>
-                        <div class="terminal-line terminal-output">
-                            <span>⬇️  Downloading bottle (8 streams)...</span>
-                        </div>
-                        <div class="terminal-line terminal-output">
-                            <span>✅ Installed in 12.3s</span>
-                        </div>
-                        <div class="terminal-line">
-                            <span class="terminal-prompt">$ </span>
-                            <span class="terminal-cursor">█</span>
-                        </div>`;
-    }
-    
-    // Add hardcoded fallback sections for features and performance if HOME.md not available
-    if (!homeConfig) {
-        featuresHtml = `
-                <div class="feature-card">
-                    <div class="feature-icon">⚡</div>
-                    <h3 class="feature-title">Blazing-fast installs</h3>
-                    <p class="feature-description">Parallel downloads with 8-16 concurrent streams and smart caching for instant-feeling package management.</p>
-                </div>
-                
-                <div class="feature-card">
-                    <div class="feature-icon">🛡️</div>
-                    <h3 class="feature-title">Runs entirely in user space</h3>
-                    <p class="feature-description">Everything lives in ~/.velo/. Never requires sudo or writes to system directories.</p>
-                </div>
-                
-                <div class="feature-card">
-                    <div class="feature-icon">🚀</div>
-                    <h3 class="feature-title">CI Ready</h3>
-                    <p class="feature-description">Built-in GitHub Actions support with automated testing, continuous deployment, and comprehensive CI/CD workflows.</p>
-                </div>
-                
-                <div class="feature-card">
-                    <div class="feature-icon">🔁</div>
-                    <h3 class="feature-title">Compatible with Homebrew</h3>
-                    <p class="feature-description">Uses existing .rb formulae from Homebrew core tap. Drop-in replacement with zero migration needed.</p>
-                </div>
-                
-                <div class="feature-card">
-                    <div class="feature-icon">💼</div>
-                    <h3 class="feature-title">Project-local dependencies</h3>
-                    <p class="feature-description">Like npm for system packages. Each project can have its own tool versions with velo.json manifests.</p>
-                </div>
-                
-                <div class="feature-card">
-                    <div class="feature-icon">🔒</div>
-                    <h3 class="feature-title">Security-first design</h3>
-                    <p class="feature-description">SHA256 verification, code signing, and advanced security measures built into every operation.</p>
-                </div>`;
-                
-        performanceHtml = `
-                <div class="performance-item">
-                    <h3 class="performance-title">Swift-native Formula Parsing</h3>
-                    <p class="performance-description">10x faster than Ruby interpretation with regex optimization and binary caching.</p>
-                </div>
-                
-                <div class="performance-item">
-                    <h3 class="performance-title">Parallel Downloads</h3>
-                    <p class="performance-description">Multi-stream concurrent downloads with intelligent retry logic and progress reporting.</p>
-                </div>
-                
-                <div class="performance-item">
-                    <h3 class="performance-title">Smart Caching</h3>
-                    <p class="performance-description">Memory + disk layers with automatic invalidation and predictive prefetching.</p>
-                </div>
-                
-                <div class="performance-item">
-                    <h3 class="performance-title">Memory Optimization</h3>
-                    <p class="performance-description">Lazy loading, memory-mapped files, and automatic cleanup for minimal resource usage.</p>
-                </div>`;
-        
-        // Set hero content for fallback
-        heroContent = {
-            badge_icon: '⚠️',
-            badge_text: 'Experimental Software - Use with caution',
-            hero_title: 'Velocity: The Fastest<br>Package Manager for<br><span class="hero-title-accent">Apple Silicon</span>',
-            hero_subtitle: 'Native speed. Modern architecture. Zero sudo required.',
-            cta_primary_text: 'Get Started',
-            cta_primary_url: './docs/installation',
-            cta_secondary_text: 'View on GitHub',
-            cta_secondary_url: 'https://github.com/dimaosipa/velocity',
-            cta_note: '<strong>Note:</strong> Velocity is experimental software. Please test thoroughly before using in production environments.',
-            terminal_command: 'velo install imagemagick',
-            terminal_output: ''
-        };
-        
-        // Fallback to hardcoded values
-        title = CONFIG.title;
-        description = CONFIG.description;
-        keywords = 'velocity, velo, package manager, homebrew, swift, macos, apple silicon';
-    }
-    
-    // For home page, replace placeholders and fix asset paths for GitHub Pages
-    let html = template
-        .replace(/{{TITLE}}/g, title)
-        .replace(/{{DESCRIPTION}}/g, description)
-        .replace(/{{KEYWORDS}}/g, keywords)
-        .replace(/{{BADGE_ICON}}/g, heroContent.badge_icon || '⚠️')
-        .replace(/{{BADGE_TEXT}}/g, heroContent.badge_text || 'Experimental Software - Use with caution')
-        .replace(/{{HERO_TITLE}}/g, heroContent.hero_title || 'Velocity')
-        .replace(/{{HERO_SUBTITLE}}/g, heroContent.hero_subtitle || 'Native speed. Modern architecture. Zero sudo required.')
-        .replace(/{{CTA_PRIMARY_TEXT}}/g, heroContent.cta_primary_text || 'Get Started')
-        .replace(/{{CTA_PRIMARY_URL}}/g, heroContent.cta_primary_url || './docs/installation')
-        .replace(/{{CTA_SECONDARY_TEXT}}/g, heroContent.cta_secondary_text || 'View on GitHub')
-        .replace(/{{CTA_SECONDARY_URL}}/g, heroContent.cta_secondary_url || 'https://github.com/dimaosipa/velocity')
-        .replace(/{{CTA_NOTE}}/g, heroContent.cta_note || '')
-        .replace(/{{FEATURES_GRID}}/g, featuresHtml)
-        .replace(/{{PERFORMANCE_GRID}}/g, performanceHtml)
-        .replace(/{{TERMINAL_OUTPUT}}/g, terminalHtml)
-        .replace(/{{FEATURES_SUBTITLE}}/g, homeConfig?.sections?.Features?.subtitle || 'Modern architecture designed from the ground up for Apple Silicon Macs')
-        .replace(/{{PERFORMANCE_SUBTITLE}}/g, homeConfig?.sections?.Performance?.subtitle || 'Designed for speed at every level of the stack')
-        .replace(/{{CTA_SECTION_TITLE}}/g, homeConfig?.sections?.['Call to Action']?.subtitle?.split(' | ')[0] || 'Ready to try Velocity?')
-        .replace(/{{CTA_SECTION_SUBTITLE}}/g, homeConfig?.sections?.['Call to Action']?.subtitle?.split(' | ')[1] || 'Join developers who are tired of waiting for package operations')
-        .replace(/href="\.\/([^"]+)"/g, 'href="./$1"')  // Keep relative paths as-is
-        .replace(/src="\.\/([^"]+)"/g, 'src="./$1"');   // Keep relative paths as-is
-    
-    // Replace footer links if dynamic footer is available
-    if (dynamicFooter) {
-        html = html.replace(
-            /<div class="footer-links"[\s\S]*?<\/div>\s*<\/div>/,
-            `<div class="footer-links">${dynamicFooter}
-                </div>
-            </div>`
-        );
-    }
-    
-    const outputFile = path.join(CONFIG.outputDir, 'index.html');
-    await fs.writeFile(outputFile, html, 'utf8');
-    
-    console.log('✅ Home page generated');
-}
-
-/**
  * Generate documentation overview page
  */
 async function generateDocsOverview(docsStructure) {
@@ -852,27 +719,30 @@ async function generateDocsOverview(docsStructure) {
     // Convert markdown to HTML
     const contentHtml = processMarkdown(readmeContent);
     
-    const finalContent = contentHtml;
-    
     // Generate sidebar navigation for docs root
     const sidebarNav = generateSidebarNavigation('/docs', docsStructure);
     
     // Generate dynamic footer for docs page
-    const dynamicFooter = generateDynamicFooter(footerConfig, 1);
+    const dynamicFooter = generators.dynamicFooter(footerConfig, 1);
     
-    // Replace template placeholders and fix paths for docs root (one level deep)
-    let html = template
-        .replace(/{{TITLE}}/g, 'Overview')
-        .replace(/{{DESCRIPTION}}/g, CONFIG.description)
-        .replace(/{{TABLE_OF_CONTENTS}}/g, tocHtml)
-        .replace(/{{CONTENT}}/g, finalContent)
-        .replace(/{{SIDEBAR_NAVIGATION}}/g, sidebarNav)
-        .replace(/{{SOURCE_FILE}}/g, 'README.md')
-        .replace(/{{#BREADCRUMB}}.*?{{\/BREADCRUMB}}/gs, '')
-        .replace(/{{#PREV_PAGE}}.*?{{\/PREV_PAGE}}/gs, '')
-        .replace(/{{#NEXT_PAGE}}.*?{{\/NEXT_PAGE}}/gs, '')
-        .replace(/href="\.\.\/([^"]+)"/g, 'href="../$1"')  // Fix relative paths for docs root
-        .replace(/src="\.\.\/([^"]+)"/g, 'src="../$1"');   // Fix relative paths for docs root
+    // Apply template replacements
+    const replacements = {
+        TITLE: 'Overview',
+        DESCRIPTION: CONFIG.description,
+        TABLE_OF_CONTENTS: tocHtml,
+        CONTENT: contentHtml,
+        SIDEBAR_NAVIGATION: sidebarNav,
+        SOURCE_FILE: 'README.md'
+    };
+    
+    let html = utils.applyTemplateReplacements(template, replacements);
+    
+    // Handle conditional template blocks
+    html = html.replace(/{{#BREADCRUMB}}.*?{{\/BREADCRUMB}}/gs, ''); // Remove breadcrumb for overview
+    html = html.replace(/{{#PREV_PAGE}}.*?{{\/PREV_PAGE}}/gs, ''); // Remove prev page
+    html = html.replace(/{{#NEXT_PAGE}}.*?{{\/NEXT_PAGE}}/gs, ''); // Remove next page
+    
+    html = utils.fixRelativePaths(html, 1);
     
     // Replace footer links if dynamic footer is available
     if (dynamicFooter) {
@@ -928,58 +798,33 @@ async function generateDocPages(docsStructure) {
         const prevPage = i > 0 ? docsStructure[i - 1] : null;
         const nextPage = i < docsStructure.length - 1 ? docsStructure[i + 1] : null;
         
-        let prevPageHtml = '';
-        let nextPageHtml = '';
-        
-        if (prevPage) {
-            prevPageHtml = `
-                <a href="${prevPage.path}" class="footer-nav-link footer-nav-prev">
-                    <svg class="footer-nav-icon" width="16" height="16" viewBox="0 0 16 16" fill="none">
-                        <path d="M10 12L6 8L10 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-                    </svg>
-                    <div>
-                        <div class="footer-nav-label">Previous</div>
-                        <div class="footer-nav-title">${prevPage.title}</div>
-                    </div>
-                </a>
-            `;
-        }
-        
-        if (nextPage) {
-            nextPageHtml = `
-                <a href="${nextPage.path}" class="footer-nav-link footer-nav-next">
-                    <div>
-                        <div class="footer-nav-label">Next</div>
-                        <div class="footer-nav-title">${nextPage.title}</div>
-                    </div>
-                    <svg class="footer-nav-icon" width="16" height="16" viewBox="0 0 16 16" fill="none">
-                        <path d="M6 12L10 8L6 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-                    </svg>
-                </a>
-            `;
-        }
+        const prevPageHtml = prevPage ? generateNavLink(prevPage, 'Previous', 'prev') : '';
+        const nextPageHtml = nextPage ? generateNavLink(nextPage, 'Next', 'next') : '';
         
         // Generate sidebar navigation for subdoc pages
         const sidebarNav = generateSidebarNavigation(doc.path, docsStructure);
         
         // Generate dynamic footer for subdoc pages  
-        const dynamicFooter = generateDynamicFooter(footerConfig, 2);
+        const dynamicFooter = generators.dynamicFooter(footerConfig, 2);
         
-        // Replace template placeholders and fix paths for subdoc pages (two levels deep)
-        let html = template
-            .replace(/{{TITLE}}/g, doc.title)
-            .replace(/{{DESCRIPTION}}/g, doc.description)
-            .replace(/{{TABLE_OF_CONTENTS}}/g, tocHtml)
-            .replace(/{{CONTENT}}/g, contentHtml)
-            .replace(/{{SIDEBAR_NAVIGATION}}/g, sidebarNav)
-            .replace(/{{SOURCE_FILE}}/g, `docs/${doc.file}`)
-            .replace(/{{#BREADCRUMB}}(.*?){{\/BREADCRUMB}}/gs, `<span class="breadcrumb-separator">/</span><span class="breadcrumb-current">${doc.title}</span>`)
-            .replace(/{{#PREV_PAGE}}.*?{{\/PREV_PAGE}}/gs, prevPageHtml)
-            .replace(/{{#NEXT_PAGE}}.*?{{\/NEXT_PAGE}}/gs, nextPageHtml)
-            .replace(/href="NAVLINK:([^"]+)"/g, 'href="NAV_FINAL:$1"')  // Mark navigation links to protect them
-            .replace(/href="\.\.\/([^"]+)"/g, 'href="../../$1"')  // Fix relative paths for sub-docs (two levels up)
-            .replace(/href="NAV_FINAL:([^"]+)"/g, 'href="../$1/"')  // Restore navigation links AFTER general replacement
-            .replace(/src="\.\.\/([^"]+)"/g, 'src="../../$1"');   // Fix relative paths for sub-docs (two levels up)
+        // Apply template replacements
+        const replacements = {
+            TITLE: doc.title,
+            DESCRIPTION: doc.description,
+            TABLE_OF_CONTENTS: tocHtml,
+            CONTENT: contentHtml,
+            SIDEBAR_NAVIGATION: sidebarNav,
+            SOURCE_FILE: `docs/${doc.file}`
+        };
+        
+        let html = utils.applyTemplateReplacements(template, replacements);
+        
+        // Handle conditional template blocks
+        html = html.replace(/{{#BREADCRUMB}}.*?{{\/BREADCRUMB}}/gs, `<span class="breadcrumb-separator">/</span><span class="breadcrumb-current">${doc.title}</span>`);
+        html = html.replace(/{{#PREV_PAGE}}.*?{{\/PREV_PAGE}}/gs, prevPageHtml);
+        html = html.replace(/{{#NEXT_PAGE}}.*?{{\/NEXT_PAGE}}/gs, nextPageHtml);
+        
+        html = processDocPagePaths(html);
         
         // Replace footer links if dynamic footer is available
         if (dynamicFooter) {
@@ -1003,6 +848,155 @@ async function generateDocPages(docsStructure) {
     }
     
     console.log('✅ All documentation pages generated');
+}
+
+/**
+ * Generate navigation link for prev/next pages
+ */
+function generateNavLink(page, label, direction) {
+    const iconPath = direction === 'prev' ? 'M10 12L6 8L10 4' : 'M6 12L10 8L6 4';
+    const linkClass = `footer-nav-link footer-nav-${direction}`;
+    
+    return `
+        <a href="${page.path}" class="${linkClass}">
+            ${direction === 'prev' ? `<svg class="footer-nav-icon" width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <path d="${iconPath}" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>` : ''}
+            <div>
+                <div class="footer-nav-label">${label}</div>
+                <div class="footer-nav-title">${page.title}</div>
+            </div>
+            ${direction === 'next' ? `<svg class="footer-nav-icon" width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <path d="${iconPath}" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>` : ''}
+        </a>
+    `;
+}
+
+/**
+ * Process doc page paths for navigation
+ */
+function processDocPagePaths(html) {
+    return html
+        .replace(/href="NAVLINK:([^"]+)"/g, 'href="NAV_FINAL:$1"')  // Mark navigation links to protect them
+        .replace(/href="\.\.\/([^"]+)"/g, 'href="../../$1"')  // Fix relative paths for sub-docs (two levels up)
+        .replace(/href="NAV_FINAL:([^"]+)"/g, 'href="../$1/"')  // Restore navigation links AFTER general replacement
+        .replace(/src="\.\.\/([^"]+)"/g, 'src="../../$1"');   // Fix relative paths for sub-docs (two levels up)
+}
+
+/**
+ * Generate home page
+ */
+async function generateHomePage() {
+    console.log('🏠 Generating home page...');
+    
+    const template = await fs.readFile(CONFIG.homeTemplate, 'utf8');
+    const footerConfig = await parseFooterConfig();
+    const homeConfig = await parseHomeConfig();
+    
+    // Prepare content data
+    const contentData = prepareHomePageContent(homeConfig);
+    
+    // Generate dynamic footer
+    const dynamicFooter = generators.dynamicFooter(footerConfig, 0);
+    
+    // Apply template replacements
+    const replacements = {
+        TITLE: contentData.title,
+        DESCRIPTION: contentData.description,
+        KEYWORDS: contentData.keywords,
+        BADGE_ICON: contentData.heroContent.badge_icon,
+        BADGE_TEXT: contentData.heroContent.badge_text,
+        HERO_TITLE: contentData.heroContent.hero_title,
+        HERO_SUBTITLE: contentData.heroContent.hero_subtitle,
+        CTA_PRIMARY_TEXT: contentData.heroContent.cta_primary_text,
+        CTA_PRIMARY_URL: contentData.heroContent.cta_primary_url,
+        CTA_SECONDARY_TEXT: contentData.heroContent.cta_secondary_text,
+        CTA_SECONDARY_URL: contentData.heroContent.cta_secondary_url,
+        CTA_NOTE: contentData.heroContent.cta_note,
+        FEATURES_GRID: contentData.featuresHtml,
+        PERFORMANCE_GRID: contentData.performanceHtml,
+        FEATURES_SUBTITLE: contentData.featuresSubtitle,
+        PERFORMANCE_SUBTITLE: contentData.performanceSubtitle,
+        CTA_SECTION_TITLE: contentData.ctaSectionTitle,
+        CTA_SECTION_SUBTITLE: contentData.ctaSectionSubtitle
+    };
+    
+    let html = utils.applyTemplateReplacements(template, replacements);
+    
+    // Replace footer links if dynamic footer is available
+    if (dynamicFooter) {
+        html = html.replace(
+            /<div class="footer-links"[\s\S]*?<\/div>\s*<\/div>/,
+            `<div class="footer-links">${dynamicFooter}
+                </div>
+            </div>`
+        );
+    }
+    
+    const outputFile = path.join(CONFIG.outputDir, 'index.html');
+    await fs.writeFile(outputFile, html, 'utf8');
+    
+    console.log('✅ Home page generated');
+}
+
+/**
+ * Prepare home page content data
+ */
+function prepareHomePageContent(homeConfig) {
+    let contentData = {
+        title: CONFIG.title,
+        description: CONFIG.description,
+        keywords: 'velocity, velo, package manager, homebrew, swift, macos, apple silicon',
+        heroContent: CONFIG.defaultHeroContent,
+        featuresHtml: generators.getDefaultFeatures(),
+        performanceHtml: generators.getDefaultPerformance(),
+        featuresSubtitle: 'Modern architecture designed from the ground up for Apple Silicon Macs',
+        performanceSubtitle: 'Designed for speed at every level of the stack',
+        ctaSectionTitle: 'Ready to try Velocity?',
+        ctaSectionSubtitle: 'Join developers who are tired of waiting for package operations'
+    };
+    
+    if (homeConfig) {
+        const { frontmatter, sections } = homeConfig;
+        
+        // Override with HOME.md data if available
+        contentData.title = frontmatter.title || contentData.title;
+        contentData.description = frontmatter.description || contentData.description;
+        contentData.keywords = frontmatter.keywords || contentData.keywords;
+        
+        // Extract hero content from frontmatter
+        contentData.heroContent = {
+            badge_icon: frontmatter.badge_icon || contentData.heroContent.badge_icon,
+            badge_text: frontmatter.badge_text || contentData.heroContent.badge_text,
+            hero_title: frontmatter.hero_title || contentData.heroContent.hero_title,
+            hero_subtitle: frontmatter.hero_subtitle || contentData.heroContent.hero_subtitle,
+            cta_primary_text: frontmatter.cta_primary_text || contentData.heroContent.cta_primary_text,
+            cta_primary_url: frontmatter.cta_primary_url || contentData.heroContent.cta_primary_url,
+            cta_secondary_text: frontmatter.cta_secondary_text || contentData.heroContent.cta_secondary_text,
+            cta_secondary_url: frontmatter.cta_secondary_url || contentData.heroContent.cta_secondary_url,
+            cta_note: frontmatter.cta_note || contentData.heroContent.cta_note
+        };
+        
+        // Generate content sections
+        if (sections.Features) {
+            contentData.featuresHtml = generators.featuresGrid(sections.Features);
+            contentData.featuresSubtitle = sections.Features.subtitle || contentData.featuresSubtitle;
+        }
+        
+        if (sections.Performance) {
+            contentData.performanceHtml = generators.performanceGrid(sections.Performance);
+            contentData.performanceSubtitle = sections.Performance.subtitle || contentData.performanceSubtitle;
+        }
+        
+        if (sections['Call to Action']) {
+            const ctaParts = sections['Call to Action'].subtitle?.split(' | ');
+            contentData.ctaSectionTitle = ctaParts?.[0] || contentData.ctaSectionTitle;
+            contentData.ctaSectionSubtitle = ctaParts?.[1] || contentData.ctaSectionSubtitle;
+        }
+    }
+    
+    return contentData;
 }
 
 /**
