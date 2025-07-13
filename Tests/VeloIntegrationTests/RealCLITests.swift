@@ -238,7 +238,7 @@ final class RealCLITests: XCTestCase {
         // Uninstall non-existent package
         do {
             var uninstall = Velo.Uninstall()
-            uninstall.package = "definitely-does-not-exist"
+            uninstall.packages = ["definitely-does-not-exist"]
             uninstall.force = true
             XCTAssertThrowsError(try uninstall.run())
         }

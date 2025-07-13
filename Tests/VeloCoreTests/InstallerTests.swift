@@ -268,6 +268,14 @@ private class MockInstallationProgress: InstallationProgress {
         // Track updates if needed
     }
 
+    func processingDidStart(phase: String) {
+        // Track processing start if needed
+    }
+
+    func processingDidUpdate(phase: String, progress: Double) {
+        // Track processing updates if needed
+    }
+
     func linkingDidStart(binariesCount: Int) {
         linkingStarted = true
     }

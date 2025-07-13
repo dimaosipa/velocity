@@ -113,7 +113,7 @@ final class CLIIntegrationTests: XCTestCase {
     func testUninstallNonexistentPackage() throws {
         // TODO: CLI integration tests need proper PathHelper injection
         var uninstall = Velo.Uninstall()
-        uninstall.package = "nonexistent"
+        uninstall.packages = ["nonexistent"]
         uninstall.force = true // Skip confirmation
         XCTAssertNotNil(uninstall)
     }
@@ -201,7 +201,7 @@ final class CLIIntegrationTests: XCTestCase {
         XCTAssertNotNil(info)
 
         var uninstall = Velo.Uninstall()
-        uninstall.package = "nonexistent"
+        uninstall.packages = ["nonexistent"]
         uninstall.force = true
         XCTAssertNotNil(uninstall)
     }
