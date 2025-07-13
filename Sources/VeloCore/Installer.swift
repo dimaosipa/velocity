@@ -1084,7 +1084,42 @@ public final class Installer {
         // Add remaining files
         processableFiles.append(contentsOf: batch)
 
+        // Also find app bundle binaries that were skipped by skipsPackageDescendants
+        let appBundleBinaries = try findAppBundleBinaries(in: directory)
+        processableFiles.append(contentsOf: appBundleBinaries)
+
         return processableFiles
+    }
+    
+    private func findAppBundleBinaries(in directory: URL) throws -> [URL] {
+        var appBinaries: [URL] = []
+        
+        guard let enumerator = fileManager.enumerator(
+            at: directory,
+            includingPropertiesForKeys: [.isRegularFileKey, .isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return appBinaries
+        }
+        
+        for case let fileURL as URL in enumerator {
+            let path = fileURL.path
+            
+            // Look specifically for .app/Contents/MacOS/ binaries
+            if path.contains(".app/Contents/MacOS/") {
+                do {
+                    let resourceValues = try fileURL.resourceValues(forKeys: [.isRegularFileKey])
+                    if resourceValues.isRegularFile == true {
+                        appBinaries.append(fileURL)
+                    }
+                } catch {
+                    // Skip files we can't read attributes for
+                    continue
+                }
+            }
+        }
+        
+        return appBinaries
     }
 
     private func isTextScript(at fileURL: URL) async throws -> Bool {
@@ -1204,6 +1239,14 @@ public final class Installer {
             "@executable_path/\(rootPath)"   // For main executables finding libraries
         ]
 
+        // Special handling for Python.app bundle binaries
+        if binaryPath.path.contains(".app/Contents/MacOS/Python") {
+            // Python.app needs to find the Python framework library
+            // From Python.app/Contents/MacOS/Python to Python.framework/Versions/3.13/Python
+            rpathEntries.append("@loader_path/../../../Python")  // Direct path to Python framework library
+            rpathEntries.append("@executable_path/../../../Python")
+        }
+        
         // Special handling for framework binaries to support symlinked access
         if binaryPath.path.contains("/Frameworks/") && binaryPath.path.contains(".framework/") {
             // Add additional rpath entries for symlinked framework binaries
