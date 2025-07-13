@@ -1215,6 +1215,24 @@ public final class Installer {
         }
     }
 
+    private func extractFrameworkName(from path: URL) -> String? {
+        let pathString = path.path
+        
+        // Look for pattern: SomeFramework.framework
+        if let frameworkRange = pathString.range(of: "\\.framework/", options: .regularExpression) {
+            let beforeFramework = pathString[..<frameworkRange.lowerBound]
+            if let lastSlash = beforeFramework.lastIndex(of: "/") {
+                let frameworkWithExtension = String(beforeFramework[beforeFramework.index(after: lastSlash)...])
+                // Remove .framework extension
+                if frameworkWithExtension.hasSuffix(".framework") {
+                    return String(frameworkWithExtension.dropLast(10)) // Remove ".framework"
+                }
+            }
+        }
+        
+        return nil
+    }
+    
     private func calculateRPathEntries(for binaryPath: URL) -> [String] {
         let pathComponents = binaryPath.pathComponents
 
@@ -1239,14 +1257,6 @@ public final class Installer {
             "@executable_path/\(rootPath)"   // For main executables finding libraries
         ]
 
-        // Special handling for Python.app bundle binaries
-        if binaryPath.path.contains(".app/Contents/MacOS/Python") {
-            // Python.app needs to find the Python framework library
-            // From Python.app/Contents/MacOS/Python to Python.framework/Versions/3.13/Python
-            rpathEntries.append("@loader_path/../../../Python")  // Direct path to Python framework library
-            rpathEntries.append("@executable_path/../../../Python")
-        }
-        
         // Special handling for framework binaries to support symlinked access
         if binaryPath.path.contains("/Frameworks/") && binaryPath.path.contains(".framework/") {
             // Add additional rpath entries for symlinked framework binaries
@@ -1254,8 +1264,23 @@ public final class Installer {
             rpathEntries.append("@loader_path/../../../../../../../..")
             rpathEntries.append("@executable_path/../../../../../../../..")
 
-            // For python binaries, add direct path to the framework
-            if binaryPath.path.contains("python") {
+            // For app bundles within frameworks, add direct path to framework library
+            if binaryPath.path.contains(".app/Contents/MacOS/") {
+                if let frameworkName = extractFrameworkName(from: binaryPath) {
+                    // App bundle needs direct path to framework library
+                    // From SomeFramework.app/Contents/MacOS/Binary to SomeFramework
+                    rpathEntries.append("@loader_path/../../../\(frameworkName)")
+                    rpathEntries.append("@executable_path/../../../\(frameworkName)")
+                } else {
+                    // Fallback for Python.app specifically (temporary fix)
+                    if binaryPath.path.contains("Python.app") {
+                        rpathEntries.append("@loader_path/../../../Python")
+                        rpathEntries.append("@executable_path/../../../Python")
+                    }
+                }
+            }
+            // For regular framework binaries (not in app bundles)
+            else if binaryPath.path.contains("python") {
                 rpathEntries.append("@loader_path/../../..")  // Relative to framework library
                 rpathEntries.append("@executable_path/../../..")
             }
