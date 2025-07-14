@@ -1,0 +1,9 @@
+{
+  "dependencies" : {
+    "pre-commit" : "*",
+    "swiftlint" : "*"
+  },
+  "taps" : [
+
+  ]
+}
