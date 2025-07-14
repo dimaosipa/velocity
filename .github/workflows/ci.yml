@@ -204,6 +204,7 @@ jobs:
         shasum -a 256 velo-${{ steps.get_version.outputs.VERSION }}-arm64.tar.gz > velo-${{ steps.get_version.outputs.VERSION }}-arm64.tar.gz.sha256
     
     - name: Create GitHub Release
+      id: create_release
       uses: softprops/action-gh-release@v1
       with:
         tag_name: ${{ steps.get_version.outputs.VERSION }}
@@ -239,6 +240,14 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     
+    - name: Verify Release Creation
+      run: |
+        if [ -z "${{ steps.create_release.outputs.url }}" ]; then
+          echo "Failed to create release"
+          exit 1
+        fi
+        echo "Release created successfully: ${{ steps.create_release.outputs.url }}"
+    
     - name: Update Homebrew Tap
       uses: ./.github/actions/update-homebrew-tap
       with:
@@ -253,3 +262,32 @@ jobs:
           
           Automated update from dimaosipa/velocity release
         token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+
+  # Cleanup job to remove tag if tests or build fail
+  cleanup:
+    if: failure() && startsWith(github.ref, 'refs/tags/v')
+    runs-on: macos-14
+    needs: [build, test, release]
+    permissions:
+      contents: write
+    
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Needed to delete tags
+    
+    - name: Delete failed tag
+      run: |
+        # Extract tag name from ref
+        TAG_NAME=${GITHUB_REF#refs/tags/}
+        echo "::warning::Build/test failure detected for tag $TAG_NAME"
+        echo "Cleaning up failed tag to keep repository tidy..."
+        
+        # Delete the tag locally and remotely
+        git tag -d "$TAG_NAME" 2>/dev/null || echo "Tag $TAG_NAME not found locally"
+        git push origin :refs/tags/"$TAG_NAME" 2>/dev/null || echo "Tag $TAG_NAME not found on remote"
+        
+        echo "::notice::Tag $TAG_NAME has been removed due to build/test failures"
+        echo "Please fix the issues and create a new tag for release"
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
