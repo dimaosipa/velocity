@@ -309,9 +309,6 @@ velo update-self --check
 # Update to latest stable release
 velo update-self
 
-# Update to pre-release version
-velo update-self --pre-release
-
 # Force update even if on latest version
 velo update-self --force
 
