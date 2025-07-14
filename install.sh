@@ -39,11 +39,10 @@ if [[ "${1:-}" == "--symlink" ]]; then
     .build/release/velo install-self --symlink
 else
     .build/release/velo install-self
+    # Clean up build artifacts (skip if using symlink)
+    echo "🧹 Cleaning up build artifacts..."
+    rm -rf .build
 fi
-
-# Clean up build artifacts
-echo "🧹 Cleaning up build artifacts..."
-rm -rf .build
 
 echo ""
 echo "✅ Installation complete!"

@@ -21,7 +21,7 @@ The fast, modern package manager for Apple Silicon Macs.
 
 Velocity is a next-generation package manager for macOS, designed for speed, simplicity, and total user control. Velocity treats formulas as declarative files, installs only from pre-built bottles (never compiles from source), and runs entirely in user space—no sudo, no system writes, and no risk.
 
-## ✨ Key Features
+## Key Features
 
 - **🔋 Apple Silicon Native**: Built from the ground up using Swift for Apple Silicon Macs. No legacy code, no slow emulation.
 - **📝 Declarative Formula Handling**: Uses Homebrew .rb formulae as simple, predictable configuration files. No Ruby runtime or interpretation required.
@@ -52,12 +52,6 @@ cd velocity
 ./install.sh
 ```
 
-Run project-specific commands:
-
-```sh
-# Use velo exec to run commands in the context of a project
-velo exec <command>
-```
 
 ## Why Not Just Use Homebrew?
 

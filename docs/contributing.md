@@ -40,7 +40,7 @@ git remote add upstream https://github.com/dimaosipa/velocity.git
 4. **Verify** the build works:
 
 ```bash
-swift build
+./Scripts/build.sh
 swift test
 ```
 
@@ -88,8 +88,7 @@ We welcome code contributions for:
 cd velocity
 
 # Install as development symlink
-swift build -c release
-./build/release/velo install-self --symlink
+./install.sh --symlink
 
 # Now velo uses your development version
 velo --version

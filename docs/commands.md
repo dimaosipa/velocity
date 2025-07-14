@@ -16,33 +16,28 @@ Complete guide to all Velocity commands with examples and options.
 Install packages locally or globally.
 
 ```bash
-# Install package locally (adds to velo.json)
+# Install package 
+# in velo.json exists in current folder, it will install into local .velo folder, just like npm
+# if velo.json doesnt exist in current folder, will install into ~/.velo
+# supports multiple packages
 velo install imagemagick
 
-# Install package globally
+# Install package globally (into ~/.velo) even if velo.json exists in current directory
 velo install wget --global
 
 # Install specific version
-velo install wget --version 1.21.3
+velo install wget@1.25.0
 
 # Install all dependencies from velo.json
 velo install
-
-# Install with exact versions from velo.lock (CI mode)
-velo install --frozen
-
-# Verify before installing
-velo install --check
 
 # Force reinstall even if already installed
 velo install wget --force
 ```
 
 **Options:**
-- `--global` - Install globally instead of locally
+- `--global` - Forces installation globally instead of locally
 - `--version <version>` - Install specific version if available
-- `--frozen` - Install exact versions from lock file
-- `--check` - Verify packages before installing
 - `--force` - Force reinstall even if already installed (useful for fixing broken packages)
 
 ### uninstall
@@ -51,12 +46,14 @@ Remove installed packages.
 
 ```bash
 # Remove package (all versions)
+# in velo.json exists in current folder, it will remove from local .velo folder, just like npm
+# supports multiple packages
 velo uninstall wget
 
 # Remove specific version only
-velo uninstall wget --version 1.21.3
+velo uninstall wget@1.21.3
 
-# Remove from global installation
+# Remove from global installation (~/.velo)
 velo uninstall wget --global
 ```
 
@@ -74,33 +71,7 @@ velo list
 
 # Show all versions of each package
 velo list --versions
-
-# List global packages only
-velo list --global
-
-# List local packages only
-velo list --local
 ```
-
-**Options:**
-- `--versions` - Show all installed versions
-- `--global` - Show only global packages
-- `--local` - Show only local packages
-
-### switch
-
-Change the default version of a package.
-
-```bash
-# Switch default version of wget
-velo switch wget 1.21.3
-
-# Switch global package version
-velo switch wget 1.21.3 --global
-```
-
-**Options:**
-- `--global` - Switch global package version
 
 ### info
 
@@ -109,13 +80,7 @@ Show detailed information about packages.
 ```bash
 # Show package information
 velo info wget
-
-# Show information for specific version
-velo info wget --version 1.21.3
 ```
-
-**Options:**
-- `--version <version>` - Show info for specific version
 
 ### search
 
@@ -124,9 +89,6 @@ Search for packages in repositories.
 ```bash
 # Search for packages containing "http"
 velo search http
-
-# Search with wildcards
-velo search "web*"
 
 # Search in specific tap
 velo search nginx --tap homebrew/nginx
@@ -144,17 +106,7 @@ Initialize a new project with velo.json manifest.
 ```bash
 # Create new project
 velo init
-
-# Initialize with specific name
-velo init --name "my-project"
-
-# Initialize with dependencies
-velo init --with imagemagick,ffmpeg
 ```
-
-**Options:**
-- `--name <name>` - Set project name
-- `--with <packages>` - Add initial dependencies
 
 ### exec
 
@@ -180,34 +132,11 @@ Show which binary will be used for a command.
 velo which convert
 
 # Show all available versions
-velo which convert --all
-
-# Show global version only
-velo which convert --global
+velo which --all convert 
 ```
 
 **Options:**
 - `--all` - Show all available versions
-- `--global` - Show only global version
-
-### verify
-
-Verify that installed packages match velo.lock.
-
-```bash
-# Verify all packages
-velo verify
-
-# Verify and show differences
-velo verify --verbose
-
-# Verify specific package
-velo verify imagemagick
-```
-
-**Options:**
-- `--verbose` - Show detailed differences
-- `<package>` - Verify specific package only
 
 ## Repository Management
 
@@ -231,12 +160,6 @@ velo tap add https://github.com/user/homebrew-tools.git
 # Remove a tap
 velo tap remove user/homebrew-tools
 
-# Update all taps
-velo tap update
-
-# Update specific tap
-velo tap update homebrew/core
-
 # Force global tap operations (skip velo.json)
 velo tap add user/tools --global
 ```
@@ -246,7 +169,6 @@ velo tap add user/tools --global
 - `list` - Show installed taps
 - `add <tap>` - Add new tap
 - `remove <tap>` - Remove tap  
-- `update [tap]` - Update taps
 
 ### update
 
@@ -255,9 +177,6 @@ Update package repositories.
 ```bash
 # Update all repositories
 velo update
-
-# Update and show changes
-velo update --verbose
 
 # Update specific tap only
 velo update homebrew/core
@@ -277,16 +196,9 @@ Check system health and configuration.
 # Run all health checks
 velo doctor
 
-# Show detailed system information
-velo doctor --verbose
-
-# Check specific component
-velo doctor --check taps
+# Fix found problems
+velo doctor --fix
 ```
-
-**Options:**
-- `--verbose` - Show detailed system information
-- `--check <component>` - Check specific component (taps, packages, permissions)
 
 ### repair
 
@@ -312,7 +224,6 @@ velo repair --force
 - `<package>` - Repair specific package only
 
 **When to use repair:**
-- After upgrading from Homebrew to Velo
 - When packages fail with dyld symbol loading errors
 - If binary or library dependencies are broken
 - When `@@HOMEBREW_PREFIX@@` placeholders weren't replaced during installation
@@ -345,7 +256,6 @@ velo clean --cache --dry-run
 - `--cache` - Clean download cache
 - `--packages` - Remove all packages
 - `--all` - Clean everything
-- `--dry-run` - Show what would be cleaned
 - `<package>` - Clean specific package
 
 ## Self Management
@@ -459,11 +369,6 @@ velo uninstall wget
 These options work with most commands:
 
 - `--help, -h` - Show help information
-- `--verbose, -v` - Enable verbose output
-- `--quiet, -q` - Suppress non-essential output
-- `--dry-run` - Show what would be done without executing
-- `--global` - Operate on global packages/taps
-- `--local` - Operate on local packages/taps only
 
 ## Examples
 
