@@ -22,6 +22,11 @@ on:
         required: true
         type: string
 
+# Cancel previous release runs
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false  # Don't cancel releases in progress
+
 jobs:
   create-tag:
     runs-on: ubuntu-latest

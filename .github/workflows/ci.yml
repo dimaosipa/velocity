@@ -7,6 +7,11 @@ on:
   pull_request:
     branches: [ main ]
 
+# Cancel previous runs on new commits to the same branch
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: macos-14 # Apple Silicon only
