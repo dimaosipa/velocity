@@ -43,6 +43,7 @@ runs:
         # Update the formula
         sed -i '' "s|url \".*\"|url \"${{ inputs.download-url }}\"|" ${{ inputs.formula-path }}
         sed -i '' "s|sha256 \".*\"|sha256 \"${SHA256}\"|" ${{ inputs.formula-path }}
+        sed -i '' "s|version \".*\"|version \"${{ inputs.version }}\"|" ${{ inputs.formula-path }}
         
         # Configure git
         git config user.name "github-actions[bot]"
