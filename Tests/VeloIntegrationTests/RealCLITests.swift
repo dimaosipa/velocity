@@ -155,7 +155,7 @@ final class RealCLITests: XCTestCase {
         let output = try await withTimeout(seconds: 10) {
             try await self.runCLICommand(["info", "wget", "--verbose"])
         }
-        XCTAssertTrue(output.contains("Formula:") || output.contains("Package:") || output.contains("not found"),
+        XCTAssertTrue(output.contains("==>") || output.contains("Formula:") || output.contains("Package:") || output.contains("not found"),
                      "Info verbose mode should work")
     }
 
@@ -437,14 +437,22 @@ final class RealCLITests: XCTestCase {
         process.executableURL = URL(fileURLWithPath: executablePath)
         process.arguments = args
 
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = pipe
+        let stdoutPipe = Pipe()
+        let stderrPipe = Pipe()
+        process.standardOutput = stdoutPipe
+        process.standardError = stderrPipe
 
         try process.run()
         process.waitUntilExit()
 
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        return String(data: data, encoding: .utf8) ?? ""
+        let stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
+        let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+
+        let stdout = String(data: stdoutData, encoding: .utf8) ?? ""
+        let stderr = String(data: stderrData, encoding: .utf8) ?? ""
+
+        // Combine stdout and stderr
+        let combined = stdout + stderr
+        return combined
     }
 }

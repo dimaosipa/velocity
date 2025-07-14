@@ -36,18 +36,13 @@ extension Velo {
                 // Parse package specification (supports package@version syntax)
                 let packageSpec = PackageSpecification.parse(package)
                 guard packageSpec.isValid else {
+                    fputs("error: Invalid package specification: \(package)\n", stderr)
                     OSLogger.shared.error("Invalid package specification: \(package)")
                     throw ExitCode.failure
                 }
 
-                // Find formula (note: version is ignored for info, we show available version)
-                guard let formula = try await findFormula(packageSpec.name) else {
-                    OSLogger.shared.error("Formula not found: \(packageSpec.name)")
-                    throw ExitCode.failure
-                }
-
                 if installed {
-                    // Just show installation status
+                    // Just show installation status - don't need to find formula
                     if pathHelper.isPackageInstalled(packageSpec.name) {
                         let versions = pathHelper.installedVersions(for: packageSpec.name)
                         print("Installed versions: \(versions.joined(separator: ", "))")
@@ -55,6 +50,13 @@ extension Velo {
                         print("Not installed")
                     }
                     return
+                }
+
+                // Find formula (note: version is ignored for info, we show available version)
+                guard let formula = try await findFormula(packageSpec.name) else {
+                    fputs("error: Formula not found: \(packageSpec.name)\n", stderr)
+                    OSLogger.shared.error("Formula not found: \(packageSpec.name)")
+                    throw ExitCode.failure
                 }
 
                 // Show formula information
@@ -131,6 +133,7 @@ extension Velo {
                 }
 
             } catch {
+                fputs("error: Failed to get package info: \(error.localizedDescription)\n", stderr)
                 OSLogger.shared.error("Failed to get package info: \(error.localizedDescription)")
                 throw ExitCode.failure
             }
