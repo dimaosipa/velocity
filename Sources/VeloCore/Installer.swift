@@ -47,7 +47,7 @@ public final class Installer {
     public init(pathHelper: PathHelper = PathHelper.shared) {
         self.pathHelper = pathHelper
     }
-    
+
     /// Get runtime information from the last installation
     public func getLastRuntimeInfo() -> RuntimeReceiptInfo? {
         return lastRuntimeInfo
@@ -227,11 +227,11 @@ public final class Installer {
         // Detect runtime environment for isolation
         let runtimeDetector = RuntimePackageDetector()
         let runtimeEnvironment = runtimeDetector.detectRuntime(packageDir: packageDir, packageName: formula.name)
-        
+
         if let runtime = runtimeEnvironment {
             OSLogger.shared.debug("Detected runtime environment: \(runtime.type) for \(formula.name)", category: OSLogger.shared.installer)
         }
-        
+
         // Performance optimization: Single-pass directory collection
         struct BinaryLocation {
             let directory: URL
@@ -300,7 +300,7 @@ public final class Installer {
                 // Check if this is a framework binary or app bundle binary
                 let isFrameworkBinary = isFrameworkBinary(path: sourcePath, packageDir: packageDir)
                 let isAppBundle = isAppBundleBinary(path: sourcePath, packageDir: packageDir)
-                
+
                 // Skip .app bundle binaries - they should not be symlinked directly
                 if isAppBundle {
                     OSLogger.shared.debug("Skipping .app bundle binary: \(binary) (app bundles should not be symlinked)", category: OSLogger.shared.installer)
@@ -352,19 +352,18 @@ public final class Installer {
                         binary: binary,
                         runtime: runtimeEnvironment
                     )
-                    
-                    
+
                     if shouldUseWrapper, let runtime = runtimeEnvironment {
                         // Use wrapper script for runtime isolation
                         OSLogger.shared.debug("Creating wrapper script for \(binary) (\(runtime.type))", category: OSLogger.shared.installer)
-                        
+
                         try wrapperGenerator.generateWrapperScripts(
                             packageDir: packageDir,
                             packageName: formula.name,
                             runtime: runtime,
                             binaries: [binary]
                         )
-                        
+
                         createdSymlinks += 1
                         OSLogger.shared.debug("Created wrapper script for \(binary)", category: OSLogger.shared.installer)
                     } else {
@@ -429,7 +428,7 @@ public final class Installer {
             let wrapperBinaries = allBinaries.filter { binary in
                 wrapperGenerator.shouldUseWrapper(packageName: formula.name, binary: binary, runtime: runtime)
             }
-            
+
             lastRuntimeInfo = RuntimeReceiptInfo(
                 runtimeType: "\(runtime.type)",
                 interpreterPath: runtime.interpreterPath,
@@ -437,7 +436,7 @@ public final class Installer {
                 usesWrapperScripts: !wrapperBinaries.isEmpty,
                 wrapperScriptBinaries: wrapperBinaries
             )
-            
+
             OSLogger.shared.debug("Stored runtime info for \(formula.name): \(runtime.type), \(wrapperBinaries.count) wrapper scripts", category: OSLogger.shared.installer)
         } else {
             lastRuntimeInfo = nil
@@ -1090,10 +1089,10 @@ public final class Installer {
 
         return processableFiles
     }
-    
+
     private func findAppBundleBinaries(in directory: URL) throws -> [URL] {
         var appBinaries: [URL] = []
-        
+
         guard let enumerator = fileManager.enumerator(
             at: directory,
             includingPropertiesForKeys: [.isRegularFileKey, .isDirectoryKey],
@@ -1101,10 +1100,10 @@ public final class Installer {
         ) else {
             return appBinaries
         }
-        
+
         for case let fileURL as URL in enumerator {
             let path = fileURL.path
-            
+
             // Look specifically for .app/Contents/MacOS/ binaries
             if path.contains(".app/Contents/MacOS/") {
                 do {
@@ -1118,7 +1117,7 @@ public final class Installer {
                 }
             }
         }
-        
+
         return appBinaries
     }
 
@@ -1217,7 +1216,7 @@ public final class Installer {
 
     private func extractFrameworkName(from path: URL) -> String? {
         let pathString = path.path
-        
+
         // Look for pattern: SomeFramework.framework
         if let frameworkRange = pathString.range(of: "\\.framework/", options: .regularExpression) {
             let beforeFramework = pathString[..<frameworkRange.lowerBound]
@@ -1229,10 +1228,10 @@ public final class Installer {
                 }
             }
         }
-        
+
         return nil
     }
-    
+
     private func calculateRPathEntries(for binaryPath: URL) -> [String] {
         let pathComponents = binaryPath.pathComponents
 
@@ -1715,7 +1714,7 @@ public final class Installer {
         let relativePath = path.path.replacingOccurrences(of: packageDir.path, with: "")
         return relativePath.contains("/Frameworks/") && relativePath.contains(".framework/")
     }
-    
+
     private func isAppBundleBinary(path: URL, packageDir: URL) -> Bool {
         let relativePath = path.path.replacingOccurrences(of: packageDir.path, with: "")
         return relativePath.contains(".app/Contents/MacOS/")

@@ -26,7 +26,7 @@ extension Velo {
 
         private func runAsync() async throws {
             let startTime = Date()
-            
+
             // Ensure velo directories exist
             try PathHelper.shared.ensureVeloDirectories()
 

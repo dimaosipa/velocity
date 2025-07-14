@@ -8,7 +8,7 @@ public struct RuntimeReceiptInfo: Codable, Equatable {
     public let environmentVariables: [String: String]
     public let usesWrapperScripts: Bool
     public let wrapperScriptBinaries: [String]
-    
+
     public init(runtimeType: String, interpreterPath: String, environmentVariables: [String: String], usesWrapperScripts: Bool, wrapperScriptBinaries: [String]) {
         self.runtimeType = runtimeType
         self.interpreterPath = interpreterPath
