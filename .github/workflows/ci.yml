@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: [ main ]
+    tags: [ 'v*' ]
   pull_request:
     branches: [ main ]
 
@@ -118,3 +119,111 @@ jobs:
         echo "=== Running Unit Tests ==="
         swift test --parallel || exit 1
         echo "✅ Unit tests passed"
+
+  release:
+    runs-on: macos-14
+    name: Create Release
+    needs: [build, test]
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Setup Swift
+      uses: swift-actions/setup-swift@v1
+      with:
+        swift-version: "5.9"
+    
+    - name: Download Build Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: velo-binaries
+        path: .build/
+    
+    - name: Setup Downloaded Binaries
+      run: |
+        chmod +x .build/debug/velo .build/release/velo
+    
+    - name: Get version and tag info
+      id: get_version
+      run: |
+        VERSION=${GITHUB_REF#refs/tags/}
+        echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+        
+        # Get previous tag for changelog
+        PREVIOUS_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+        if [ -z "$PREVIOUS_TAG" ]; then
+          # If no previous tag, use the initial commit
+          PREVIOUS_TAG=$(git rev-list --max-parents=0 HEAD)
+        fi
+        echo "PREVIOUS_TAG=$PREVIOUS_TAG" >> $GITHUB_OUTPUT
+        
+        echo "Creating release for version: $VERSION"
+        echo "Previous version: $PREVIOUS_TAG"
+    
+    - name: Create release directory and tarball
+      run: |
+        mkdir -p release
+        cp .build/release/velo release/velo
+        chmod +x release/velo
+        
+        cd release
+        tar -czf velo-${{ steps.get_version.outputs.VERSION }}-arm64.tar.gz velo
+        
+        # Generate SHA256 checksum
+        shasum -a 256 velo-${{ steps.get_version.outputs.VERSION }}-arm64.tar.gz > velo-${{ steps.get_version.outputs.VERSION }}-arm64.tar.gz.sha256
+    
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ steps.get_version.outputs.VERSION }}
+        name: Release ${{ steps.get_version.outputs.VERSION }}
+        body: |
+          Release ${{ steps.get_version.outputs.VERSION }}
+          
+          ## What's Changed
+          
+          **Full Changelog**: https://github.com/dimaosipa/velocity/compare/${{ steps.get_version.outputs.PREVIOUS_TAG }}...${{ steps.get_version.outputs.VERSION }}
+          
+          ## Installation via Homebrew
+          ```bash
+          brew tap dimaosipa/brew
+          brew install velo
+          ```
+          
+          ## Manual Installation
+          Download the binary and extract:
+          ```bash
+          wget https://github.com/dimaosipa/velocity/releases/download/${{ steps.get_version.outputs.VERSION }}/velo-${{ steps.get_version.outputs.VERSION }}-arm64.tar.gz
+          tar -xzf velo-${{ steps.get_version.outputs.VERSION }}-arm64.tar.gz
+          ./velo install-self
+          ```
+          
+          ## Requirements
+          - macOS 12.0 or later
+          - Apple Silicon Mac
+          
+        files: |
+          release/velo-${{ steps.get_version.outputs.VERSION }}-arm64.tar.gz
+          release/velo-${{ steps.get_version.outputs.VERSION }}-arm64.tar.gz.sha256
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Update Homebrew Tap
+      uses: ./.github/actions/update-homebrew-tap
+      with:
+        formula-name: velo
+        homebrew-tap: dimaosipa/homebrew-brew
+        formula-path: Formula/velo.rb
+        download-url: https://github.com/dimaosipa/velocity/releases/download/${{ steps.get_version.outputs.VERSION }}/velo-${{ steps.get_version.outputs.VERSION }}-arm64.tar.gz
+        version: ${{ steps.get_version.outputs.VERSION }}
+        sha256-file: release/velo-${{ steps.get_version.outputs.VERSION }}-arm64.tar.gz.sha256
+        commit-message: |
+          velo ${{ steps.get_version.outputs.VERSION }}
+          
+          Automated update from dimaosipa/velocity release
+        token: ${{ secrets.HOMEBREW_TAP_TOKEN }}

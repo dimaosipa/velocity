@@ -1,9 +1,20 @@
+# Release Workflow
+# 
+# This workflow creates git tags which trigger the CI workflow to build and release.
+# 
+# Required secrets:
+#   - RELEASE_PAT: Personal Access Token with repo permissions to trigger workflows
+#   - HOMEBREW_TAP_TOKEN: Token for updating the Homebrew tap (used by CI)
+#
+# Usage:
+#   1. Go to GitHub Actions → Release workflow
+#   2. Click "Run workflow" 
+#   3. Enter version like "v0.0.3"
+#   4. CI will automatically build and create the release
+
 name: Release
 
 on:
-  push:
-    tags:
-      - 'v*'
   workflow_dispatch:
     inputs:
       version:
@@ -12,106 +23,50 @@ on:
         type: string
 
 jobs:
-  build-and-release:
-    runs-on: macos-latest
+  create-tag:
+    runs-on: ubuntu-latest
     permissions:
       contents: write
-      pull-requests: read
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          token: ${{ secrets.RELEASE_PAT }}
 
-      - name: Setup Xcode
-        uses: maxim-lobanov/setup-xcode@v1
-        with:
-          xcode-version: '15.0'
-
-      - name: Get version
-        id: get_version
+      - name: Validate version format
         run: |
-          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
-            echo "VERSION=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
-          else
-            echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          VERSION="${{ github.event.inputs.version }}"
+          if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "❌ Invalid version format. Please use format: v0.0.0"
+            echo "   Example: v0.0.3"
+            exit 1
           fi
-          
-          # Get previous tag for changelog
-          PREVIOUS_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
-          if [ -z "$PREVIOUS_TAG" ]; then
-            # If no previous tag, use the initial commit
-            PREVIOUS_TAG=$(git rev-list --max-parents=0 HEAD)
-          fi
-          echo "PREVIOUS_TAG=${PREVIOUS_TAG}" >> $GITHUB_OUTPUT
+          echo "✅ Version format is valid: $VERSION"
 
-      - name: Build release binary
+      - name: Check if tag exists
         run: |
-          ./Scripts/build.sh --release --arch arm64
-          
-      - name: Create release directory
+          VERSION="${{ github.event.inputs.version }}"
+          if git tag -l | grep -q "^${VERSION}$"; then
+            echo "❌ Tag $VERSION already exists"
+            exit 1
+          fi
+          echo "✅ Tag $VERSION does not exist, proceeding..."
+
+      - name: Create and push tag
         run: |
-          mkdir -p release
-          cp .build/release/velo release/velo
-          chmod +x release/velo
+          VERSION="${{ github.event.inputs.version }}"
+          echo "Creating tag: $VERSION"
           
-      - name: Create tarball
-        run: |
-          cd release
-          tar -czf velo-${{ steps.get_version.outputs.VERSION }}-arm64.tar.gz velo
+          # Configure git
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
           
-      - name: Generate SHA256 checksum
-        run: |
-          cd release
-          shasum -a 256 velo-${{ steps.get_version.outputs.VERSION }}-arm64.tar.gz > velo-${{ steps.get_version.outputs.VERSION }}-arm64.tar.gz.sha256
+          # Create tag
+          git tag -a "$VERSION" -m "Release $VERSION"
           
-      - name: Create Release
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: ${{ steps.get_version.outputs.VERSION }}
-          name: Release ${{ steps.get_version.outputs.VERSION }}
-          body: |
-            Release ${{ steps.get_version.outputs.VERSION }}
-            
-            ## What's Changed
-            
-            **Full Changelog**: https://github.com/dimaosipa/velocity/compare/${{ steps.get_version.outputs.PREVIOUS_TAG }}...${{ steps.get_version.outputs.VERSION }}
-            
-            ## Installation via Homebrew
-            ```bash
-            brew tap dimaosipa/brew
-            brew install velo
-            ```
-            
-            ## Manual Installation
-            Download the binary and extract:
-            ```bash
-            wget https://github.com/dimaosipa/velocity/releases/download/${{ steps.get_version.outputs.VERSION }}/velo-${{ steps.get_version.outputs.VERSION }}-arm64.tar.gz
-            tar -xzf velo-${{ steps.get_version.outputs.VERSION }}-arm64.tar.gz
-            ./velo install-self
-            ```
-            
-            ## Requirements
-            - macOS 12.0 or later
-            - Apple Silicon Mac
-            
-          files: |
-            release/velo-${{ steps.get_version.outputs.VERSION }}-arm64.tar.gz
-            release/velo-${{ steps.get_version.outputs.VERSION }}-arm64.tar.gz.sha256
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      
-      - name: Update Homebrew Tap
-        uses: ./.github/actions/update-homebrew-tap
-        with:
-          formula-name: velo
-          homebrew-tap: dimaosipa/homebrew-brew
-          formula-path: Formula/velo.rb
-          download-url: https://github.com/dimaosipa/velocity/releases/download/${{ steps.get_version.outputs.VERSION }}/velo-${{ steps.get_version.outputs.VERSION }}-arm64.tar.gz
-          version: ${{ steps.get_version.outputs.VERSION }}
-          sha256-file: release/velo-${{ steps.get_version.outputs.VERSION }}-arm64.tar.gz.sha256
-          commit-message: |
-            velo ${{ steps.get_version.outputs.VERSION }}
-            
-            Automated update from dimaosipa/velocity release
-          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          # Push tag
+          git push origin "$VERSION"
+          
+          echo "✅ Tag $VERSION created and pushed successfully"
+          echo "🚀 CI will now build and create the release automatically"
